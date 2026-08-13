@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.yarn/
+.codewhale/
+.idea/
+.vscode/
+.DS_Store
