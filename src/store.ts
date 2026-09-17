@@ -63,6 +63,8 @@ export interface MigrationHistoryStore {
   recordApplied(migration: MigrationFile): Promise<void>;
   /** 标记失败（含原因），供 resolve / 重试 */
   markFailed(id: string, error: string): Promise<void>;
+  /** 删除一条记录（`resolve --rolled-back` 用：让它重新变成待应用） */
+  delete(id: string): Promise<void>;
 }
 
 /** 对迁移 SQL 全文计算校验和 */
@@ -175,6 +177,13 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
          set failed = true,
              error = excluded.error`,
       [id, error],
+    );
+  }
+
+  async delete(id: string): Promise<void> {
+    await this._options.executor.query(
+      `delete from ${this._table} where id = $1`,
+      [id],
     );
   }
 }

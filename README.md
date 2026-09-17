@@ -32,7 +32,11 @@ ts-grm-migrate dev --name init    # 对比模型与数据库，生成并应用�
 ts-grm-migrate deploy             # 应用所有未应用的迁移（部署 / CI）
 ts-grm-migrate push [--force]     # 直接同步成模型的样子，不写文件、不记历史
 ts-grm-migrate status             # 查看已应用 / 待应用
+ts-grm-migrate resolve --applied <id>       # 标记为已应用（SQL 已手工执行过）
+ts-grm-migrate resolve --rolled-back <id>   # 清除失败记录，让它重新待应用
 ```
+
+命令名可用简写 **`tgm`**（与 `ts-grm-migrate` 等价）。
 
 选项：`--config <path>`、`--force`、`-h`。
 
@@ -173,8 +177,8 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
   （否则会被当成业务表 DROP）
 - 进程锁文件（`lock.ts`）、Postgres 执行器（`executor/postgres.ts`，只依赖结构接口，
   不把 pg 当运行时依赖）
-- **CLI**（`cli.ts` + `config.ts` + `runtime.ts`）：`dev` / `deploy` / `push` / `status`，
-  配置文件驱动、破坏性变更交互确认；与程序化调用共用同一条组装链
+- **CLI**（`cli.ts` + `config.ts` + `runtime.ts`）：`dev` / `deploy` / `push` / `status` /
+  `resolve`，配置文件驱动、破坏性变更交互确认；与程序化调用共用同一条组装链
 
 测试 **132 用例通过**，含真实 Postgres 的 introspection / 端到端迁移 / CLI 套件
 （`tests/*-postgres.test.ts`、`tests/cli-postgres.test.ts`、`tests/manual-postgres.test.ts`，
@@ -186,7 +190,6 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
   还原的写法不同，diff 会判为变化并 drop+add；归一化留待后续
 - 暂不处理分区表与排他约束
 
-**未实现**：`migrate resolve`（修正失败迁移的辅助命令）；SQLite 尚无 introspector
-与 executor。
+**未实现**：SQLite 尚无 introspector 与 executor；shadow database（应用前在临时库试跑）未做。
 
-下一步候选：SQLite 方言，或 `resolve` / shadow database。
+下一步候选：SQLite 方言（introspector + executor）。

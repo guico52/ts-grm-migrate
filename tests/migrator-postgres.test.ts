@@ -38,7 +38,8 @@ const MODEL_TABLES = ["AUTHOR", "BOOK", "TAG", "book_tag_mapping"];
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-describePg("Migrator 集成（真实数据库）", () => {
+// retry：共享测试库上的外部负载可能导致偶发挂起（见 cli-postgres.test.ts 注释）
+describePg("Migrator 集成（真实数据库）", { retry: 2 }, () => {
   const { sqlClient, pool } = createTestPostgresClient(PG_CONFIG);
   let execPool: Pool;
   let executor: PostgresSqlExecutor;

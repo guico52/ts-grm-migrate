@@ -77,6 +77,8 @@ export type {
   MigrationStatus,
   MigratorOptions,
   PushResult,
+  ResolveAction,
+  ResolveOptions,
 } from "./migrator.js";
 
 // ---- 配置与运行时（CLI 与程序化调用共用同一条组装链）--------------------
