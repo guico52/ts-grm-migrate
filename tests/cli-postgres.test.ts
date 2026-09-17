@@ -28,9 +28,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-// retry：这些用例跑在共享测试库上（实测有 ~54 个他人 JDBC 连接常驻，max_connections=100），
-// 外部负载导致的偶发挂起不是产品缺陷；用例之间已用独立 schema 隔离，重跑是安全的。
-describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
+// 注：这些用例会建/删 schema，需连真实数据库；无 PG_HOST 时整体跳过。
+describePg("CLI 端到端（真实数据库）", () => {
   const pool = new Pool({ ...PG_CONFIG, max: 2 });
   let dir: string;
   let configPath: string;
@@ -97,7 +96,7 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
 
     expect(code).toBe(0);
     expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{14}_init/);
-    expect(await tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
+    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
   it("status：无迁移 / 已应用 / 待应用都能正确汇报", async () => {
@@ -130,7 +129,7 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
 
     expect(code).toBe(0);
     expect(logs.join("\n")).toContain("没有待应用的迁移（已应用 1 个）");
-    expect(await tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
+    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
   it("push：破坏性变更被拒绝（非 --force）；--force 后执行", async () => {
@@ -227,7 +226,7 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
   it("对账：迁移后数据库被手工改动，会告警并指出表与具体差异", async () => {
     await runCli(["dev", "--name", "init", "--config", configPath]);
     // 模拟「有人直连数据库改了结构」
-    await pool.query(`alter table "${schemaName}"."AUTHOR" add column "LEGACY" int`);
+    await pool.query(`alter table "${schemaName}"."author" add column "LEGACY" int`);
 
     logs.length = 0;
     errors.length = 0;
@@ -237,7 +236,7 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
     const reported = errors.join("\n");
     expect(reported).toContain("对账发现数据库与模型不一致");
     expect(reported).toContain(`库 ${PG_CONFIG.database}`); // 指认哪个库
-    expect(reported).toContain("表 AUTHOR"); // 指认哪张表
+    expect(reported).toContain("表 author"); // 指认哪张表
     expect(reported).toContain("多出列 LEGACY"); // 说明发生了什么
   });
 

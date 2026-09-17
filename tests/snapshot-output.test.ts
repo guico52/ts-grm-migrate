@@ -29,9 +29,9 @@ describe("快照 JSON 输出", () => {
     };
     expect(parsed.formatVersion).toBe(1);
     expect(parsed.schema.tables.map((t) => t.name)).toEqual([
-      "AUTHOR",
-      "BOOK",
-      "TAG",
+      "author",
+      "book",
+      "tag",
       "book_tag_mapping",
     ]);
     expect(fromSnapshot(json)).toEqual(schema);

@@ -37,8 +37,7 @@ const TEST_SCHEMA = "ts_grm_migrate_introspect";
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-// retry：共享测试库上的外部负载可能导致偶发挂起（见 cli-postgres.test.ts 注释）
-describePg("PostgresIntrospector 集成（真实数据库）", { retry: 2 }, () => {
+describePg("PostgresIntrospector 集成（真实数据库）", () => {
   const { sqlClient, pool } = createTestPostgresClient(PG_CONFIG);
   afterAll(() => pool.end());
 

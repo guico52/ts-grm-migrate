@@ -21,7 +21,24 @@ import type {CheckConstraint, Column, Constraint, ForeignKeyConstraint, OnDelete
 export type { SchemaDriver };
 
 /** 表名去引号（ts-grm 对保留字表名会带引号，如 "\"ORDER\""；数据库实际名字不带） */
-function unquoteIdentifier(value: string): string {
+/**
+ * 上游标识符 → 数据库里的**物理名**。
+ *
+ * ts-grm 的 `toTableName()` 是 `quoteIdentifier(toSnakeCase(...))`（`core/src/impl/entity.ts:206`），
+ * 而它的 `quoteIdentifier` **只对 SQL 关键字加引号**，其余原样返回
+ * （`sql/src/driver/abstract_drivier.ts:60`）。于是：
+ *
+ * - 带引号（如 `"ORDER"`）：按字面解析，物理名就是引号里的内容
+ * - **不带引号（如 `AUTHOR`）：PG 会把未加引号的标识符折叠为小写，物理名是 `author`**
+ *
+ * 必须复刻这条折叠规则：否则模型侧会拿 `AUTHOR` 与 introspect 读到的 `author` 比较，
+ * diff 永远不相等；更严重的是 DDL 再加引号就会真的建出大写表，
+ * 而 ts-grm 运行时用无引号查询（折叠为小写）根本找不到它。
+ *
+ * 折叠规则属于方言知识（PG 折叠小写；MySQL/SQLite 不折叠），
+ * 将来支持多方言时应下移到方言层。
+ */
+function toPhysicalName(value: string): string {
   if (value.startsWith("\"") && value.endsWith("\"")) {
     return value.slice(1, -1);
   }
@@ -31,7 +48,7 @@ function unquoteIdentifier(value: string): string {
   if (value.startsWith("[") && value.endsWith("]")) {
     return value.slice(1, -1);
   }
-  return value;
+  return value.toLowerCase();
 }
 
 /** ts-grm 的 CascadeType（ORM 语义）→ 数据库 ON DELETE 动作 */
@@ -57,7 +74,7 @@ function checkExpression(constraint: Extract<ConstraintDef, { readonly kind: "CH
 
 function toColumn(columnDef: ColumnDef, ordinal: number, driver: SchemaDriver): Column {
   return {
-    name: columnDef.name,
+    name: toPhysicalName(columnDef.name),
     type: driver.typeName(columnDef),
     nullable: columnDef.nullable,
     length: columnDef.length,
@@ -78,25 +95,25 @@ function toConstraint(
       return {
         kind: "PRIMARY_KEY",
         name,
-        columns: constraint.columns.map((c) => c.name),
+        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
         implicit: constraint.implicit,
       };
     case "UNIQUE":
       return {
         kind: "UNIQUE",
         name,
-        columns: constraint.columns.map((c) => c.name),
+        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
         implicit: constraint.implicit,
       };
     case "FOREIGN_KEY": {
       return {
         kind: "FOREIGN_KEY",
         name,
-        columns: constraint.columns.map((c) => c.name),
-        referencedTable: unquoteIdentifier(
+        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
+        referencedTable: toPhysicalName(
             constraint.referencedColumns[0]!.declaringTable.name,
         ),
-        referencedColumns: constraint.referencedColumns.map((c) => c.name),
+        referencedColumns: constraint.referencedColumns.map((c) => toPhysicalName(c.name)),
         onDelete: toOnDelete(constraint.cascade),
         deferrable: false,
         cascade: constraint.cascade,
@@ -121,7 +138,7 @@ function toConstraint(
 
 function toTable(tableDef: TableDef, driver: SchemaDriver): Table {
   return {
-    name: unquoteIdentifier(tableDef.name),
+    name: toPhysicalName(tableDef.name),
     columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver)),
     constraints: tableDef.constraints.map((c) => toConstraint(c, driver)),
     // ts-grm 模型无索引概念，migrate 侧补充声明 / introspection 另行填充

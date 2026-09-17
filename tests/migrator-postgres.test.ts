@@ -34,12 +34,11 @@ const PG_CONFIG = {
 };
 
 const TEST_SCHEMA = "ts_grm_migrate_e2e";
-const MODEL_TABLES = ["AUTHOR", "BOOK", "TAG", "book_tag_mapping"];
+const MODEL_TABLES = ["author", "book", "book_tag_mapping", "tag"];
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-// retry：共享测试库上的外部负载可能导致偶发挂起（见 cli-postgres.test.ts 注释）
-describePg("Migrator 集成（真实数据库）", { retry: 2 }, () => {
+describePg("Migrator 集成（真实数据库）", () => {
   const { sqlClient, pool } = createTestPostgresClient(PG_CONFIG);
   let execPool: Pool;
   let executor: PostgresSqlExecutor;
@@ -124,6 +123,24 @@ describePg("Migrator 集成（真实数据库）", { retry: 2 }, () => {
     expect(second.migrationId).toBeUndefined();
     expect(second.applied).toBe(false);
     expect((await fileStore.listFiles()).length).toBe(1);
+  });
+
+  it("migrate 建的表能被「无引号查询」命中（与 ts-grm 运行时一致）", async () => {
+    // ts-grm 生成的 SQL 不带引号（如 `select ... from AUTHOR`，PG 会折叠为小写）。
+    // 若 migrate 建出的是带引号的大写表 "AUTHOR"，下面这些查询会找不到表 ——
+    // 这正是「应用跑不起来」的现场复现。
+    const migrator = makeMigrator();
+    await migrator.dev({ name: "init" });
+
+    const client = await execPool.connect(); // search_path 已指向测试 schema
+    try {
+      for (const table of ["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]) {
+        const { rows } = await client.query(`select * from ${table} limit 0`);
+        expect(rows).toEqual([]);
+      }
+    } finally {
+      client.release();
+    }
   });
 
   it("deploy：重复运行幂等（不重复应用）", async () => {
