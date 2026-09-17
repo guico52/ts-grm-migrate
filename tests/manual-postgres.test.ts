@@ -107,14 +107,14 @@ function nextVersionSchema(base: Schema): Schema {
   });
   return {
     tables: base.tables.map((t) => {
-      if (t.name === "AUTHOR") {
+      if (t.name === "author") {
         return clone(t, {
-          columns: [...t.columns, makeColumn("EMAIL", "text", true)],
-          indexes: [{ name: "AUTHOR_NAME_IDX", columns: ["NAME"], unique: false, predicate: undefined }],
+          columns: [...t.columns, makeColumn("email", "text", true)],
+          indexes: [{ name: "author_name_idx", columns: ["name"], unique: false, predicate: undefined }],
         });
       }
-      if (t.name === "BOOK") {
-        return clone(t, { columns: [...t.columns, makeColumn("PUBLISHED", "boolean", false)] });
+      if (t.name === "book") {
+        return clone(t, { columns: [...t.columns, makeColumn("published", "boolean", false)] });
       }
       return t;
     }),
@@ -125,12 +125,12 @@ function nextVersionSchema(base: Schema): Schema {
 function nextNextVersionSchema(prev: Schema): Schema {
   return {
     tables: prev.tables.map((t) => {
-      if (t.name === "AUTHOR") {
+      if (t.name === "author") {
         return {
           ...t,
-          columns: t.columns.filter((c) => c.name !== "AGE"),
+          columns: t.columns.filter((c) => c.name !== "age"),
           indexes: [
-            { name: "AUTHOR_NAME_UQ_IDX", columns: ["NAME"], unique: true, predicate: undefined },
+            { name: "author_name_uq_idx", columns: ["name"], unique: true, predicate: undefined },
           ],
         };
       }
@@ -153,7 +153,7 @@ describePg("手动测试：Postgres 初始化与变更", () => {
   it("初始化：从模型生成并应用全部建表 SQL", async () => {
     // 幂等清理（保留子表先删）
     await pool.query(
-      'drop table if exists "book_tag_mapping", "TAG", "BOOK", "AUTHOR" cascade',
+      'drop table if exists "book_tag_mapping", "tag", "book", "author" cascade',
     );
 
     const schema = await targetSchema(sqlClient);
@@ -165,10 +165,10 @@ describePg("手动测试：Postgres 初始化与变更", () => {
     await executeStatements(pool, statements);
 
     // 验证：4 张表 + 关键列
-    for (const name of ["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]) {
+    for (const name of ["author", "book", "tag", "book_tag_mapping"]) {
       expect(await tableExists(pool, name), `表 ${name} 应存在`).toBe(true);
     }
-    expect(await columnExists(pool, "BOOK", "AUTHOR_ID")).toBe(true);
+    expect(await columnExists(pool, "book", "author_id")).toBe(true);
   });
 
   it("变更：diff 生成增量 SQL 并应用（加列 / 加索引）", async () => {
@@ -184,9 +184,9 @@ describePg("手动测试：Postgres 初始化与变更", () => {
     await executeStatements(pool, statements);
 
     // 验证：新列与索引已生效
-    expect(await columnExists(pool, "AUTHOR", "EMAIL")).toBe(true);
-    expect(await columnExists(pool, "BOOK", "PUBLISHED")).toBe(true);
-    expect(await indexExists(pool, "AUTHOR", "AUTHOR_NAME_IDX")).toBe(true);
+    expect(await columnExists(pool, "author", "email")).toBe(true);
+    expect(await columnExists(pool, "book", "published")).toBe(true);
+    expect(await indexExists(pool, "author", "author_name_idx")).toBe(true);
     // 无破坏性操作
     expect(diff.destructive).toEqual([]);
   });
@@ -203,12 +203,12 @@ describePg("手动测试：Postgres 初始化与变更", () => {
     await executeStatements(pool, statements);
 
     // 验证：AGE 列已删除、旧索引已删除、新唯一索引已创建
-    expect(await columnExists(pool, "AUTHOR", "AGE")).toBe(false);
-    expect(await indexExists(pool, "AUTHOR", "AUTHOR_NAME_IDX")).toBe(false);
-    expect(await indexExists(pool, "AUTHOR", "AUTHOR_NAME_UQ_IDX")).toBe(true);
+    expect(await columnExists(pool, "author", "age")).toBe(false);
+    expect(await indexExists(pool, "author", "author_name_idx")).toBe(false);
+    expect(await indexExists(pool, "author", "author_name_uq_idx")).toBe(true);
     // 删列是破坏性操作
     expect(diff.destructive).toEqual([
-      { kind: "DROP_COLUMN", table: "AUTHOR", column: "AGE" },
+      { kind: "DROP_COLUMN", table: "author", column: "age" },
     ]);
   });
 });
