@@ -7,7 +7,7 @@
  * - 数据库被手工改动过（同事直连库改了结构、或别的工具动过）
  *
  * 与 Prisma 的关系：Prisma 的 drift 检测是「**重放迁移历史**（影子库）vs 真实库」，
- * 我们没有影子库、`from` 侧就是真实库（见 README），所以这里做的是
+ * 我们没有影子库、`from` 侧就是真实库（见 docs/design.md），所以这里做的是
  * 「**应用后再看一眼**」——覆盖「数据库 vs 模型」，不覆盖「迁移历史 vs 数据库」。
  */
 import type { AlterTable, Diff } from "./diff/types.js";

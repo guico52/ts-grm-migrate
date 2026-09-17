@@ -4,7 +4,7 @@
  * 现状（数据库 introspection 结果）与目标（模型推导结果）都是 `Schema` 形状，
  * 所以 differ 本身是方言无关的。对应 prisma-engines 的 `sql_schema_differ.rs`。
  *
- * 匹配规则（README 设计决策）：
+ * 匹配规则（docs/design.md 设计决策）：
  * - 列按名字匹配（列名在表内唯一）；
  * - 约束/索引**按内容匹配而非名字**——自动生成的约束名（如 ts-grm 的
  *   `{table}_constraint_{n}`）不可靠；内容相同视为同一约束；

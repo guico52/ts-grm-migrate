@@ -18,7 +18,7 @@
  *    （否则 UNIQUE 约束会同时以约束和索引出现两次，diff 每次都误判）。
  *
  * 4. 错误处理：introspection 是外部输入路径，查询失败包成带 schema 名的可读错误
- *    （见 README 设计决策，不 fail-fast）。
+ *    （见 docs/design.md 设计决策，不 fail-fast）。
  *
  * 5. pg 驱动只对已注册解析器的类型做数组解析：`array_agg(attname)` 的类型是 `name[]`，
  *    会被原样返回成 `"{A,B}"` 字符串（实测）。SQL 里统一 `::text` 转型规避，
