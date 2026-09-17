@@ -54,10 +54,17 @@ export class PostgresSqlExecutor implements SqlExecutor {
     // advisory lock 是会话级：必须占用同一条连接，直到解锁或连接断开
     const client = await this._pool.connect();
     try {
+      // **必须先设锁超时**：`pg_advisory_lock` 默认无限等待，一旦锁被别的会话
+      // 持有（残留连接、异常退出的实例）就会永久挂住，表现为测试莫名超时。
+      // Prisma 同样带 ADVISORY_LOCK_TIMEOUT。
+      await client.query("set lock_timeout = '10s'");
       await client.query("select pg_advisory_lock(hashtext($1)::bigint)", [key]);
     } catch (e) {
+      await client.query("reset lock_timeout").catch(() => undefined);
       client.release();
-      throw new Error(`获取迁移锁失败：${(e as Error).message}`);
+      throw new Error(
+        `获取迁移锁失败（等待超过 10s）：${(e as Error).message}`,
+      );
     }
     let released = false;
     return async () => {
@@ -71,6 +78,8 @@ export class PostgresSqlExecutor implements SqlExecutor {
         // 解锁失败通常意味着连接已断（锁会随会话结束自动释放），
         // 不掩盖主流程里真正的错误
       } finally {
+        // 归还前复位，避免这条连接的下一个使用者继承 lock_timeout
+        await client.query("reset lock_timeout").catch(() => undefined);
         client.release();
       }
     };
