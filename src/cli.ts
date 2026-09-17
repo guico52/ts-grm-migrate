@@ -12,9 +12,12 @@
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { CONFIG_FILENAMES, loadConfig } from "./config.js";
+import { abnormalDrift } from "./drift.js";
 import { MigrationAbortedError } from "./migrator.js";
 import { createRuntime } from "./runtime.js";
 import type { DestructiveChange, Diff } from "./diff/types.js";
+import type { SchemaDrift } from "./drift.js";
+import type { MigrateConfig } from "./config.js";
 import type { ParsedArgs, RunOptions } from "./cli/types.js";
 import type { Runtime } from "./runtime.js";
 
@@ -100,16 +103,17 @@ export async function run(
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog),
   });
+  const dbLabel = describeDatabase(config);
 
   try {
     log(`配置：${configFile}`);
     switch (command) {
       case "dev":
-        return await runDev(runtime, flags.get("name"), log, errorLog);
+        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog);
       case "deploy":
-        return await runDeploy(runtime, log);
+        return await runDeploy(runtime, dbLabel, log, errorLog);
       case "push":
-        return await runPush(runtime, log);
+        return await runPush(runtime, dbLabel, log, errorLog);
       case "status":
         return await runStatus(runtime, log);
       case "resolve":
@@ -134,11 +138,12 @@ export async function run(
 async function runDev(
   runtime: Runtime,
   name: string | true | undefined,
+  dbLabel: string,
   log: (message: string) => void,
   errorLog: (message: string) => void,
 ): Promise<number> {
   if (typeof name !== "string" || name.trim() === "") {
-    errorLog("dev 需要 --name <迁移名>，例如：ts-grm-migrate dev --name init");
+    errorLog("dev 需要 --name <迁移名>，例如：tgm dev --name init");
     return 1;
   }
   const result = await runtime.migrator.dev({ name: name.trim() });
@@ -147,29 +152,75 @@ async function runDev(
     return 0;
   }
   log(`已生成并应用迁移：${result.migrationId}`);
+  reportDrift(result.drift, dbLabel, log, errorLog);
   return 0;
 }
 
-async function runDeploy(runtime: Runtime, log: (message: string) => void): Promise<number> {
+async function runDeploy(
+  runtime: Runtime,
+  dbLabel: string,
+  log: (message: string) => void,
+  errorLog: (message: string) => void,
+): Promise<number> {
   const result = await runtime.migrator.deploy();
   if (result.applied.length === 0) {
     log(`没有待应用的迁移（已应用 ${result.skipped} 个）。`);
-    return 0;
+  } else {
+    for (const id of result.applied) {
+      log(`已应用 ${id}`);
+    }
   }
-  for (const id of result.applied) {
-    log(`已应用 ${id}`);
-  }
+  reportDrift(result.drift, dbLabel, log, errorLog);
   return 0;
 }
 
-async function runPush(runtime: Runtime, log: (message: string) => void): Promise<number> {
+async function runPush(
+  runtime: Runtime,
+  dbLabel: string,
+  log: (message: string) => void,
+  errorLog: (message: string) => void,
+): Promise<number> {
   const result = await runtime.migrator.push();
   if (result.statements.length === 0) {
     log("模型与数据库结构一致，无需同步。");
-    return 0;
+  } else {
+    log(`已同步：应用了 ${result.statements.length} 条语句。`);
   }
-  log(`已同步：应用了 ${result.statements.length} 条语句。`);
+  reportDrift(result.drift, dbLabel, log, errorLog);
   return 0;
+}
+
+/** 数据库的可读标识（用于对账消息里指认「哪个库」） */
+function describeDatabase(config: MigrateConfig): string {
+  const schema = config.schema ?? "public";
+  const database = config.database.database;
+  return database != null && database !== ""
+    ? `库 ${database}，schema ${schema}`
+    : `schema ${schema}`;
+}
+
+/**
+ * 输出对账结果。已知限制（如 CHECK 表达式）降级为一行提示，不当作异常。
+ */
+function reportDrift(
+  drift: ReadonlyArray<SchemaDrift>,
+  dbLabel: string,
+  log: (message: string) => void,
+  errorLog: (message: string) => void,
+): void {
+  const abnormal = abnormalDrift(drift);
+  const knownCount = drift.length - abnormal.length;
+
+  if (abnormal.length > 0) {
+    errorLog(`\n⚠ 对账发现数据库与模型不一致（${dbLabel}）：`);
+    for (const item of abnormal) {
+      errorLog(`  - 表 ${item.table}：${item.summary}`);
+    }
+    errorLog("这通常意味着迁移未完整生效，或数据库被手工改动过。");
+  }
+  if (knownCount > 0) {
+    log(`（另有 ${knownCount} 处因已知限制无法比对（如 CHECK 约束表达式），已忽略）`);
+  }
 }
 
 async function runStatus(runtime: Runtime, log: (message: string) => void): Promise<number> {

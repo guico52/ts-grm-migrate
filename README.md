@@ -43,6 +43,9 @@ ts-grm-migrate resolve --rolled-back <id>   # 清除失败记录，让它重新�
 - 迁移文件是 `<migrationsDir>/<时间戳>_<名字>.sql`，**人可读、可手工编辑**；
   已应用的迁移文件不能再改（checksum 漂移检测会拒绝继续）
 - 破坏性变更（删表 / 删列 / 改列类型）默认交互确认，非交互环境需显式 `--force`
+- 每次 `dev` / `deploy` / `push` 之后自动**对账**（`src/drift.ts`）：再读一次数据库与模型
+  比对，仍有差异就指出「哪个库、哪张表、差在哪」（如「表 AUTHOR：多出列 LEGACY」）。
+  用于发现迁移未完整生效、或数据库被手工改动的情况
 - `schema` 同时作用于 introspect 与 DDL 执行（连接池 `search_path`），
   非 `public` 时自动创建
 
@@ -175,6 +178,8 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 - 迁移应用器（`migrator.ts`）：`deploy` / `dev` / `push`；进程锁 + database advisory lock、
   checksum 漂移检测、每个迁移一个事务、失败记入历史；diff 时自动剔除历史表
   （否则会被当成业务表 DROP）
+- 对账（`drift.ts`）：迁移之后再确认一次「数据库 == 模型」，把差异转成可读报告
+  （`deploy` / `dev` / `push` 自动调用，也可用 `migrator.checkDrift()`）
 - 进程锁文件（`lock.ts`）、Postgres 执行器（`executor/postgres.ts`，只依赖结构接口，
   不把 pg 当运行时依赖）
 - **CLI**（`cli.ts` + `config.ts` + `runtime.ts`）：`dev` / `deploy` / `push` / `status` /

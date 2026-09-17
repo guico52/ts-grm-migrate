@@ -92,6 +92,10 @@ export type {
 export { createRuntime, DEFAULT_LOCK_PATH, DEFAULT_MIGRATIONS_DIR } from "./runtime.js";
 export type { Runtime, RuntimeOptions } from "./runtime.js";
 
+// ---- 对账（迁移后确认数据库 == 模型）----------------------------------------
+export { abnormalDrift, describeDiff } from "./drift.js";
+export type { SchemaDrift } from "./drift.js";
+
 // ---- CLI ------------------------------------------------------------------
 export { parseArgs, run } from "./cli.js";
 export type { ParsedArgs, RunOptions } from "./cli/types.js";

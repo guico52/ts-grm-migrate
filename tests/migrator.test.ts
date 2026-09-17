@@ -221,7 +221,7 @@ describe("Migrator", () => {
 
     it("无迁移文件时是空操作", async () => {
       const result = await makeMigrator().deploy();
-      expect(result).toEqual({ applied: [], skipped: 0 });
+      expect(result).toEqual({ applied: [], skipped: 0, drift: [] });
     });
   });
 
@@ -327,6 +327,60 @@ describe("Migrator", () => {
 
       expect(result.applied).toEqual(["20260911T120000_a"]);
       expect(history.applied.map((a) => a.id)).toEqual(["20260911T120000_a"]);
+    });
+  });
+
+  describe("对账（迁移后确认数据库 == 模型）", () => {
+    const extraColumn = {
+      name: "EXTRA",
+      type: "integer",
+      nullable: true,
+      length: undefined,
+      default: undefined,
+      autoIncrement: false,
+      ordinal: 2,
+      comment: undefined,
+    };
+
+    it("一致时对账为空", async () => {
+      await writeMigration("20260911T120000_a", "select 1;");
+      const result = await makeMigrator().deploy();
+      expect(result.drift).toEqual([]);
+    });
+
+    it("仍有差异时报告具体表与差异", async () => {
+      await writeMigration("20260911T120000_a", "select 1;");
+      // 模拟：应用完之后数据库却多出一列（手工改动 / 迁移未达预期）
+      introspector.schema = {
+        tables: [
+          {
+            name: "T",
+            columns: [...ONE_TABLE.tables[0]!.columns, extraColumn],
+            constraints: [],
+            indexes: [],
+          },
+        ],
+      };
+
+      const result = await makeMigrator(ONE_TABLE).deploy();
+
+      expect(result.drift).toEqual([
+        { table: "T", summary: "多出列 EXTRA", known: false },
+      ]);
+    });
+
+    it("checkDrift 可单独调用（不应用任何迁移）", async () => {
+      introspector.schema = {
+        tables: [{ name: "GHOST", columns: [], constraints: [], indexes: [] }],
+      };
+      const drift = await makeMigrator(EMPTY).checkDrift();
+      expect(drift).toEqual([
+        {
+          table: "GHOST",
+          summary: "数据库中多出这张表（模型里已不存在）",
+          known: false,
+        },
+      ]);
     });
   });
 

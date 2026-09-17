@@ -224,6 +224,33 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
     expect(await tables()).toContain("TMP_A");
   });
 
+  it("对账：迁移后数据库被手工改动，会告警并指出表与具体差异", async () => {
+    await runCli(["dev", "--name", "init", "--config", configPath]);
+    // 模拟「有人直连数据库改了结构」
+    await pool.query(`alter table "${schemaName}"."AUTHOR" add column "LEGACY" int`);
+
+    logs.length = 0;
+    errors.length = 0;
+    const code = await runCli(["deploy", "--config", configPath]);
+
+    expect(code).toBe(0);
+    const reported = errors.join("\n");
+    expect(reported).toContain("对账发现数据库与模型不一致");
+    expect(reported).toContain(`库 ${PG_CONFIG.database}`); // 指认哪个库
+    expect(reported).toContain("表 AUTHOR"); // 指认哪张表
+    expect(reported).toContain("多出列 LEGACY"); // 说明发生了什么
+  });
+
+  it("对账：结构正常时不产生噪声告警", async () => {
+    await runCli(["dev", "--name", "init", "--config", configPath]);
+
+    logs.length = 0;
+    errors.length = 0;
+    await runCli(["deploy", "--config", configPath]);
+
+    expect(errors.join("\n")).not.toContain("对账");
+  });
+
   it("resolve：缺参数时报错并返回 1", async () => {
     const code = await runCli(["resolve", "--config", configPath]);
     expect(code).toBe(1);
