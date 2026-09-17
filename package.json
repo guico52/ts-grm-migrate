@@ -5,20 +5,33 @@
   "packageManager": "yarn@4.1.0",
   "type": "module",
   "description": "Schema migration engine for ts-grm — inspired by Prisma Migrate (prisma-engines) and drizzle-kit",
-  "workspaces": [
-    "../../source/ts-grm/packages/*"
-  ],
+  "bin": {
+    "ts-grm-migrate": "./dist/cli.js"
+  },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --exclude tests/manual-postgres.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json"
   },
-  "dependencies": {
-    "@ts-grm/sql": "workspace:*"
+  "peerDependencies": {
+    "@ts-grm/core": "^0.0.13",
+    "@ts-grm/sql": "^0.0.13",
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@ts-grm/core": "^0.0.13",
+    "@ts-grm/sql": "^0.0.13",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.3",
+    "@types/pg": "^8.20.0",
+    "better-sqlite3": "^13.0.3",
+    "pg": "^8.23.0",
     "typescript": "^6.0.3",
     "vitest": "4.0.16"
   }

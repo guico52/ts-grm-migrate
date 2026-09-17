@@ -1,43 +1,67 @@
 /**
- * 迁移引擎的「数据库 schema 中间表示」。
+ * 迁移引擎的「统一比较形状」——现状（introspection）与目标态（模型）都填充此形状。
  *
- * 设计要点（对应 prisma-engines 的 `database_schema.rs` / `sql_schema_describer`）：
+ * 设计原则：不重复设计表和字段结构。本模块的类型基于上游原生定义
+ * （`TableDef` / `ColumnDef` / `ConstraintDef`，经 `src/vendor/ts-grm.ts` 镜像引入）
+ * **直接继承引用**：
  *
- * 1. 这个表示是「语义层」的：diff 在语义层做（模型 schema vs 数据库 schema 都是这个形状），
- *    DDL 生成在语法层做（方言把这里的字段翻译成具体 SQL）。不要试图让这个模型直接表达方言细节。
+ * - Omit 掉模型语义字段（entity / prop / declaringTable / when）与建表方法——
+ *   introspection 读出的现状表没有这些，快照也无法序列化它们；
+ * - 保留结构字段（name / nullable / length / kind / cascade / implicit / values 等）；
+ * - 补充 migrate 特有信息：方言类型字符串、默认值、自增、列序号、注释、索引
+ *   （ts-grm 模型表达不了，来源：migrate 侧补充声明 / introspection）。
  *
- * 2. 类型字段 `type` 用「方言原生类型字符串」（如 "bigint" / "text" / "varchar(50)"），
- *    而不是抽象枚举——因为 introspector 从数据库读到的就是原生类型，
- *    而模型侧（ts-grm 的 ScalarType）转成原生类型由各方言的 typeName() 负责。
- *    将来如果要跨方言比较，再加一层归一化映射。
+ * 列类型 `type` 用「方言原生类型字符串」（如 "bigint" / "text" / "varchar(50)"）：
+ * - introspector 从数据库读到什么存什么（无损，保留 numeric(10,2) 等带参类型）；
+ * - 目标态由 ColumnDef 的 ScalarType 经方言映射得到（见 src/schema/adapter.ts），
+ *   映射与 ts-grm 实际建表行为保持一致，保证「模型建的表 == 目标态 == 现状」自洽。
  *
- * 3. 显式携带 `comment`（迁移注记用），并预留 `ordinal`（列序号）供方言重建表时用，
- *    但 diff 必须忽略列顺序差异（PG/SQLite 都无法在 alter 里调列序）。
- *
- * 4. 与 ts-grm `packages/sql/src/impl/schema_def.ts` 的 TableDef 的关系：
- *    - TableDef 是「从模型推导的」目标态，带多态/继承语义（implicit 约束、when 条件列）；
- *    - 本模块的 Schema 是「任意来源」的（模型推导或数据库 introspection），
- *      不含多态语义 —— 多态语义的丢失（when 列 -> 普通 nullable 列）由模型侧适配器负责归一化。
+ * 序列化：本形状是纯数据（无方法、无循环引用），快照直接 JSON（见 src/snapshot.ts）。
  */
+import type {
+  TableDef,
+  ColumnDef,
+  ConstraintDef,
+} from "../vendor/ts-grm.js";
 
 /** 数据库 schema（一个数据库连接的完整结构） */
 export interface Schema {
-  /** 表名 -> 表；表名使用数据库实际存储的名字（不折叠大小写） */
-  readonly tables: ReadonlyMap<string, Table>;
+  /** 表集合；表名使用数据库实际存储的名字（不折叠大小写） */
+  readonly tables: ReadonlyArray<Table>;
 }
 
-export interface Table {
-  readonly name: string;
+/** 表：继承原生 TableDef，去掉模型语义与建表方法，约束/索引为迁移扩展后的形态 */
+export interface Table extends Omit<
+  TableDef,
+  | "entity"
+  | "prop"
+  | "columns"
+  | "constraints"
+  | "toCreationStatements"
+  | "toDeletionStatements"
+> {
   readonly columns: ReadonlyArray<Column>;
   readonly constraints: ReadonlyArray<Constraint>;
+  /** migrate 扩展：索引。ts-grm 模型无此概念，来源：补充声明 / introspection */
   readonly indexes: ReadonlyArray<Index>;
 }
 
-export interface Column {
-  readonly name: string;
+/**
+ * 列：继承原生 ColumnDef，去掉模型引用与 ScalarType 类型，type 用方言原生字符串。
+ * precision / scale 一并去掉：该信息已编码进方言类型字符串（如 "numeric(10,2)"），
+ * migrate 的 IR 不重复承载，避免两处表达同一事实而漂移。
+ */
+export interface Column extends Omit<
+  ColumnDef,
+  | "declaringTable"
+  | "prop"
+  | "type"
+  | "when"
+  | "precision"
+  | "scale"
+> {
   /** 方言原生类型，如 "bigint" / "text" / "varchar(50)" / "numeric(10,2)" */
   readonly type: string;
-  readonly nullable: boolean;
   /** 默认值表达式原文（introspection 读到什么存什么，如 "nextval('t_id_seq'::regclass)"） */
   readonly default: string | undefined;
   /** 是否自增（identity / serial）——方言差异：PG 靠 default 或 attidentity，MySQL 靠 extra */
@@ -53,14 +77,21 @@ export type Constraint =
   | ForeignKeyConstraint
   | CheckConstraint;
 
-export interface PrimaryKeyConstraint {
+/** 主键：继承原生 PRIMARY_KEY 定义（注意：原生 kind 是 "PRIMARY_KEY" | "INDEX" 联合），列改为名字集合 */
+export interface PrimaryKeyConstraint extends Omit<
+  Extract<ConstraintDef, { readonly kind: "PRIMARY_KEY" | "INDEX" }>,
+  "kind" | "columns"
+> {
   readonly kind: "PRIMARY_KEY";
   readonly name: string | undefined;
   readonly columns: ReadonlyArray<string>;
 }
 
-export interface UniqueConstraint {
-  readonly kind: "UNIQUE";
+/** 唯一约束：继承原生 UNIQUE 定义，列改为名字集合 */
+export interface UniqueConstraint extends Omit<
+  Extract<ConstraintDef, { readonly kind: "UNIQUE" }>,
+  "columns"
+> {
   readonly name: string | undefined;
   readonly columns: ReadonlyArray<string>;
 }
@@ -72,8 +103,11 @@ export type OnDelete =
   | "SET_NULL"
   | "SET_DEFAULT";
 
-export interface ForeignKeyConstraint {
-  readonly kind: "FOREIGN_KEY";
+/** 外键：继承原生 FOREIGN_KEY 定义（含 cascade / implicit），引用目标改为表名 + 列名 */
+export interface ForeignKeyConstraint extends Omit<
+  Extract<ConstraintDef, { readonly kind: "FOREIGN_KEY" }>,
+  "columns" | "referencedColumns"
+> {
   readonly name: string | undefined;
   /** 本表列 */
   readonly columns: ReadonlyArray<string>;
@@ -81,15 +115,19 @@ export interface ForeignKeyConstraint {
   readonly referencedTable: string;
   /** 被引用列 */
   readonly referencedColumns: ReadonlyArray<string>;
+  /** 由原生 cascade 归一化的删除动作（适配器填充） */
   readonly onDelete: OnDelete;
-  /** PG 特有：延迟约束（confdeltype 之外还有 condeferrable） */
+  /** PG 特有：延迟约束（模型侧无来源，introspection 读 condeferrable） */
   readonly deferrable: boolean;
 }
 
-export interface CheckConstraint {
-  readonly kind: "CHECK";
+/** 检查约束：继承原生 CHECK 定义（column+values 保留），expression 供 DDL 直接使用 */
+export interface CheckConstraint extends Omit<
+  Extract<ConstraintDef, { readonly kind: "CHECK" }>,
+  "column"
+> {
   readonly name: string | undefined;
-  /** 条件表达式原文（如 `("TYPE" = ANY (ARRAY['Book'::text, 'PaperBook'::text]))`） */
+  /** 条件表达式原文（如 `"TYPE" in ('Book', 'PaperBook')`） */
   readonly expression: string;
 }
 
@@ -103,5 +141,5 @@ export interface Index {
 
 /** 便捷构造：空 schema */
 export function emptySchema(): Schema {
-  return { tables: new Map() };
+  return { tables: [] };
 }
