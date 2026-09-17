@@ -34,7 +34,7 @@ const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
   push                直接把数据库同步成模型的样子（不写迁移文件、不记历史）
   status              查看已应用 / 待应用的迁移
   resolve --applied <id>      把迁移标记为已应用（SQL 已手工执行过）
-  resolve --rolled-back <id>  清除迁移的失败记录，让它重新待应用
+  resolve --rolled-back <id>  标记迁移已回滚，它将重新待应用
 
 选项：
   --config <path>     指定配置文件（默认在项目根自动查找）
@@ -267,7 +267,7 @@ async function runResolve(
   }
   if (typeof rolledBack === "string") {
     await runtime.migrator.resolve({ migration: rolledBack, action: "rolled-back" });
-    log(`已清除失败记录（将重新待应用）：${rolledBack}`);
+    log(`已标记回滚（将重新待应用）：${rolledBack}`);
     return 0;
   }
   errorLog("resolve 需要 --applied <迁移 id> 或 --rolled-back <迁移 id>。");

@@ -37,7 +37,10 @@ export interface AppliedMigration {
   readonly rolledBackAt: Date | undefined;
   /** 上次执行失败则 true（对应 prisma 的 failed 状态 + migrate resolve） */
   readonly failed: boolean;
+  /** 失败摘要（一行，便于快速判断与增删查） */
   readonly error: string | undefined;
+  /** 执行日志（可读详情，成功时为 undefined） */
+  readonly logs: string | undefined;
 }
 
 /** 磁盘迁移文件（读 + 写） */
@@ -61,10 +64,14 @@ export interface MigrationHistoryStore {
   listApplied(): Promise<ReadonlyArray<AppliedMigration>>;
   /** 记录一条成功应用 */
   recordApplied(migration: MigrationFile): Promise<void>;
-  /** 标记失败（含原因），供 resolve / 重试 */
-  markFailed(id: string, error: string): Promise<void>;
-  /** 删除一条记录（`resolve --rolled-back` 用：让它重新变成待应用） */
-  delete(id: string): Promise<void>;
+  /** 标记失败（`error` 为摘要，`logs` 为可读详情）；供 resolve / 重试 */
+  markFailed(id: string, error: string, logs?: string): Promise<void>;
+  /**
+   * 标记已回滚（`resolve --rolled-back`）：记录保留，但它重新变成「待应用」。
+   * 不删记录 —— 什么时候回滚过、当时什么情况，都是有用的审计信息。
+   * 返回是否命中记录（false = 该迁移没有历史记录）。
+   */
+  markRolledBack(id: string): Promise<boolean>;
 }
 
 /** 对迁移 SQL 全文计算校验和 */
@@ -141,14 +148,20 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
   applied_at timestamptz not null default now(),
   rolled_back_at timestamptz,
   failed boolean not null default false,
-  error text
+  error text,
+  logs text
 )`,
+    ]);
+    // 历史表自己的演进：`create table if not exists` 不会给已存在的表加列，
+    // 所以显式幂等地补上后加的列（PG 9.6+ 支持 ADD COLUMN IF NOT EXISTS）。
+    await this._options.executor.executeStatements([
+      `alter table ${this._table} add column if not exists logs text`,
     ]);
   }
 
   async listApplied(): Promise<ReadonlyArray<AppliedMigration>> {
     const { rows } = await this._options.executor.query(
-      `select id, checksum, applied_at, rolled_back_at, failed, error
+      `select id, checksum, applied_at, rolled_back_at, failed, error, logs
        from ${this._table}
        order by applied_at, id`,
     );
@@ -157,34 +170,41 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
 
   async recordApplied(migration: MigrationFile): Promise<void> {
     await this._options.executor.query(
-      `insert into ${this._table} (id, checksum, applied_at, rolled_back_at, failed, error)
-       values ($1, $2, now(), null, false, null)
+      `insert into ${this._table} (id, checksum, applied_at, rolled_back_at, failed, error, logs)
+       values ($1, $2, now(), null, false, null, null)
        on conflict (id) do update
          set checksum = excluded.checksum,
              applied_at = now(),
              rolled_back_at = null,
              failed = false,
-             error = null`,
+             error = null,
+             logs = null`,
       [migration.id, migration.checksum],
     );
   }
 
-  async markFailed(id: string, error: string): Promise<void> {
+  async markFailed(id: string, error: string, logs?: string): Promise<void> {
     await this._options.executor.query(
-      `insert into ${this._table} (id, checksum, applied_at, failed, error)
-       values ($1, '', now(), true, $2)
+      `insert into ${this._table} (id, checksum, applied_at, failed, error, logs)
+       values ($1, '', now(), true, $2, $3)
        on conflict (id) do update
          set failed = true,
-             error = excluded.error`,
-      [id, error],
+             error = excluded.error,
+             logs = excluded.logs`,
+      [id, error, logs ?? null],
     );
   }
 
-  async delete(id: string): Promise<void> {
-    await this._options.executor.query(
-      `delete from ${this._table} where id = $1`,
+  async markRolledBack(id: string): Promise<boolean> {
+    const { rows } = await this._options.executor.query(
+      `update ${this._table}
+       set rolled_back_at = now(),
+           failed = false
+       where id = $1
+       returning id`,
       [id],
     );
+    return rows.length > 0;
   }
 }
 
@@ -196,6 +216,7 @@ function toAppliedMigration(row: Record<string, unknown>): AppliedMigration {
     rolledBackAt: row["rolled_back_at"] == null ? undefined : toDate(row["rolled_back_at"]),
     failed: row["failed"] === true,
     error: row["error"] == null ? undefined : asString(row["error"]),
+    logs: row["logs"] == null ? undefined : asString(row["logs"]),
   };
 }
 

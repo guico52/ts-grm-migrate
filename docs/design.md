@@ -30,6 +30,13 @@
   `StateError` 直接抛出，按使用者错误处理
 - **并发防护用进程锁文件**：migrate 每次运行是独立进程（`ALL_MODEL_MAP` 天然干净），
   用项目级锁文件阻止同一项目上同时运行多个实例，避免迁移与 DDL 交叉
+- **历史表用原生 SQL 维护**（`store.ts`），**不基于 ts-grm 模型**：历史表若定义成 ts-grm
+  model，会进入全局 `ALL_MODEL_MAP` 而混进使用者的模型集合，让 diff 以为「模型里有一张
+  `_migrations` 表要建」。它在 introspection 时被显式剔除（见 `migrator.ts` 的 `_diffAgainstDatabase`）
+- **回滚用标记而非删记录**：`resolve --rolled-back` 写 `rolled_back_at` 并清 `failed`，
+  记录保留作审计；被标记回滚的迁移重新算「待应用」（`_effectiveApplied` 会排除它们）
+- **历史表自身的演进**：`ensureTable` 除建表外还幂等补列（`add column if not exists`）——
+  因为 `create table if not exists` 不会给已存在的表加列，旧库需要平滑升级
 
 ## 与 ts-grm 的对接
 
