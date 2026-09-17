@@ -99,9 +99,25 @@ async function importConfigModule(file: string): Promise<unknown> {
   try {
     mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
   } catch (e) {
-    throw new Error(`加载配置文件失败 "${file}"：${(e as Error).message}`);
+    throw new Error(`加载配置文件失败 "${file}"：${(e as Error).message}${configLoadHint(file, e)}`);
   }
   return mod.default;
+}
+
+/** 针对常见失败给出可操作的提示，而不是把 Node 的原始报错直接丢给使用者 */
+function configLoadHint(file: string, error: unknown): string {
+  const message = (error as Error).message ?? "";
+  if (message.includes("outside a module")) {
+    return (
+      "\n提示：`.ts` 配置文件的模块类型由最近的 package.json 决定。" +
+      "若你的项目是 CommonJS，请把配置改名为 `.mts`（强制 ESM），" +
+      "或给 package.json 加上 \"type\": \"module\"。"
+    );
+  }
+  if (message.includes("Cannot find module")) {
+    return `\n提示：配置文件里 import 的包在该项目下解析不到（请确认已安装，路径：${file}）。`;
+  }
+  return "";
 }
 
 function validateConfig(value: unknown, file: string): MigrateConfig {

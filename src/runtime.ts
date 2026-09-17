@@ -24,9 +24,9 @@ import { Migrator } from "./migrator.js";
 import { tableDefsToSchema } from "./schema/adapter.js";
 import { DatabaseMigrationHistoryStore, FileMigrationStore } from "./store.js";
 import { quoteIdentifier } from "./ddl.js";
-import type { MigrateConfig } from "./config.js";
 import type { Diff } from "./diff/types.js";
 import type { PgPoolLike } from "./executor/postgres.js";
+import type { MigrateConfig } from "./config.js";
 
 export interface Runtime {
   readonly migrator: Migrator;
@@ -63,7 +63,8 @@ export async function createRuntime(
 
   const pool = await createPool(config);
   try {
-    return await assembleRuntime(config, cwd, options, pool);
+    const runtime = await assembleRuntime(config, cwd, options, pool);
+    return runtime;
   } catch (e) {
     // 组装途中失败必须把连接池关掉：close() 只挂在成功返回的 Runtime 上，
     // 若在这里漏掉，连接会一直留在数据库里 —— 反复调用会累积到打满连接，
@@ -93,7 +94,6 @@ async function assembleRuntime(
     ]);
   }
 
-  // 模型：of() 会 import 指定路径触发注册，随后取回全局注册表里的全部 entity
   // EntityManager.of 要求至少一个路径（AtLeastOne），配置校验已保证非空
   const entityManager = EntityManager.of(
     cwd,
@@ -111,7 +111,16 @@ async function assembleRuntime(
     introspector: new PostgresIntrospector({ query: executor, schema }),
     ddl: new PostgresDdlGenerator(),
     targetSchema: async () => {
-      const tableDefs = await createSchema(sqlClient);
+      let tableDefs;
+      try {
+        tableDefs = await createSchema(sqlClient);
+      } catch (e) {
+        throw new Error(
+          `加载模型失败：${(e as Error).message}\n` +
+            `提示：migrate 用 Node 原生 import 直接加载你的模型文件，所以它们必须是 ESM —— ` +
+            `给项目加上 "type": "module"，或把 models 指向编译后的 ESM 产物（.js）。`,
+        );
+      }
       return tableDefsToSchema(tableDefs, sqlClient.driver);
     },
     migrationsDir,

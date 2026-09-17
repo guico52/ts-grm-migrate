@@ -5,6 +5,18 @@
   "packageManager": "yarn@4.1.0",
   "type": "module",
   "description": "Schema migration engine for ts-grm — inspired by Prisma Migrate (prisma-engines) and drizzle-kit",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs"
+  ],
   "bin": {
     "ts-grm-migrate": "./dist/cli.js",
     "tgm": "./dist/cli.js"

@@ -24,6 +24,10 @@ yarn add -D @ts-grm/migrate
 
 ## 快速开始
 
+> **前置：项目需是 ESM** —— 给 `package.json` 加上 `"type": "module"`。
+> ts-grm 的模型注册表是**模块级单例**，migrate 必须与你的模型共用同一份 **ESM** 实例；
+> 若模型是 CommonJS，它会把模型注册到另一份实例上，migrate 看不到任何模型。
+
 在项目根建一个配置文件：
 
 ```ts
@@ -46,12 +50,14 @@ tgm status              # 看看应用了哪些、还剩哪些
 ### 配置项
 
 - **`database`**（必填）：数据库连接，原样传给 `pg` 的 `Pool`
-- **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`
+- **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
+  **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
 - `schema`：目标 schema，默认 `public`（非 public 时自动创建）
 - `lockPath`：进程锁文件，默认 `./.ts-grm-migrate.lock`
 
 配置文件在项目根自动查找（`.ts` / `.mts` / `.mjs` / `.js`），也可以用 `--config <path>` 指定。
+`.ts` 的模块类型跟随项目：CommonJS 项目请用 `.mts`，或给 `package.json` 加 `"type": "module"`。
 
 ## 命令
 
