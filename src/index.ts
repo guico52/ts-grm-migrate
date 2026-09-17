@@ -1,16 +1,38 @@
 /**
- * @ts-grm/migrate — ts-grm 的 schema 迁移引擎（起点骨架）。
+ * @ts-grm/migrate — ts-grm 的 schema 迁移引擎。
  *
  * 分层（对应 prisma-engines 的目录结构）：
- * - schema/model.ts   数据库 schema 中间表示   (database_schema.rs)
+ * - schema/model.ts   统一比较形状（继承 ts-grm 原生定义）
+ * - schema/adapter.ts TableDef[] → Schema（目标态适配）
+ * - snapshot.ts       快照序列化 / 反序列化 / 校验
  * - differ.ts         diff 引擎                (sql_schema_differ.rs)
  * - introspector.ts   数据库现状读取            (introspection.rs + sql-schema-describer)
  * - ddl.ts            DDL 生成（方言）          (libs/sql-ddl + sql_renderer.rs)
  * - store.ts          迁移文件 + 历史表         (sql_migration.rs / sql_migration_persistence.rs)
  * - migrator.ts       迁移应用器                (apply_migration.rs / apply_migrations.rs)
  */
-export type { Schema, Table, Column, Constraint, Index } from "./schema/model";
-export { emptySchema } from "./schema/model";
+export type {
+  Schema,
+  Table,
+  Column,
+  Constraint,
+  Index,
+  PrimaryKeyConstraint,
+  UniqueConstraint,
+  ForeignKeyConstraint,
+  CheckConstraint,
+  OnDelete,
+} from "./schema/model.js";
+export { emptySchema } from "./schema/model.js";
+export { tableDefsToSchema } from "./schema/adapter.js";
+export type { SchemaDriver } from "./schema/adapter.js";
+export {
+  toSnapshot,
+  fromSnapshot,
+  isSchema,
+  SNAPSHOT_FORMAT_VERSION,
+} from "./snapshot.js";
+export type { SchemaSnapshot } from "./snapshot.js";
 export type {
   Diff,
   Change,
@@ -21,15 +43,53 @@ export type {
   CreateTable,
   DropTable,
   DestructiveChange,
-} from "./diff/types";
-export type { Differ } from "./differ";
-export { SchemaDiffer } from "./differ";
-export type { Introspector, Dialect } from "./introspector";
-export type { DdlGenerator } from "./ddl";
+} from "./diff/types.js";
+export type { Differ } from "./differ.js";
+export { SchemaDiffer } from "./differ.js";
+export type { SqlQueryable } from "./sql.js";
+export type { SqlExecutor } from "./executor.js";
+export { PostgresSqlExecutor } from "./executor/postgres.js";
+export type { PgClientLike, PgPoolLike } from "./executor/postgres.js";
+export { acquireProcessLock } from "./lock.js";
+export type { ProcessLock } from "./lock.js";
+export type { Introspector, Dialect } from "./introspector.js";
+export { PostgresIntrospector } from "./introspector/postgres.js";
+export type { PostgresIntrospectorOptions } from "./introspector/postgres.js";
+export type { DdlGenerator, DdlGeneratorOptions } from "./ddl.js";
+export { PostgresDdlGenerator } from "./ddl/postgres.js";
+export { SqliteDdlGenerator } from "./ddl/sqlite.js";
+export {
+  checksumOf,
+  DatabaseMigrationHistoryStore,
+  DEFAULT_HISTORY_TABLE,
+  FileMigrationStore,
+} from "./store.js";
 export type {
-  MigrationFile,
   AppliedMigration,
-  MigrationStore,
-} from "./store";
-export type { MigratorOptions, SqlExecutor } from "./migrator";
-export { Migrator } from "./migrator";
+  MigrationFile,
+  MigrationFileStore,
+  MigrationHistoryStore,
+} from "./store.js";
+export { generateMigrationId, Migrator, MigrationAbortedError, toSqlFile } from "./migrator.js";
+export type {
+  DeployResult,
+  DevResult,
+  MigrationStatus,
+  MigratorOptions,
+  PushResult,
+} from "./migrator.js";
+
+// ---- 配置与运行时（CLI 与程序化调用共用同一条组装链）--------------------
+export { CONFIG_FILENAMES, defineConfig, loadConfig } from "./config.js";
+export type {
+  DatabaseConfig,
+  DialectName,
+  LoadedConfig,
+  MigrateConfig,
+} from "./config.js";
+export { createRuntime, DEFAULT_LOCK_PATH, DEFAULT_MIGRATIONS_DIR } from "./runtime.js";
+export type { Runtime, RuntimeOptions } from "./runtime.js";
+
+// ---- CLI ------------------------------------------------------------------
+export { parseArgs, run } from "./cli.js";
+export type { ParsedArgs, RunOptions } from "./cli/types.js";

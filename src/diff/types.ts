@@ -18,7 +18,7 @@ import type {
   Constraint as SchemaConstraint,
   Index as SchemaIndex,
   Table as SchemaTable,
-} from "../schema/model";
+} from "../schema/model.js";
 
 /** 一次 diff 的完整结果 */
 export interface Diff {

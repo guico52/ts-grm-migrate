@@ -9,7 +9,11 @@
  * - 类型字符串原样保留（"bigint"、"varchar(50)"），归一化是 DDL 层/适配层的事；
  * - 标识符大小写按数据库实际存储返回（PG 未加引号建的会是小写）。
  */
-import type { Schema } from "./schema/model";
+import type { Schema } from "./schema/model.js";
+import type { SqlQueryable } from "./sql.js";
+
+/** 最小查询能力（定义在 `src/sql.ts`，此处再导出以保持既有导入路径） */
+export type { SqlQueryable };
 
 export interface Introspector {
   readonly dialect: Dialect;

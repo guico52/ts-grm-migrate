@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { emptySchema } from "../src/schema/model";
-import { SchemaDiffer } from "../src/differ";
-import type { Diff } from "../src/diff/types";
-import { Migrator } from "../src/migrator";
+import { emptySchema } from "../src";
+import { SchemaDiffer } from "../src";
+import type { Diff } from "../src";
+import { Migrator } from "../src";
 
 describe("schema model", () => {
   it("emptySchema 产出空 schema", () => {
     const schema = emptySchema();
-    expect(schema.tables.size).toBe(0);
+    expect(schema.tables.length).toBe(0);
   });
 });
 
@@ -27,12 +27,16 @@ describe("类型形状（编译期冒烟）", () => {
     expect(kinds).toEqual([]);
   });
 
-  it("Migrator 可实例化（骨架未实现方法会抛错）", () => {
+  it("Migrator 可实例化（构造不做任何 IO）", () => {
     const migrator = new Migrator({
-      store: {} as never,
-      ddl: {} as never,
+      files: {} as never,
+      history: {} as never,
       executor: {} as never,
+      introspector: {} as never,
+      ddl: {} as never,
       targetSchema: async () => emptySchema(),
+      migrationsDir: "/tmp/migrations",
+      lockPath: "/tmp/migrate.lock",
     });
     expect(migrator).toBeDefined();
   });
