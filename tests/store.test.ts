@@ -140,19 +140,45 @@ describe("DatabaseMigrationHistoryStore", () => {
     expect(executor.queries[0]!.params).toEqual(["m1", "abc"]);
   });
 
-  it("markFailed 写 failed 与 error", async () => {
+  it("markFailed 写 failed / error / logs 与原因", async () => {
+    const executor = new FakeExecutor();
+    const store = new DatabaseMigrationHistoryStore({ executor });
+    await store.markFailed("m1", "boom", "详细日志");
+    expect(executor.queries[0]!.sql).toContain("failed = true");
+    expect(executor.queries[0]!.params).toEqual(["m1", "boom", "详细日志"]);
+  });
+
+  it("markFailed 不传 logs 时写入 null", async () => {
     const executor = new FakeExecutor();
     const store = new DatabaseMigrationHistoryStore({ executor });
     await store.markFailed("m1", "boom");
-    expect(executor.queries[0]!.sql).toContain("failed = true");
-    expect(executor.queries[0]!.params).toEqual(["m1", "boom"]);
+    expect(executor.queries[0]!.params).toEqual(["m1", "boom", null]);
   });
 
-  it("delete 按 id 删除记录（resolve --rolled-back）", async () => {
+  it("markRolledBack 用 UPDATE 标记回滚（保留记录作审计）", async () => {
     const executor = new FakeExecutor();
+    executor.setRows([{ id: "m1" }]); // returning id 命中一行
     const store = new DatabaseMigrationHistoryStore({ executor });
-    await store.delete("m1");
-    expect(executor.queries[0]!.sql).toContain('delete from "_migrations"');
+    const updated = await store.markRolledBack("m1");
+    expect(updated).toBe(true);
+    expect(executor.queries[0]!.sql).toContain("rolled_back_at = now()");
+    expect(executor.queries[0]!.sql).toContain("returning id");
     expect(executor.queries[0]!.params).toEqual(["m1"]);
   });
+
+  it("markRolledBack 未命中记录时返回 false（让调用方报错）", async () => {
+    const executor = new FakeExecutor(); // rows 为空
+    const store = new DatabaseMigrationHistoryStore({ executor });
+    expect(await store.markRolledBack("nope")).toBe(false);
+  });
+
+  it("ensureTable 幂等补上后加的列（历史表自身的演进）", async () => {
+    const executor = new FakeExecutor();
+    await new DatabaseMigrationHistoryStore({ executor }).ensureTable();
+    expect(executor.statements[0]![0]).toContain("create table if not exists");
+    expect(executor.statements[1]![0]).toContain(
+      "add column if not exists logs text",
+    );
+  });
+
 });

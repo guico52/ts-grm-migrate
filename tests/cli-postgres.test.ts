@@ -212,7 +212,7 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
       configPath,
     ]);
     expect(resolved).toBe(0);
-    expect(logs.join("\n")).toContain("已清除失败记录");
+    expect(logs.join("\n")).toContain("已标记回滚");
 
     // 4) 修好迁移后 deploy 成功
     await writeFile(badFile, 'create table "TMP_A" (x int);\n', "utf8");
@@ -249,6 +249,40 @@ describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
     await runCli(["deploy", "--config", configPath]);
 
     expect(errors.join("\n")).not.toContain("对账");
+  });
+
+  it("历史表：失败留 error 摘要 + logs 详情；回滚写 rolled_back_at 且保留记录", async () => {
+    const migrationsDir = path.join(dir, "migrations");
+    await mkdir(migrationsDir, { recursive: true });
+    const badId = "20260911T120000_bad";
+    await writeFile(
+      path.join(migrationsDir, `${badId}.sql`),
+      'create table "TMP_C" (x int);\n\ncreate table "TMP_C" (y int);\n',
+      "utf8",
+    );
+
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/执行失败/);
+
+    const history = `"${schemaName}"."_migrations"`;
+    const failed = await pool.query(
+      `select failed, error, logs, rolled_back_at from ${history} where id = $1`,
+      [badId],
+    );
+    expect(failed.rows[0]!.failed).toBe(true);
+    expect(String(failed.rows[0]!.error)).toContain("already exists"); // 摘要
+    expect(String(failed.rows[0]!.logs)).toContain(badId); // 详情里有迁移名
+    expect(String(failed.rows[0]!.logs)).toContain("事务已回滚"); // 与详情兼容
+    expect(failed.rows[0]!.rolled_back_at).toBeNull();
+
+    await runCli(["resolve", "--rolled-back", badId, "--config", configPath]);
+
+    const rolledBack = await pool.query(
+      `select failed, rolled_back_at from ${history} where id = $1`,
+      [badId],
+    );
+    expect(rolledBack.rows).toHaveLength(1); // 记录保留（审计），不是删除
+    expect(rolledBack.rows[0]!.rolled_back_at).not.toBeNull();
+    expect(rolledBack.rows[0]!.failed).toBe(false);
   });
 
   it("resolve：缺参数时报错并返回 1", async () => {

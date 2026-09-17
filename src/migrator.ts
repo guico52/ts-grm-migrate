@@ -128,7 +128,7 @@ export class Migrator {
   async deploy(): Promise<DeployResult> {
     return await this._withLocks(true, async () => {
       const files = await this._options.files.listFiles();
-      const applied = await this._options.history.listApplied();
+      const applied = await this._effectiveApplied();
       this._assertNoFailed(applied);
       const appliedById = new Map(applied.map((a) => [a.id, a]));
 
@@ -174,7 +174,7 @@ export class Migrator {
    */
   async dev(options: { readonly name: string }): Promise<DevResult> {
     return await this._withLocks(true, async () => {
-      this._assertNoFailed(await this._options.history.listApplied());
+      this._assertNoFailed(await this._effectiveApplied());
       const diff = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
         return { diff, migrationId: undefined, applied: false, drift: [] };
@@ -209,7 +209,7 @@ export class Migrator {
     const files = await this._options.files.listFiles();
     let applied: ReadonlyArray<AppliedMigration> = [];
     try {
-      applied = await this._options.history.listApplied();
+      applied = await this._effectiveApplied();
     } catch {
       // 历史表尚不存在 = 还没应用过任何迁移
     }
@@ -246,7 +246,13 @@ export class Migrator {
         await this._options.history.recordApplied(file);
         return;
       }
-      await this._options.history.delete(options.migration);
+
+      const updated = await this._options.history.markRolledBack(options.migration);
+      if (!updated) {
+        throw new Error(
+          `迁移 "${options.migration}" 没有历史记录，无法标记回滚（它可能从未被应用过）。`,
+        );
+      }
     });
   }
 
@@ -318,13 +324,24 @@ export class Migrator {
     try {
       await this._options.executor.executeStatements([file.sql]);
     } catch (e) {
+      const message = (e as Error).message;
       // 失败要留在历史里：否则下次 deploy 会以为这是全新迁移而重试
       await this._options.history
-        .markFailed(file.id, (e as Error).message)
+        .markFailed(file.id, message, failureLogs(file, message))
         .catch(() => undefined);
-      throw new Error(`迁移 "${file.id}" 执行失败：${(e as Error).message}`);
+      throw new Error(`迁移 "${file.id}" 执行失败：${message}`);
     }
     await this._options.history.recordApplied(file);
+  }
+
+  /**
+   * 当前「已生效」的迁移记录：**排除被标记回滚的**。
+   * 被回滚的迁移重新算待应用（`resolve --rolled-back` 的语义），
+   * 但它那条记录会保留下来，作为「什么时候回滚过」的审计痕迹。
+   */
+  private async _effectiveApplied(): Promise<ReadonlyArray<AppliedMigration>> {
+    const applied = await this._options.history.listApplied();
+    return applied.filter((a) => a.rolledBackAt == null);
   }
 
   private async _diffAgainstDatabase(): Promise<Diff> {
@@ -373,4 +390,14 @@ export function toSqlFile(statements: ReadonlyArray<string>): string {
 
 function short(checksum: string): string {
   return checksum.slice(0, 12);
+}
+
+/** 失败时写进历史的可读日志（`error` 是摘要，`logs` 是详情） */
+function failureLogs(file: MigrationFile, message: string): string {
+  return [
+    `迁移 ${file.id} 执行失败`,
+    `时间：${new Date().toISOString()}`,
+    `错误：${message}`,
+    "事务已回滚，本次迁移未对数据库留下改动。",
+  ].join("\n");
 }

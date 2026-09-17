@@ -41,32 +41,49 @@ const ONE_TABLE: Schema = {
 class FakeHistory implements MigrationHistoryStore {
   readonly tableName = "_migrations";
   readonly applied: Array<AppliedMigration> = [];
-  readonly failures: Array<{ id: string; error: string }> = [];
-  readonly deleted: Array<string> = [];
+  readonly failures: Array<{ id: string; error: string; logs: string | undefined }> = [];
+  readonly rolledBack: Array<string> = [];
 
   async ensureTable(): Promise<void> {}
   async listApplied(): Promise<ReadonlyArray<AppliedMigration>> {
     return this.applied;
   }
   async recordApplied(migration: MigrationFile): Promise<void> {
-    this.applied.push({
+    const record: AppliedMigration = {
       id: migration.id,
       checksum: migration.checksum,
       appliedAt: new Date(),
       rolledBackAt: undefined,
       failed: false,
       error: undefined,
-    });
-  }
-  async markFailed(id: string, error: string): Promise<void> {
-    this.failures.push({ id, error });
-  }
-  async delete(id: string): Promise<void> {
-    this.deleted.push(id);
-    const index = this.applied.findIndex((a) => a.id === id);
+      logs: undefined,
+    };
+    // 真实实现是 `insert ... on conflict (id) do update`（upsert），
+    // 这里必须同样覆盖而不是 push —— 否则同一条迁移重新应用时会留下两条记录，
+    // 与真实行为不符。
+    const index = this.applied.findIndex((a) => a.id === migration.id);
     if (index >= 0) {
-      this.applied.splice(index, 1);
+      this.applied[index] = record;
+    } else {
+      this.applied.push(record);
     }
+  }
+  async markFailed(id: string, error: string, logs?: string): Promise<void> {
+    this.failures.push({ id, error, logs });
+  }
+  async markRolledBack(id: string): Promise<boolean> {
+    const index = this.applied.findIndex((a) => a.id === id);
+    if (index < 0) {
+      return false;
+    }
+    // 真实实现是 UPDATE ... SET rolled_back_at；这里模拟等价效果（记录保留）
+    this.applied[index] = {
+      ...this.applied[index]!,
+      rolledBackAt: new Date(),
+      failed: false,
+    };
+    this.rolledBack.push(id);
+    return true;
   }
 }
 
@@ -153,6 +170,7 @@ describe("Migrator", () => {
       rolledBackAt: undefined,
       failed: false,
       error: undefined,
+      logs: undefined,
     });
   }
 
@@ -203,6 +221,7 @@ describe("Migrator", () => {
         rolledBackAt: undefined,
         failed: false,
         error: undefined,
+        logs: undefined,
       });
 
       await expect(makeMigrator().deploy()).rejects.toThrow(/缺失/);
@@ -280,6 +299,7 @@ describe("Migrator", () => {
         rolledBackAt: undefined,
         failed: true,
         error: "boom",
+        logs: undefined,
       });
     }
 
@@ -292,7 +312,7 @@ describe("Migrator", () => {
       expect(history.applied[0]!.checksum).toBe(a.checksum);
     });
 
-    it("rolled-back：清除记录，使它重新待应用", async () => {
+    it("rolled-back：标记回滚（保留记录），使它重新待应用", async () => {
       await writeMigration("20260911T120000_a", "select 1;");
       await markFailedRecord("20260911T120000_a");
 
@@ -301,8 +321,19 @@ describe("Migrator", () => {
         action: "rolled-back",
       });
 
-      expect(history.deleted).toEqual(["20260911T120000_a"]);
-      expect(history.applied).toEqual([]);
+      expect(history.rolledBack).toEqual(["20260911T120000_a"]);
+      // 记录保留下来作审计，但被标记为已回滚（不再算「已生效」）
+      expect(history.applied).toHaveLength(1);
+      expect(history.applied[0]!.rolledBackAt).toBeDefined();
+      expect(history.applied[0]!.failed).toBe(false);
+    });
+
+    it("rolled-back：没有历史记录时拒绝（可能 id 打错）", async () => {
+      await writeMigration("20260911T120000_a", "select 1;");
+
+      await expect(
+        makeMigrator().resolve({ migration: "20260911T120000_a", action: "rolled-back" }),
+      ).rejects.toThrow(/没有历史记录/);
     });
 
     it("迁移不在磁盘上时拒绝", async () => {
