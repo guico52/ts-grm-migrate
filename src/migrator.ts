@@ -18,6 +18,7 @@
  * 交互层（破坏性操作确认）不在这里 —— `Diff.destructive` 由 CLI 层使用。
  */
 import { SchemaDiffer } from "./differ.js";
+import { describeDiff } from "./drift.js";
 import { acquireProcessLock } from "./lock.js";
 import { checksumOf } from "./store.js";
 import type { DdlGenerator } from "./ddl.js";
@@ -25,6 +26,7 @@ import type { Diff } from "./diff/types.js";
 import type { SqlExecutor } from "./executor.js";
 import type { Introspector } from "./introspector.js";
 import type { Schema } from "./schema/model.js";
+import type { SchemaDrift } from "./drift.js";
 import type {
   AppliedMigration,
   MigrationFile,
@@ -75,6 +77,8 @@ export interface DeployResult {
   readonly applied: ReadonlyArray<string>;
   /** 已应用过而跳过的数量 */
   readonly skipped: number;
+  /** 应用后的对账结果（空 = 数据库已等于模型；详见 `src/drift.ts`） */
+  readonly drift: ReadonlyArray<SchemaDrift>;
 }
 
 /** `dev()` 结果 */
@@ -83,12 +87,14 @@ export interface DevResult {
   /** 新生成的迁移 id；无变更时为 undefined */
   readonly migrationId: string | undefined;
   readonly applied: boolean;
+  readonly drift: ReadonlyArray<SchemaDrift>;
 }
 
 /** `push()` 结果 */
 export interface PushResult {
   readonly diff: Diff;
   readonly statements: ReadonlyArray<string>;
+  readonly drift: ReadonlyArray<SchemaDrift>;
 }
 
 /** `status()` 结果 */
@@ -154,7 +160,11 @@ export class Migrator {
         await this._applyOne(file);
         appliedNow.push(file.id);
       }
-      return { applied: appliedNow, skipped: files.length - pending.length };
+      return {
+        applied: appliedNow,
+        skipped: files.length - pending.length,
+        drift: await this._describeDrift(),
+      };
     });
   }
 
@@ -167,7 +177,7 @@ export class Migrator {
       this._assertNoFailed(await this._options.history.listApplied());
       const diff = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
-        return { diff, migrationId: undefined, applied: false };
+        return { diff, migrationId: undefined, applied: false, drift: [] };
       }
       await this._confirmIfNeeded(diff);
 
@@ -177,7 +187,7 @@ export class Migrator {
 
       await this._options.files.write(file);
       await this._applyOne(file);
-      return { diff, migrationId: id, applied: true };
+      return { diff, migrationId: id, applied: true, drift: await this._describeDrift() };
     });
   }
 
@@ -190,7 +200,7 @@ export class Migrator {
       if (statements.length > 0) {
         await this._options.executor.executeStatements(statements);
       }
-      return { diff, statements };
+      return { diff, statements, drift: await this._describeDrift() };
     });
   }
 
@@ -240,7 +250,20 @@ export class Migrator {
     });
   }
 
+  /**
+   * 对账：不应用任何东西，只报告当前数据库与模型的差异。
+   * 迁移之后调它，可确认数据库真的变成了模型的样子。
+   */
+  async checkDrift(): Promise<ReadonlyArray<SchemaDrift>> {
+    return await this._describeDrift();
+  }
+
   // ---- 内部 ----------------------------------------------------------------
+
+  /** 再 introspect 一次并与模型对比（空 = 一致） */
+  private async _describeDrift(): Promise<ReadonlyArray<SchemaDrift>> {
+    return describeDiff(await this._diffAgainstDatabase());
+  }
 
   /**
    * 上次失败的迁移必须先处理：它意味着数据库可能处于半应用状态，
