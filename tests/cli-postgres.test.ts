@@ -6,8 +6,8 @@
  *
  * 运行：`PG_HOST=... PG_PASSWORD=... yarn vitest run tests/cli-postgres.test.ts`
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,16 +23,22 @@ const PG_CONFIG = {
   password: process.env.PG_PASSWORD ?? "",
 };
 
-const TEST_SCHEMA = "cli_e2e";
 /** 模型相对 CWD 解析，因此 CWD 固定为仓库根 */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-describePg("CLI 端到端（真实数据库）", () => {
+// retry：这些用例跑在共享测试库上（实测有 ~54 个他人 JDBC 连接常驻，max_connections=100），
+// 外部负载导致的偶发挂起不是产品缺陷；用例之间已用独立 schema 隔离，重跑是安全的。
+describePg("CLI 端到端（真实数据库）", { retry: 2 }, () => {
   const pool = new Pool({ ...PG_CONFIG, max: 2 });
   let dir: string;
   let configPath: string;
+  /**
+   * 每个测试用**独立 schema**：共用一个 schema 名时，相邻测试的
+   * `drop schema cascade` 与 `create schema if not exists` 会互相等待（实测偶发挂起 30s+）。
+   */
+  let schemaName: string;
   const logs: Array<string> = [];
   const errors: Array<string> = [];
 
@@ -43,20 +49,15 @@ describePg("CLI 端到端（真实数据库）", () => {
       errorLog: (m) => errors.push(m),
     });
 
-  beforeAll(async () => {
-    await cleanupSchema();
-  });
-
   afterAll(async () => {
-    await cleanupSchema();
     await pool.end();
   });
 
   beforeEach(async () => {
     logs.length = 0;
     errors.length = 0;
-    await cleanupSchema();
     dir = await mkdtemp(path.join(tmpdir(), "tsgrm-cli-e2e-"));
+    schemaName = `cli_e2e_${path.basename(dir).replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
     configPath = path.join(dir, "ts-grm-migrate.config.ts");
     await writeFile(
       configPath,
@@ -65,7 +66,7 @@ describePg("CLI 端到端（真实数据库）", () => {
           database: PG_CONFIG,
           models: ["./tests/model/model.ts"],
           migrationsDir: path.join(dir, "migrations"),
-          schema: TEST_SCHEMA,
+          schema: schemaName,
           lockPath: path.join(dir, "migrate.lock"),
         },
         null,
@@ -76,20 +77,17 @@ describePg("CLI 端到端（真实数据库）", () => {
   });
 
   afterEach(async () => {
+    await pool
+      .query(`drop schema if exists "${schemaName}" cascade`)
+      .catch(() => undefined);
     await rm(dir, { recursive: true, force: true });
   });
-
-  async function cleanupSchema(): Promise<void> {
-    await pool
-      .query(`drop schema if exists "${TEST_SCHEMA}" cascade`)
-      .catch(() => undefined);
-  }
 
   async function tables(): Promise<Array<string>> {
     const { rows } = await pool.query(
       `select table_name from information_schema.tables
        where table_schema = $1 and table_name <> '_migrations' order by table_name`,
-      [TEST_SCHEMA],
+      [schemaName],
     );
     return rows.map((r) => String(r["table_name"]));
   }
@@ -137,7 +135,7 @@ describePg("CLI 端到端（真实数据库）", () => {
 
   it("push：破坏性变更被拒绝（非 --force）；--force 后执行", async () => {
     await runCli(["dev", "--name", "init", "--config", configPath]);
-    await pool.query(`create table "${TEST_SCHEMA}".temp_extra (x int)`);
+    await pool.query(`create table "${schemaName}".temp_extra (x int)`);
 
     logs.length = 0;
     errors.length = 0;
@@ -152,6 +150,84 @@ describePg("CLI 端到端（真实数据库）", () => {
 
     expect(forced).toBe(0);
     expect(await tables()).not.toContain("temp_extra");
+  });
+
+  it("resolve --applied：标记为已应用后不再待应用", async () => {
+    const migrationsDir = path.join(dir, "migrations");
+    await mkdir(migrationsDir, { recursive: true });
+    const id = "20260911T120000_manual";
+    await writeFile(
+      path.join(migrationsDir, `${id}.sql`),
+      'create table "MANUAL" (x int);\n',
+      "utf8",
+    );
+
+    logs.length = 0;
+    await runCli(["status", "--config", configPath]);
+    expect(logs.join("\n")).toContain(id);
+
+    const code = await runCli(["resolve", "--applied", id, "--config", configPath]);
+    expect(code).toBe(0);
+
+    logs.length = 0;
+    await runCli(["status", "--config", configPath]);
+    expect(logs.join("\n")).toContain("已应用：");
+    expect(logs.join("\n")).not.toContain("待应用：");
+
+    logs.length = 0;
+    const deployed = await runCli(["deploy", "--config", configPath]);
+    expect(deployed).toBe(0);
+    expect(logs.join("\n")).toContain("没有待应用的迁移");
+  });
+
+  it("resolve --rolled-back：失败迁移阻塞 deploy，清除后恢复", async () => {
+    // 放一个执行时会失败的迁移（第二条语句建重复表，事务整体回滚）
+    const migrationsDir = path.join(dir, "migrations");
+    await mkdir(migrationsDir, { recursive: true });
+    const badId = "20260911T120000_bad";
+    const badFile = path.join(migrationsDir, `${badId}.sql`);
+    await writeFile(
+      badFile,
+      'create table "TMP_A" (x int);\n\ncreate table "TMP_A" (y int);\n',
+      "utf8",
+    );
+
+    // 1) 首次 deploy 失败并记入历史
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/执行失败/);
+
+    logs.length = 0;
+    await runCli(["status", "--config", configPath]);
+    expect(logs.join("\n")).toContain("[失败]");
+
+    // 2) 再 deploy：被失败记录拦下（而不是重复执行）
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/上次执行失败/);
+
+    // 3) resolve --rolled-back 清除失败记录
+    logs.length = 0;
+    const resolved = await runCli([
+      "resolve",
+      "--rolled-back",
+      badId,
+      "--config",
+      configPath,
+    ]);
+    expect(resolved).toBe(0);
+    expect(logs.join("\n")).toContain("已清除失败记录");
+
+    // 4) 修好迁移后 deploy 成功
+    await writeFile(badFile, 'create table "TMP_A" (x int);\n', "utf8");
+    logs.length = 0;
+    const deployed = await runCli(["deploy", "--config", configPath]);
+
+    expect(deployed).toBe(0);
+    expect(logs.join("\n")).toContain(`已应用 ${badId}`);
+    expect(await tables()).toContain("TMP_A");
+  });
+
+  it("resolve：缺参数时报错并返回 1", async () => {
+    const code = await runCli(["resolve", "--config", configPath]);
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("--applied");
   });
 
   it("未知命令返回 1", async () => {

@@ -147,4 +147,12 @@ describe("DatabaseMigrationHistoryStore", () => {
     expect(executor.queries[0]!.sql).toContain("failed = true");
     expect(executor.queries[0]!.params).toEqual(["m1", "boom"]);
   });
+
+  it("delete 按 id 删除记录（resolve --rolled-back）", async () => {
+    const executor = new FakeExecutor();
+    const store = new DatabaseMigrationHistoryStore({ executor });
+    await store.delete("m1");
+    expect(executor.queries[0]!.sql).toContain('delete from "_migrations"');
+    expect(executor.queries[0]!.params).toEqual(["m1"]);
+  });
 });

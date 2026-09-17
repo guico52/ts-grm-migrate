@@ -42,6 +42,7 @@ class FakeHistory implements MigrationHistoryStore {
   readonly tableName = "_migrations";
   readonly applied: Array<AppliedMigration> = [];
   readonly failures: Array<{ id: string; error: string }> = [];
+  readonly deleted: Array<string> = [];
 
   async ensureTable(): Promise<void> {}
   async listApplied(): Promise<ReadonlyArray<AppliedMigration>> {
@@ -59,6 +60,13 @@ class FakeHistory implements MigrationHistoryStore {
   }
   async markFailed(id: string, error: string): Promise<void> {
     this.failures.push({ id, error });
+  }
+  async delete(id: string): Promise<void> {
+    this.deleted.push(id);
+    const index = this.applied.findIndex((a) => a.id === id);
+    if (index >= 0) {
+      this.applied.splice(index, 1);
+    }
   }
 }
 
@@ -260,6 +268,65 @@ describe("Migrator", () => {
     it("迁移 id 含名字 slug 且以时间戳开头", async () => {
       const result = await makeMigrator(ONE_TABLE).dev({ name: "add user table" });
       expect(result.migrationId).toMatch(/^\d{14}_add_user_table$/);
+    });
+  });
+
+  describe("resolve（失败后的恢复途径）", () => {
+    async function markFailedRecord(id: string): Promise<void> {
+      history.applied.push({
+        id,
+        checksum: "",
+        appliedAt: new Date(),
+        rolledBackAt: undefined,
+        failed: true,
+        error: "boom",
+      });
+    }
+
+    it("applied：记为已应用，checksum 取自磁盘当前内容", async () => {
+      const a = await writeMigration("20260911T120000_a", "select 1;");
+
+      await makeMigrator().resolve({ migration: a.id, action: "applied" });
+
+      expect(history.applied.map((x) => x.id)).toEqual([a.id]);
+      expect(history.applied[0]!.checksum).toBe(a.checksum);
+    });
+
+    it("rolled-back：清除记录，使它重新待应用", async () => {
+      await writeMigration("20260911T120000_a", "select 1;");
+      await markFailedRecord("20260911T120000_a");
+
+      await makeMigrator().resolve({
+        migration: "20260911T120000_a",
+        action: "rolled-back",
+      });
+
+      expect(history.deleted).toEqual(["20260911T120000_a"]);
+      expect(history.applied).toEqual([]);
+    });
+
+    it("迁移不在磁盘上时拒绝", async () => {
+      await expect(
+        makeMigrator().resolve({ migration: "20260911T000000_nope", action: "applied" }),
+      ).rejects.toThrow(/不在磁盘上/);
+    });
+
+    it("闭环：失败迁移阻塞 deploy，resolve 后恢复可用", async () => {
+      await writeMigration("20260911T120000_a", "select 1;");
+      await markFailedRecord("20260911T120000_a");
+
+      // 未处理前：deploy 被拒绝
+      await expect(makeMigrator().deploy()).rejects.toThrow(/上次执行失败/);
+
+      // 清除失败记录后：重新变成待应用，deploy 正常
+      await makeMigrator().resolve({
+        migration: "20260911T120000_a",
+        action: "rolled-back",
+      });
+      const result = await makeMigrator().deploy();
+
+      expect(result.applied).toEqual(["20260911T120000_a"]);
+      expect(history.applied.map((a) => a.id)).toEqual(["20260911T120000_a"]);
     });
   });
 

@@ -30,6 +30,8 @@ const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
   deploy              应用所有未应用的迁移（部署 / CI 用）
   push                直接把数据库同步成模型的样子（不写迁移文件、不记历史）
   status              查看已应用 / 待应用的迁移
+  resolve --applied <id>      把迁移标记为已应用（SQL 已手工执行过）
+  resolve --rolled-back <id>  清除迁移的失败记录，让它重新待应用
 
 选项：
   --config <path>     指定配置文件（默认在项目根自动查找）
@@ -110,6 +112,8 @@ export async function run(
         return await runPush(runtime, log);
       case "status":
         return await runStatus(runtime, log);
+      case "resolve":
+        return await runResolve(runtime, flags, log, errorLog);
       default:
         errorLog(`未知命令 "${command}"。`);
         log(USAGE);
@@ -189,6 +193,34 @@ async function runStatus(runtime: Runtime, log: (message: string) => void): Prom
     log("没有待应用的迁移。");
   }
   return 0;
+}
+
+/** 手工修正迁移状态（失败后的恢复途径） */
+async function runResolve(
+  runtime: Runtime,
+  flags: ReadonlyMap<string, string | true>,
+  log: (message: string) => void,
+  errorLog: (message: string) => void,
+): Promise<number> {
+  const applied = flags.get("applied");
+  const rolledBack = flags.get("rolled-back");
+
+  if (typeof applied === "string" && typeof rolledBack === "string") {
+    errorLog("--applied 与 --rolled-back 只能选一个。");
+    return 1;
+  }
+  if (typeof applied === "string") {
+    await runtime.migrator.resolve({ migration: applied, action: "applied" });
+    log(`已标记为已应用：${applied}`);
+    return 0;
+  }
+  if (typeof rolledBack === "string") {
+    await runtime.migrator.resolve({ migration: rolledBack, action: "rolled-back" });
+    log(`已清除失败记录（将重新待应用）：${rolledBack}`);
+    return 0;
+  }
+  errorLog("resolve 需要 --applied <迁移 id> 或 --rolled-back <迁移 id>。");
+  return 1;
 }
 
 /** 破坏性变更的交互确认；`--force` 或非 TTY 下直接放行/拒绝 */

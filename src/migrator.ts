@@ -101,6 +101,18 @@ export interface MigrationStatus {
   readonly pending: ReadonlyArray<string>;
 }
 
+/** `resolve()` 的动作 */
+export type ResolveAction =
+  /** 标记为已应用（SQL 已经手工执行过） */
+  | "applied"
+  /** 清除失败记录（影响已回退，想重新应用） */
+  | "rolled-back";
+
+export interface ResolveOptions {
+  readonly migration: string;
+  readonly action: ResolveAction;
+}
+
 export class Migrator {
   private readonly _differ = new SchemaDiffer();
 
@@ -200,6 +212,32 @@ export class Migrator {
       })),
       pending: files.filter((f) => !appliedIds.has(f.id)).map((f) => f.id),
     };
+  }
+
+  /**
+   * 手工修正迁移状态 —— 失败后的恢复途径。
+   *
+   * - `applied`：记为已应用（适用于「这条 SQL 我已经手工执行过了」）
+   * - `rolled-back`：清除历史记录，让它重新变成待应用（适用于「影响已回退」）
+   *
+   * 没有这一步，一次失败的迁移会把 deploy / dev 永久卡住 —— `_assertNoFailed`
+   * 会一直拒绝，而使用者只能去手工改数据库表。
+   */
+  async resolve(options: ResolveOptions): Promise<void> {
+    return await this._withLocks(true, async () => {
+      const files = await this._options.files.listFiles();
+      const file = files.find((f) => f.id === options.migration);
+      if (file == null) {
+        throw new Error(
+          `迁移 "${options.migration}" 不在磁盘上（${this._options.migrationsDir}），无法修正状态。`,
+        );
+      }
+      if (options.action === "applied") {
+        await this._options.history.recordApplied(file);
+        return;
+      }
+      await this._options.history.delete(options.migration);
+    });
   }
 
   // ---- 内部 ----------------------------------------------------------------

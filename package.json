@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Schema migration engine for ts-grm — inspired by Prisma Migrate (prisma-engines) and drizzle-kit",
   "bin": {
-    "ts-grm-migrate": "./dist/cli.js"
+    "ts-grm-migrate": "./dist/cli.js",
+    "tgm": "./dist/cli.js"
   },
   "scripts": {
     "test": "vitest run --exclude tests/manual-postgres.test.ts",
