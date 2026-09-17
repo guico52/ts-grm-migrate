@@ -70,7 +70,7 @@ export type { SqlClientImplementor } from "@/sql_client";
 | `CHECK`（`column + values`，枚举检查） | `CheckConstraint`（expression） | 需拼成 `col IN (values)` 或按多态 discriminator 规则生成 |
 | `INDEX` | （模型侧无来源） | 联合类型存在但 ts-grm 从未创建索引 |
 
-**多态语义归一化**（README 已定的方向）：`when` 列 → 普通 nullable 列；discriminator 的 `CHECK` 约束可保留为 `CheckConstraint`（忠实于数据库实际），diff 按内容匹配。
+**多态语义归一化**（docs/design.md 已定的方向）：`when` 列 → 普通 nullable 列；discriminator 的 `CHECK` 约束可保留为 `CheckConstraint`（忠实于数据库实际），diff 按内容匹配。
 
 **缺失能力（ts-grm 模型侧不表达）**：`ColumnDef` 没有 default / autoIncrement / comment 字段，也没有自定义索引。
 → migrate 目标态这些字段恒为空。**语义层陷阱**：diff 时「目标态无 default」会被解释成「删除现有 default」还是「不管理」？需要在 diff 语义里约定（建议：模型推导的目标态中，缺失的 `default/autoIncrement/comment` 视为「不管理」，与 introspection 侧「明确无」区分；或明确模型侧永远无法表达这些属性，diff 忽略模型侧缺失字段的删除类变更）。**这是开放决策点（见 §6）**。

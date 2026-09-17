@@ -6,7 +6,7 @@
  *   保证「模型建的表 == 目标态 == 现状 introspection」自洽（不修正 ts-grm 的
  *   映射现状，否则 diff 会永远不相等）；
  * - 模型语义字段（entity/prop/when）丢弃——多态列归一化为普通 nullable 列
- *   （README 已定：多态语义的丢失由模型侧适配器负责）；
+ *   （docs/design.md 已定：多态语义的丢失由模型侧适配器负责）；
  * - migrate 特有字段（default/autoIncrement/comment/索引）模型侧无来源 → 空值，
  *   后续由补充声明机制填充；
  * - 约束名不填充（ts-grm 自动名 {table}_constraint_{n} 不可靠，diff 按内容匹配）。

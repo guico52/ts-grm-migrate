@@ -3,7 +3,7 @@
  *
  * CLI 与程序化调用共用这一层，这样「命令行能用」和「脚本里能用」走的是同一条路径。
  *
- * 组装链（正是 README 里写的那条）：
+ * 组装链（正是 docs/design.md 里写的那条）：
  *   EntityManager.of(cwd, ...models)   ← 触发模型注册，取回全部 entity
  *   newSqlClient(PostgresDriver(pool), { entityManager })
  *   createSchema(sqlClient)            ← 上游 API，结构在 tableDefs 上（见 vendor 层）
