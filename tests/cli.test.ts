@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs, run } from "../src/cli";
 import { loadConfig } from "../src/config";
+
+const execFileAsync = promisify(execFile);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 describe("parseArgs", () => {
   it("第一个位置参数是命令", () => {
@@ -90,6 +97,44 @@ describe("loadConfig", () => {
     );
     const loaded = await loadConfig(dir, "custom.config.mjs");
     expect(loaded.config.models).toEqual(["./x"]);
+  });
+});
+
+describe("CLI 入口结构（防止循环依赖死锁）", () => {
+  it("cli.ts 顶层不得使用 top-level await", async () => {
+    const source = await readFile(path.join(HERE, "../src/cli.ts"), "utf8");
+    // cli.js 被 index.js 再导出（库入口对外提供 run/parseArgs），
+    // 而使用者的配置文件又会 import 库入口 —— 若 cli.js 停在 TLA，
+    // 环上两个模块会互相等待而死锁（实测会静默退出）。
+    expect(source).not.toMatch(/^await /m);
+    expect(source).toMatch(/main\(\)\.catch/);
+  });
+});
+
+describe("CLI 可执行入口（需要先 build）", () => {
+  const distCli = path.resolve(HERE, "../dist/cli.js");
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "tsgrm-cli-entry-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("通过 node_modules/.bin 这类符号链接启动时能正常运行（不静默退出）", async () => {
+    if (!existsSync(distCli)) {
+      return; // 未构建则跳过（CI 上先 build 再跑测试即可覆盖）
+    }
+    // 模拟 node_modules/.bin/tgm：符号链接指向真实产物
+    const link = path.join(dir, "tgm");
+    await symlink(distCli, link);
+
+    const { stdout } = await execFileAsync(process.execPath, [link, "--help"]);
+
+    expect(stdout).toContain("ts-grm-migrate");
+    expect(stdout).toContain("用法");
   });
 });
 
