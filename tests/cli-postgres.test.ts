@@ -115,6 +115,15 @@ describePg("CLI 端到端（真实数据库）", () => {
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
+  it("dev：省略名字时迁移只用时间戳命名", async () => {
+    const code = await runCli(["dev", "--config", configPath]);
+
+    expect(code).toBe(0);
+    // 迁移 id 是纯 14 位时间戳，不带下划线后缀
+    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{14}\b/);
+    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
+  });
+
   it("status：无迁移 / 已应用 / 待应用都能正确汇报", async () => {
     await runCli(["status", "--config", configPath]);
     expect(logs.join("\n")).toContain("没有任何迁移");

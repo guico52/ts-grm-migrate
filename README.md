@@ -43,8 +43,9 @@ export default defineConfig({
 然后：
 
 ```sh
-tgm dev --name init     # 对比模型与数据库，生成并应用第一个迁移
-tgm status              # 看看应用了哪些、还剩哪些
+tgm dev -n init          # 对比模型与数据库，生成并应用第一个迁移
+tgm dev                  # 不写名字也行：迁移只用时间戳命名
+tgm status               # 看看应用了哪些、还剩哪些
 ```
 
 ### 配置项
@@ -63,14 +64,14 @@ tgm status              # 看看应用了哪些、还剩哪些
 
 | 命令 | 用途 |
 | --- | --- |
-| `tgm dev --name <名字>` | 对比模型与数据库，生成并应用一个迁移（开发用） |
+| `tgm dev [-n <名字>]` | 对比模型与数据库，生成并应用一个迁移（开发用；名字可省略，省略时只用时间戳命名） |
 | `tgm deploy` | 应用所有未应用的迁移（部署 / CI 用，无交互） |
 | `tgm push [--force]` | 直接同步成模型的样子，不写文件、不记历史 |
 | `tgm status` | 查看已应用 / 待应用的迁移 |
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--config <path>` 指定配置文件、`--force` 破坏性变更不询问、`-h` 显示帮助。
+选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`-h` 显示帮助。
 
 ## 行为约定
 

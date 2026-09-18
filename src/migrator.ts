@@ -171,8 +171,9 @@ export class Migrator {
   /**
    * 生成并应用新迁移（dev 路径）。
    * 与数据库无差异时不产生文件；破坏性变更的确认交给 CLI 层（`Diff.destructive`）。
+   * `name` 可省略，省略时迁移只用时间戳命名。
    */
-  async dev(options: { readonly name: string }): Promise<DevResult> {
+  async dev(options: { readonly name?: string }): Promise<DevResult> {
     return await this._withLocks(true, async () => {
       this._assertNoFailed(await this._effectiveApplied());
       const diff = await this._diffAgainstDatabase();
@@ -182,7 +183,7 @@ export class Migrator {
       await this._confirmIfNeeded(diff);
 
       const sql = toSqlFile(this._options.ddl.statements(diff));
-      const id = generateMigrationId(new Date(), options.name);
+      const id = generateMigrationId(new Date(), options.name ?? "");
       const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
 
       await this._options.files.write(file);

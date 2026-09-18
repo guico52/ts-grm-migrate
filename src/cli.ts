@@ -30,7 +30,8 @@ const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
   ts-grm-migrate <命令> [选项]
 
 命令：
-  dev --name <名字>   对比模型与数据库，生成并应用一个迁移（开发用）
+  dev [--name <名字>]  对比模型与数据库，生成并应用一个迁移（开发用）
+                       不给名字时用纯时间戳命名
   deploy              应用所有未应用的迁移（部署 / CI 用）
   push                直接把数据库同步成模型的样子（不写迁移文件、不记历史）
   status              查看已应用 / 待应用的迁移
@@ -38,6 +39,7 @@ const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
   resolve --rolled-back <id>  标记迁移已回滚，它将重新待应用
 
 选项：
+  -n, --name <名字>   迁移名（dev 命令用；可省略，省略时只用时间戳）
   --config <path>     指定配置文件（默认在项目根自动查找）
   --force             破坏性变更不询问，直接执行（非交互环境下必需）
   -h, --help          显示本帮助
@@ -47,6 +49,13 @@ const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
 `;
 
 /** 解析 argv：`--k v` / `--k=v` / `-h` / 位置参数（第一个位置参数是命令） */
+/**
+ * 短选项 → 长选项别名。
+ * 只有登记过的短选项才会吃掉下一个参数，其余一律按布尔开关处理
+ * （否则 `-h dev` 会把命令名当成 help 的值）。
+ */
+const SHORT_FLAG_ALIASES: Record<string, string> = { n: "name" };
+
 export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   const flags = new Map<string, string | true>();
   let command: string | undefined;
@@ -68,7 +77,21 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
         flags.set(name, true);
       }
     } else if (arg.startsWith("-") && arg.length > 1) {
-      flags.set(arg.slice(1), true);
+      const short = arg.slice(1);
+      const eq = short.indexOf("=");
+      if (eq >= 0) {
+        const key = short.slice(0, eq);
+        flags.set(SHORT_FLAG_ALIASES[key] ?? key, short.slice(eq + 1));
+        continue;
+      }
+      const canonical = SHORT_FLAG_ALIASES[short];
+      const next = argv[i + 1];
+      if (canonical != null && next != null && !next.startsWith("-")) {
+        flags.set(canonical, next);
+        i++;
+      } else {
+        flags.set(canonical ?? short, true);
+      }
     } else if (command == null) {
       command = arg;
     }
@@ -143,11 +166,9 @@ async function runDev(
   log: (message: string) => void,
   errorLog: (message: string) => void,
 ): Promise<number> {
-  if (typeof name !== "string" || name.trim() === "") {
-    errorLog("dev 需要 --name <迁移名>，例如：tgm dev --name init");
-    return 1;
-  }
-  const result = await runtime.migrator.dev({ name: name.trim() });
+  // name 可选：不给就用纯时间戳命名（由 migrator 层的 generateMigrationId 负责）
+  const migrationName = typeof name === "string" ? name.trim() : "";
+  const result = await runtime.migrator.dev({ name: migrationName });
   if (!result.applied) {
     log("模型与数据库结构一致，无需迁移。");
     return 0;
