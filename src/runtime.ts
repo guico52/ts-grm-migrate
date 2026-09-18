@@ -145,6 +145,12 @@ interface ManagedPool extends PgPoolLike {
  * 建连接池。pg 是**可选** peer 依赖：只有 postgres 方言才需要它，
  * 因此放在这里动态 import，缺失时给可操作的提示而不是模块解析崩溃。
  */
+/**
+ * 连接建立（含主机名解析）的默认上限。
+ * 主机名解析偶发卡住时，pg 会无限等待；有上限才能报错而非挂死。
+ */
+const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
+
 async function createPool(config: MigrateConfig): Promise<ManagedPool> {
   let Pool: new (config: unknown) => ManagedPool;
   try {
@@ -158,7 +164,13 @@ async function createPool(config: MigrateConfig): Promise<ManagedPool> {
     );
   }
 
-  const poolConfig: Record<string, unknown> = { ...config.database };
+  const poolConfig: Record<string, unknown> = {
+    // 连接建立（含主机名解析）必须有上限。主机名解析偶发卡住时（实测
+    // systemd-resolved 抖动），pg 的 pool.connect() 会无限等待，
+    // 表现为 CLI 静默挂死到外层超时 —— 加了上限才会快速报错。
+    connectionTimeoutMillis: DEFAULT_CONNECTION_TIMEOUT_MS,
+    ...config.database,
+  };
   const schema = config.schema;
   if (schema != null && schema !== "public") {
     // 让整个会话默认落在目标 schema。迁移 SQL 不带 schema 前缀，

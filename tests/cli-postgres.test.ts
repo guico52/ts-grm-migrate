@@ -6,7 +6,8 @@
  *
  * 运行：`PG_HOST=... PG_PASSWORD=... yarn vitest run tests/cli-postgres.test.ts`
  */
-import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeEach, beforeAll } from "vitest";
+import { lookup } from "node:dns/promises";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -30,7 +31,7 @@ const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
 // 注：这些用例会建/删 schema，需连真实数据库；无 PG_HOST 时整体跳过。
 describePg("CLI 端到端（真实数据库）", () => {
-  const pool = new Pool({ ...PG_CONFIG, max: 2 });
+  let pool: Pool;
   let dir: string;
   let configPath: string;
   /**
@@ -48,8 +49,23 @@ describePg("CLI 端到端（真实数据库）", () => {
       errorLog: (m) => errors.push(m),
     });
 
+  beforeAll(async () => {
+    // 主机名只解析一次，之后一律用 IP 建连。
+    // 直接给 pg 传域名时每次新建连接都要走 getaddrinfo，而本机解析器
+    // 偶发抖动会让 pool.connect() 长时间挂起（实测把 CLI 卡到外层超时，
+    // 与 migrate 逻辑无关）。解析一次既保留域名的配置方式，
+    // 又不让 DNS 抖动污染测试结论。
+    try {
+      const { address } = await lookup(PG_HOST ?? "");
+      PG_CONFIG.host = address;
+    } catch {
+      // 解析失败就保留域名，让连接错误自然暴露
+    }
+    pool = new Pool({ ...PG_CONFIG, max: 2 });
+  });
+
   afterAll(async () => {
-    await pool.end();
+    await pool?.end();
   });
 
   beforeEach(async () => {
