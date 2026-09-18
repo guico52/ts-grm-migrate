@@ -192,7 +192,7 @@ describe("PostgresDdlGenerator", () => {
     const book = table("BOOK", [col("ID", "integer"), col("TITLE", "text")], [pk(["ID"])]);
     const d = diff([
       { kind: "CREATE_TABLE", table: book },
-      { kind: "DROP_TABLE", table: "OLD" },
+      { kind: "DROP_TABLE", table: "OLD", foreignKeyNames: [] },
       {
         kind: "ALTER_TABLE",
         table: "BOOK",
@@ -206,9 +206,41 @@ describe("PostgresDdlGenerator", () => {
     ]);
     expect(new PostgresDdlGenerator().statements(d)).toEqual([
       'create table "BOOK" (\n  "ID" integer not null,\n  "TITLE" text not null,\n  constraint "BOOK_pk" primary key ("ID")\n)',
-      'drop table "OLD"',
       'create unique index "BOOK_title_idx" on "BOOK" ("TITLE")',
       'drop index "OLD_idx"',
+      // 删表统一排在最后（先摘外键、再删表，见下个用例）
+      'drop table "OLD"',
+    ]);
+  });
+
+  it("DROP_TABLE：先摘掉该表自己的外键，再删表", () => {
+    const d = diff([
+      { kind: "DROP_TABLE", table: "BOOK", foreignKeyNames: ["book_author_id_fkey"] },
+    ]);
+
+    expect(new PostgresDdlGenerator().statements(d)).toEqual([
+      'alter table "BOOK" drop constraint "book_author_id_fkey"',
+      'drop table "BOOK"',
+    ]);
+    // SQLite 没有 alter table ... drop constraint，删表时也不校验外键依赖
+    expect(new SqliteDdlGenerator().statements(d)).toEqual(['drop table "BOOK"']);
+  });
+
+  it("DROP_TABLE（多表）：所有摘外键都排在所有删表之前", () => {
+    // 字母序下一个被引用的表（book）会排在引用它的表（中间表）之前，
+    // 若按表逐个「摘外键→删表」，book 会先被删而中间表的外键还没摘 → PG 拒绝。
+    const d = diff([
+      { kind: "DROP_TABLE", table: "book", foreignKeyNames: [] },
+      { kind: "DROP_TABLE", table: "book_tag_mapping", foreignKeyNames: ["m_book_fk", "m_tag_fk"] },
+      { kind: "DROP_TABLE", table: "tag", foreignKeyNames: [] },
+    ]);
+
+    expect(new PostgresDdlGenerator().statements(d)).toEqual([
+      'alter table "book_tag_mapping" drop constraint "m_book_fk"',
+      'alter table "book_tag_mapping" drop constraint "m_tag_fk"',
+      'drop table "book"',
+      'drop table "book_tag_mapping"',
+      'drop table "tag"',
     ]);
   });
 

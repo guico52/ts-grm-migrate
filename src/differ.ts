@@ -65,8 +65,17 @@ export class SchemaDiffer implements Differ {
     // 2) 现状有而目标没有的表：删除
     for (const fromTable of from.tables) {
       if (!toMap.has(fromTable.name)) {
-        changes.push({ kind: "DROP_TABLE", table: fromTable.name });
-        destructive.push({ kind: "DROP_TABLE", table: fromTable.name });
+        // 带上该表自身的外键名：DDL 层据此在删表前先摘掉它们，
+        // 否则被引用的表（同样要删）会因依赖关系删不掉（见 DropTable 注释）。
+        // 被删表来自 introspection，约束名必定存在；缺失就宁可不生成语句，
+        // 让错误在数据库里暴露，而不是静默跳过。
+        const foreignKeyNames = fromTable.constraints
+          .filter((c) => c.kind === "FOREIGN_KEY")
+          .map((c) => c.name)
+          .filter((name): name is string => name != null);
+
+        changes.push({ kind: "DROP_TABLE", table: fromTable.name, foreignKeyNames });
+        destructive.push({ kind: "DROP_TABLE", table: fromTable.name, foreignKeyNames });
       }
     }
 

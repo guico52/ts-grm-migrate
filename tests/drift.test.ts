@@ -33,7 +33,7 @@ describe("describeDiff（对账报告）", () => {
     const drift = describeDiff(
       diff([
         { kind: "CREATE_TABLE", table: table("A") },
-        { kind: "DROP_TABLE", table: "B" },
+        { kind: "DROP_TABLE", table: "B", foreignKeyNames: [] },
       ]),
     );
     expect(drift).toEqual([
