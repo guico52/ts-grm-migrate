@@ -9,7 +9,7 @@
  *   见 src/ddl/sqlite.ts）。
  * - 标识符一律加引号（表/列名来自数据库实际名字，防保留字与大小写折叠）。
  */
-import type { AlterTable, ColumnChange, ConstraintChange, IndexChange } from "../diff/types.js";
+import type { AlterTable, ColumnChange, ConstraintChange, DropTable, IndexChange } from "../diff/types.js";
 import type { Diff } from "../diff/types.js";
 import type { Schema, Table as SchemaTable } from "../schema/model.js";
 import {
@@ -29,18 +29,36 @@ export class PostgresDdlGenerator implements DdlGenerator {
 
   statements(diff: Diff): ReadonlyArray<string> {
     const sql: Array<string> = [];
+    const drops: Array<DropTable> = [];
     for (const change of diff.changes) {
       switch (change.kind) {
         case "CREATE_TABLE":
           sql.push(createTableSql(change.table));
           break;
         case "DROP_TABLE":
-          sql.push(`drop table ${q(change.table)}`);
+          drops.push(change);
           break;
         case "ALTER_TABLE":
           sql.push(...this._alterTable(change));
           break;
       }
+    }
+
+    // 删表分两阶段，且「全部先摘外键、再全部删表」：
+    // 若按表逐个「摘自己的外键 → 删自己」，被引用的表会先被删掉，
+    // 而引用它的表（同样要删）此时外键还没摘 → PG 报
+    // `cannot drop table X because other objects depend on it`，
+    // 整个迁移事务回滚（实测：book / book_tag_mapping / tag 三表，
+    // 字母序下 book 先被删即失败）。
+    // 摘完所有外键后，各 drop table 之间再无依赖，与遍历顺序无关。
+    // 对应 prisma 把 DropForeignKey 作为独立步骤并排在 DropTable 之前。
+    for (const drop of drops) {
+      for (const name of drop.foreignKeyNames) {
+        sql.push(`alter table ${q(drop.table)} drop constraint ${q(name)}`);
+      }
+    }
+    for (const drop of drops) {
+      sql.push(`drop table ${q(drop.table)}`);
     }
     return sql;
   }

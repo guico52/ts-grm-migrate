@@ -21,6 +21,15 @@
 - diff **忽略列顺序**；约束/索引按内容匹配而非名字
 - **破坏性操作可识别**（`Diff.destructive`），供 CLI 确认 / data-loss 警告
 - introspection 是外部输入路径：错误处理优雅报错，绝不 fail-fast
+- **删表分两阶段**：先把被删表**自身**的外键全部摘掉，再删所有表。
+  否则被引用的表（同样要删）会因依赖关系删不掉 —— PG 报
+  `cannot drop table ... because other objects depend on it`，整个迁移事务回滚。
+  摘完外键后各 `drop table` 无依赖，与遍历顺序（introspection 的字母序）无关。
+  对应 prisma 把 `DropForeignKey` 作为独立步骤、排序后置于 `DropTable` 之前
+  （其 `should_drop_foreign_keys_from_dropped_tables` 默认 true）。
+  注意：**不使用 `drop table ... cascade`** —— 它会静默删掉一切依赖对象
+  （包括模型里没有概念的视图），与「不静默破坏、错误要可见」冲突；
+  prisma 也只把它用在「重定义表」的内部流程里
 - PG 的 DDL 可事务：每个迁移一个事务 + advisory lock 防并发
 - **定位：开发期工具**。在开发者机器上作为独立进程运行，用 `EntityManager.of()` 加载
   使用者的全部 model，据此管理数据库版本；因此与宿主共享同一份 ts-grm 实例

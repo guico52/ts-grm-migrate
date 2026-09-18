@@ -85,8 +85,27 @@ describe("SchemaDiffer 表级别", () => {
   it("删除表 → DROP_TABLE（破坏）", () => {
     const from = schema([table("A", [col("ID", "integer")])]);
     const d = differ.diff(from, empty());
-    expect(d.changes).toEqual([{ kind: "DROP_TABLE", table: "A" }]);
-    expect(d.destructive).toEqual([{ kind: "DROP_TABLE", table: "A" }]);
+    expect(d.changes).toEqual([{ kind: "DROP_TABLE", table: "A", foreignKeyNames: [] }]);
+    expect(d.destructive).toEqual([{ kind: "DROP_TABLE", table: "A", foreignKeyNames: [] }]);
+  });
+
+  it("删除有外键的表 → 带上该表自身的外键名（供 DDL 先摘掉）", () => {
+    const from = schema([
+      table("A", [col("ID", "integer")], [pk(["ID"])]),
+      table("B", [col("ID", "integer"), col("A_ID", "integer")], [
+        pk(["ID"]),
+        { ...fk(["A_ID"], "A", ["ID"]), name: "b_a_id_fkey" },
+      ]),
+    ]);
+
+    const d = differ.diff(from, empty());
+
+    // A 自己没有外键；B 的指向 A —— DDL 必须先把 B 的外键摘掉，
+    // 否则字母序下先删 A 会被 B 的外键拦住（实测 PG 报错并回滚迁移）。
+    expect(d.changes).toEqual([
+      { kind: "DROP_TABLE", table: "A", foreignKeyNames: [] },
+      { kind: "DROP_TABLE", table: "B", foreignKeyNames: ["b_a_id_fkey"] },
+    ]);
   });
 });
 

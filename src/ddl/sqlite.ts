@@ -36,6 +36,8 @@ export class SqliteDdlGenerator implements DdlGenerator {
           sql.push(...this._createTable(change.table));
           break;
         case "DROP_TABLE":
+          // 不处理 change.foreignKeyNames：SQLite 没有 `alter table ... drop
+          // constraint`，且它删表时不校验外键依赖，不存在 PG 那个问题。
           sql.push(`drop table ${q(change.table)}`);
           break;
         case "ALTER_TABLE":

@@ -109,6 +109,19 @@ export interface CreateTable {
 export interface DropTable {
   readonly kind: "DROP_TABLE";
   readonly table: string;
+  /**
+   * 该表**自身**的外键约束名（现状库里的实际名字）。
+   *
+   * DDL 生成时会把这些外键**全部**先摘掉，再删所有表（两个阶段，
+   * 不是按表逐个处理）：否则被某个外键引用的表（同样要删）会因依赖
+   * 关系删不掉，PG 报 `cannot drop table ... because other objects depend
+   * on it`，整个迁移事务回滚（实测：book / tag / book_tag_mapping 三表，
+   * introspection 的字母序让 book 先于中间表被删即失败）。
+   * 摘完外键后各 `drop table` 再无依赖，与遍历顺序无关。
+   *
+   * 对应 prisma 把 `DropForeignKey` 作为独立步骤、排序后置于 `DropTable` 之前。
+   */
+  readonly foreignKeyNames: ReadonlyArray<string>;
 }
 
 /** 可能丢失数据的操作子集（带表名上下文，便于 CLI 提示） */
