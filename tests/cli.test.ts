@@ -41,6 +41,28 @@ describe("parseArgs", () => {
     expect(parseArgs(["-h"]).flags.get("h")).toBe(true);
   });
 
+  it("-n 是 --name 的别名，可取值", () => {
+    const { command, flags } = parseArgs(["dev", "-n", "init"]);
+    expect(command).toBe("dev");
+    expect(flags.get("name")).toBe("init");
+  });
+
+  it("-n=value 形式", () => {
+    expect(parseArgs(["dev", "-n=init"]).flags.get("name")).toBe("init");
+  });
+
+  it("-n 后跟另一个选项时不吃掉它", () => {
+    const { flags } = parseArgs(["dev", "-n", "--force"]);
+    expect(flags.get("name")).toBe(true);
+    expect(flags.get("force")).toBe(true);
+  });
+
+  it("未登记的短选项不吞参数（-h dev 的命令仍是 dev）", () => {
+    const { command, flags } = parseArgs(["-h", "dev"]);
+    expect(command).toBe("dev");
+    expect(flags.get("h")).toBe(true);
+  });
+
   it("无参数时命令为 undefined", () => {
     expect(parseArgs([]).command).toBeUndefined();
   });
