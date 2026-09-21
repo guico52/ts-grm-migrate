@@ -1,5 +1,5 @@
 {
-  "name": "@ts-grm/migrate",
+  "name": "ts-grm-migrate",
   "version": "0.0.0",
   "private": true,
   "packageManager": "yarn@4.1.0",

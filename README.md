@@ -1,4 +1,4 @@
-# @ts-grm/migrate
+# ts-grm-migrate
 
 [ts-grm](https://github.com/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
 但**模型就是你写的 ts-grm 代码**，不需要额外的 schema 文件，也没有代码生成步骤。
@@ -14,7 +14,7 @@
 ## 安装
 
 ```sh
-yarn add -D @ts-grm/migrate
+yarn add -D ts-grm-migrate
 ```
 
 - `@ts-grm/core` / `@ts-grm/sql` 是 **peerDependencies**，由你的项目提供
@@ -32,7 +32,7 @@ yarn add -D @ts-grm/migrate
 
 ```ts
 // ts-grm-migrate.config.ts
-import { defineConfig } from "@ts-grm/migrate";
+import { defineConfig } from "ts-grm-migrate";
 
 export default defineConfig({
   database: { host: "localhost", database: "app", user: "postgres" },

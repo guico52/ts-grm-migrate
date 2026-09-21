@@ -375,7 +375,7 @@ function isEntryPoint(): boolean {
 
 if (isEntryPoint()) {
   // 刻意**不用 top-level await**：cli.js 被 index.js 再导出（库入口对外提供 run/parseArgs），
-  // 而使用者的配置文件又会 `import { defineConfig } from "@ts-grm/migrate"` →
+  // 而使用者的配置文件又会 `import { defineConfig } from "ts-grm-migrate"` →
   // 形成 cli.js → config → index.js → cli.js 的环。若 cli.js 停在 TLA，
   // 环上两个模块会互相等待而死锁（表现为 `unsettled top-level await` 后静默退出）。
   // 这里 fire-and-forget：cli.js 求值立即完成，进程由 main() 内部的 I/O 保持存活。
