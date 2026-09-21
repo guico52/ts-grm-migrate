@@ -26,11 +26,17 @@ import type { SchemaDriver } from "./schema/adapter.js";
 import type { TableDef } from "./vendor/ts-grm.js";
 import type { Dialect } from "./introspector.js";
 
+/** Both states from the same introspection/diff pass, needed by whole-column DDL. */
+export interface DdlContext {
+  readonly from: Schema;
+  readonly to: Schema;
+}
+
 export interface DdlGenerator {
   readonly dialect: Dialect;
 
   /** 把 diff 渲染为按序执行的 SQL 语句数组 */
-  statements(diff: Diff): ReadonlyArray<string>;
+  statements(diff: Diff, context?: DdlContext): ReadonlyArray<string>;
 
   /**
    * 把整个 schema 渲染为建表 SQL（用于重建表路径 / 影子库初始化）。

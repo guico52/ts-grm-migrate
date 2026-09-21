@@ -27,6 +27,9 @@ export type { DialectName } from "./dialect.js";
  * - sqlite：用 `file` 指定库文件（相对项目根；`:memory:` 为内存库），其余字段忽略。
  */
 export interface DatabaseConfig {
+  /** SQL Server TLS options. Defaults: encrypt=true, trustServerCertificate=false. */
+  readonly encrypt?: boolean;
+  readonly trustServerCertificate?: boolean;
   readonly host?: string;
   readonly port?: number;
   readonly database?: string;
@@ -41,8 +44,7 @@ export interface MigrateConfig {
   /**
    * 方言，默认 "postgres"。
    *
-   * 接受全部 ts-grm 方言名，但**只有 postgres 与 sqlite 端到端可用**；
-   * 其余方言会在装配运行时前被拒掉并给出准确提示（见 src/dialect.ts）。
+   * postgres / sqlite / mysql / mssql / oracle 均有实现，版本和功能边界见 README。
    *
    * sqlite 时用 `database.file` 指定库文件（相对项目根，或 ":memory:"），
    * 且**不能**配 `schema`（SQLite 没有 schema 概念，配了会报错）。
@@ -57,7 +59,7 @@ export interface MigrateConfig {
   readonly models: ReadonlyArray<string>;
   /** 迁移文件目录（相对项目根），默认 `./src/ts-grm` */
   readonly migrationsDir?: string;
-  /** 目标 schema 名，默认 `public` */
+  /** 目标 schema：PG 默认 public，SQL Server 默认 dbo，Oracle 默认登录用户 schema。 */
   readonly schema?: string;
   /** 进程锁文件（相对项目根），默认 `./.ts-grm-migrate.lock` */
   readonly lockPath?: string;

@@ -13,11 +13,24 @@
  * 哪些方言可用由 `src/dialect.ts` 的注册表决定（未实现在装配前就拒掉）。
  */
 import path from "node:path";
+import { MysqlDdlGenerator } from "./ddl/mysql.js";
+import { MysqlSqlExecutor } from "./executor/mysql.js";
+import { SqlServerDdlGenerator } from "./ddl/sqlserver.js";
+import { openSqlServer, openOracle } from "./server/connections.js";
+import { OracleDdlGenerator } from "./ddl/oracle.js";
+import { OracleIntrospector } from "./introspector/oracle.js";
+import { SqlServerIntrospector } from "./introspector/sqlserver.js";
+import { MysqlIntrospector } from "./introspector/mysql.js";
 import {
   createSchema,
   EntityManager,
   newSqlClient,
   PostgresDriver,
+  MySqlDriver,
+  SqlServerDriver,
+  OracleDriver,
+  OraclePool,
+  SqlServerPool,
   SqliteDriver,
   type SqlClientImplementor,
 } from "./vendor/ts-grm.js";
@@ -99,6 +112,7 @@ interface DialectConnection {
   readonly introspector: Introspector;
   /** 交给 `newSqlClient` 的上游 driver */
   readonly driver: unknown;
+  readonly schema?: string;
   close(): Promise<void>;
 }
 
@@ -120,7 +134,48 @@ async function createConnection(
     };
   }
 
-  // postgres（注册表已保证只有已实现的方言能走到这里）
+  if (dialect === "mysql") {
+    if (config.schema != null) throw new Error('mysql 请使用 database.database 选择数据库，不支持 schema 配置');
+    let mysql: typeof import("mysql2/promise");
+    try { mysql = await import("mysql2/promise"); }
+    catch { throw new Error("mysql 方言需要 mysql2 依赖，请先安装：yarn add mysql2"); }
+    const { connectionString, file: _file, ...settings } = config.database;
+    const pool = mysql.createPool(connectionString
+      ? { uri: connectionString, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS }
+      : { ...settings, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS });
+    const executor = new MysqlSqlExecutor(pool as never);
+    try {
+      const { rows } = await executor.query("select version() as version, database() as db, @@lower_case_table_names as folding");
+      const version = String(rows[0]?.version ?? "");
+      const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+      if (/mariadb/i.test(version) || major < 8 || (major === 8 && minor === 0 && patch < 16)) {
+        throw new Error(`mysql 需要 MySQL 8.0.16+（当前 ${version}）；MariaDB 尚未验证`);
+      }
+      if (!rows[0]?.db) throw new Error("mysql 连接必须指定 database.database 或 connectionString 中的数据库");
+      if (Number(rows[0]?.folding) !== 0) throw new Error("mysql 当前仅支持 lower_case_table_names=0，以保证模型和物理表名一致");
+      return { executor, introspector: new MysqlIntrospector({ query: executor }),
+        driver: new MySqlDriver(pool as unknown as ConstructorParameters<typeof MySqlDriver>[0]),
+        close: () => pool.end() };
+    } catch (error) { await pool.end(); throw error; }
+  }
+  if (dialect === "mssql") {
+    const schema = config.schema ?? "dbo";
+    const connection = await openSqlServer(config.database, schema);
+    return { ...connection,
+      introspector: new SqlServerIntrospector({ query: connection.executor, schema: connection.schema }),
+      driver: new SqlServerDriver(new SqlServerPool({ server: config.database.host ?? "localhost" })),
+    };
+  }
+  if (dialect === "oracle") {
+    const connection = await openOracle(config.database, config.schema);
+    return { ...connection,
+      introspector: new OracleIntrospector({ query: connection.executor, schema: connection.schema }),
+      driver: new OracleDriver(new OraclePool({ user: config.database.user })),
+    };
+  }
+  if (dialect !== "postgres") throw new Error(`方言 ${dialect} 尚未实现`);
+
+  // postgres
   const pool = await createPool(config);
   const executor = new PostgresSqlExecutor(pool);
   return {
@@ -149,7 +204,7 @@ async function assembleRuntime(
   const { executor, introspector, driver } = connection;
   const migrationsDir = path.resolve(cwd, config.migrationsDir ?? DEFAULT_MIGRATIONS_DIR);
   const lockPath = path.resolve(cwd, config.lockPath ?? DEFAULT_LOCK_PATH);
-  const schema = config.schema ?? "public";
+  const schema = connection.schema ?? config.schema ?? "public";
 
   if (dialect === "postgres") {
     // 非 public 时确保目标 schema 存在（幂等）：search_path 指向不存在的 schema
@@ -159,7 +214,7 @@ async function assembleRuntime(
         `create schema if not exists ${quoteIdentifier(schema)}`,
       ]);
     }
-  } else if (schema !== "public") {
+  } else if (dialect !== "mssql" && dialect !== "oracle" && schema !== "public") {
     // SQLite 没有 schema 概念（只有 main / attached）。显式配了别的名字说明
     // 使用者的预期与方言不符，宁可报错也不要静默忽略。
     throw new Error(
@@ -179,11 +234,14 @@ async function assembleRuntime(
   // 持有，在那里回填。Postgres 不需要，留空即可。
   const ddlOptions: DdlGeneratorOptions = {};
   const ddl: DdlGenerator =
-    dialect === "sqlite" ? new SqliteDdlGenerator(ddlOptions) : new PostgresDdlGenerator();
+    dialect === "sqlite" ? new SqliteDdlGenerator(ddlOptions)
+      : dialect === "mysql" ? new MysqlDdlGenerator()
+      : dialect === "mssql" ? new SqlServerDdlGenerator(schema)
+      : dialect === "oracle" ? new OracleDdlGenerator(schema) : new PostgresDdlGenerator();
 
   const migrator = new Migrator({
     files: new FileMigrationStore(migrationsDir),
-    history: new DatabaseMigrationHistoryStore({ executor, dialect }),
+    history: new DatabaseMigrationHistoryStore({ executor, dialect, schema }),
     executor,
     introspector,
     ddl,

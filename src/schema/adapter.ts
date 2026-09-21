@@ -13,6 +13,9 @@
  */
 import type {ColumnDef, ConstraintDef, SchemaDriver, TableDef,} from "../vendor/ts-grm.js";
 import type {CheckConstraint, Column, Constraint, ForeignKeyConstraint, OnDelete, Schema, Table,} from "./model.js";
+import { normalizeServerType } from "../server/sql.js";
+import { normalizeServerExpression } from "../server/catalog.js";
+import { normalizeMysqlType, normalizeMysqlCheck } from "../mysql/sql.js";
 import type { DialectName } from "../dialect.js";
 
 /**
@@ -41,16 +44,16 @@ export type { SchemaDriver };
  */
 function toPhysicalName(value: string, dialect: DialectName): string {
   if (value.startsWith("\"") && value.endsWith("\"")) {
-    return value.slice(1, -1);
+    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
   }
   if (value.startsWith("`") && value.endsWith("`")) {
-    return value.slice(1, -1);
+    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
   }
   if (value.startsWith("[") && value.endsWith("]")) {
-    return value.slice(1, -1);
+    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
   }
   // 未加引号的标识符：PG 折叠为小写；MySQL / SQLite 原样保留（见上方注释）
-  return dialect === "postgres" ? value.toLowerCase() : value;
+  return dialect === "postgres" ? value.toLowerCase() : dialect === "oracle" ? value.toUpperCase() : value;
 }
 
 /** ts-grm 的 CascadeType（ORM 语义）→ 数据库 ON DELETE 动作 */
@@ -69,7 +72,7 @@ function toOnDelete(cascade: string): OnDelete {
 /** 原生 CHECK（column + values）→ 表达式原文（与 ts-grm constraintCreationSql 同构） */
 function checkExpression(constraint: Extract<ConstraintDef, { readonly kind: "CHECK" }>): string {
   const values = constraint.values
-    .map((v) => (typeof v === "number" ? v.toString() : `'${v}'`))
+    .map((v) => (typeof v === "number" ? v.toString() : `'${v.replaceAll("'", "''")}'`))
     .join(", ");
   return `${constraint.column.name} in (${values})`;
 }
@@ -82,7 +85,8 @@ function toColumn(
 ): Column {
   return {
     name: toPhysicalName(columnDef.name, dialect),
-    type: driver.typeName(columnDef),
+    type: dialect === "mysql" ? normalizeMysqlType(driver.typeName(columnDef))
+      : dialect === "mssql" || dialect === "oracle" ? normalizeServerType(driver.typeName(columnDef), dialect) : driver.typeName(columnDef),
     nullable: columnDef.nullable,
     length: columnDef.length,
     default: undefined,
@@ -135,6 +139,8 @@ function toConstraint(
         name,
         values: constraint.values,
         expression: checkExpression(constraint),
+        ...(dialect === "mysql" ? { comparisonExpression: normalizeMysqlCheck(checkExpression(constraint)) }
+          : dialect === "mssql" || dialect === "oracle" ? { comparisonExpression: normalizeServerExpression(checkExpression(constraint)) } : {}),
         implicit: constraint.implicit,
       };
       return check;

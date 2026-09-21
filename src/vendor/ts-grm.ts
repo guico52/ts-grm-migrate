@@ -20,6 +20,7 @@
  * - `TableDef` / `ColumnDef` / `ConstraintDef` 上游未导出，此处按 dist 类型声明
  *   镜像（结构等价；子类型一律引用 core 的公开类型，不引入 any）。
  */
+import { MySqlDriver as UpstreamMySqlDriver } from "@ts-grm/sql";
 import type { CascadeType, ScalarType, SqlClient, spi } from "@ts-grm/core";
 
 // ---- 上游公开 API 的再导出（值）--------------------------------------------
@@ -28,7 +29,6 @@ export {
   newSqlClient,
   PostgresDriver,
   SqliteDriver,
-  MySqlDriver,
   OracleDriver,
   // 上游拼写就是 Drivier（不是笔误），此处沿用
   Oracle12Drivier,
@@ -142,4 +142,13 @@ export async function createSchema(
     );
   }
   return tableDefs;
+}
+
+/** Upstream 0.0.13 spells FLOAT as flat. Keep the correction at the upstream boundary.
+ * @see https://github.com/ts-grm/ts-grm/blob/main/packages/sql/src/driver/mysql_driver.ts
+ */
+export class MySqlDriver extends UpstreamMySqlDriver {
+  override typeName(column: Parameters<UpstreamMySqlDriver["typeName"]>[0]): string {
+    return column.type.kind === "F32" ? "float" : super.typeName(column);
+  }
 }

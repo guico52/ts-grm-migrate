@@ -25,18 +25,17 @@ export interface DialectInfo {
   /**
    * migrate 是否**端到端可用**（结构读取 + DDL 生成 + 语句执行都具备）。
    *
-   * `postgres` 与 `sqlite` 均为 true；mysql / mssql / oracle 只登记了上游驱动，
-   * migrate 侧尚无实现（见 src/introspector、src/ddl、src/executor 下各只有一个方言）。
+   * 五种方言均已接通；具体版本和能力边界见 README。
    */
   readonly implemented: boolean;
 }
 
 export const DIALECTS: ReadonlyArray<DialectInfo> = [
   { name: "postgres", tsGrmDrivers: ["PostgresDriver"], implemented: true },
-  { name: "mysql", tsGrmDrivers: ["MySqlDriver"], implemented: false },
+  { name: "mysql", tsGrmDrivers: ["MySqlDriver"], implemented: true },
   { name: "sqlite", tsGrmDrivers: ["SqliteDriver"], implemented: true },
-  { name: "mssql", tsGrmDrivers: ["SqlServerDriver", "SqlServer2012Driver"], implemented: false },
-  { name: "oracle", tsGrmDrivers: ["OracleDriver", "Oracle12Drivier"], implemented: false },
+  { name: "mssql", tsGrmDrivers: ["SqlServerDriver", "SqlServer2012Driver"], implemented: true },
+  { name: "oracle", tsGrmDrivers: ["OracleDriver", "Oracle12Drivier"], implemented: true },
 ];
 
 /** 全部方言名（供配置校验与错误提示） */

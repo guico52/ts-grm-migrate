@@ -112,17 +112,17 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 
 待办：`default` / `comment` / 索引在模型侧无来源，需补充声明机制填充。
 
-### 方言能力（待办）
+### 方言能力
 
 **方言注册表已就位**（`src/dialect.ts`）：一处维护「有哪些方言、上游由谁提供、migrate
 实现到哪一步」。ts-grm 的**驱动型号比方言多** —— SQL Server 有 2012 变体、Oracle 有
 12 变体（上游类名就是 `Oracle12Drivier`，拼写非笔误），共 7 个驱动归入 5 个方言：
 
-- `postgres` → `PostgresDriver`（**唯一端到端可用**）
-- `mysql` → `MySqlDriver`
+- `postgres` → `PostgresDriver`（**端到端可用**）
+- `mysql` → `MySqlDriver`（**端到端可用**：MySQL 8.0.16+ / InnoDB）
 - `sqlite` → `SqliteDriver`（**端到端可用**：introspector + executor + DDL 均已实现）
-- `mssql` → `SqlServerDriver` / `SqlServer2012Driver`
-- `oracle` → `OracleDriver` / `Oracle12Drivier`
+- `mssql` → `SqlServerDriver` / `SqlServer2012Driver`（迁移已实现，SQL Server 2016+）
+- `oracle` → `OracleDriver` / `Oracle12Drivier`（迁移已实现，Oracle 19c+）
 
 配置层接受全部方言名，但**未知方言在 `validateConfig` 就报错**，
 **已知但未实现**的方言由 `createRuntime` 在装配前拒掉（提示带上上游驱动名）；
@@ -167,7 +167,7 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
   唯一 / 外键 / CHECK / 索引；类型串与 ts-grm `typeName()` 对齐（见该文件头注释）
 - 迁移存储（`store.ts`）：磁盘 `<id>.sql` 文件 + 数据库 `_migrations` 历史表
 - 迁移应用器（`migrator.ts`）：`deploy` / `dev` / `push`；进程锁 + database advisory lock、
-  checksum 漂移检测、每个迁移一个事务、失败记入历史；diff 时自动剔除历史表
+  checksum 漂移检测、按方言执行事务或报告部分提交、失败记入历史；diff 时自动剔除历史表
   （否则会被当成业务表 DROP）
 - 对账（`drift.ts`）：迁移之后再确认一次「数据库 == 模型」，把差异转成可读报告
   （`deploy` / `dev` / `push` 自动调用，也可用 `migrator.checkDrift()`）
@@ -176,9 +176,9 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 - **CLI**（`cli.ts` + `config.ts` + `runtime.ts`）：`dev` / `deploy` / `push` / `status` /
   `resolve`，配置文件驱动、破坏性变更交互确认；与程序化调用共用同一条组装链
 
-测试 **153 用例通过**，含真实 Postgres 的 introspection / 端到端迁移 / CLI 套件
-（`tests/*-postgres.test.ts`、`tests/cli-postgres.test.ts`、`tests/manual-postgres.test.ts`，
-无 `PG_HOST` 时自动跳过）。`tsc --noEmit` 零错误。
+测试包括单元测试、SQLite 本地集成，以及 PostgreSQL / MySQL / SQL Server / Oracle 的真实数据库套件。
+未配置对应 `*_HOST` 时外部数据库套件跳过；SQL Server / Oracle 可用 `yarn test:servers`
+自动创建 Podman 测试环境。类型检查：`yarn typecheck`。
 
 **已知限制**（introspection）：
 
@@ -188,6 +188,25 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 
 **未实现**：SQLite 的**重建表**路径（drop column / 改类型 / 改约束）—— SQLite 无法原地执行，
 而正确的重建还要处理外部外键重定向、索引重建与数据搬迁，当前显式报错而非生成丢数据的语句；
-mysql / mssql / oracle 三个方言只有注册表占位。shadow database（应用前在临时库试跑）未做。
+五种数据库方言均有实现，具体版本与结构边界见 README。MySQL / Oracle DDL 可能隐式提交，失败后需检查数据库再 resolve。shadow database（应用前在临时库试跑）未做。
 
-下一步候选：SQLite 重建表路径；或按可用的数据库环境补 mysql / mssql / oracle。
+下一步候选：SQLite 重建表路径；扩展复杂索引、生成列和 shadow database。
+
+## SQL Server / Oracle 接入
+
+- `server/sql.ts` 集中标识符、schema、占位符和类型归一化，历史表与 DDL 使用同一个 schema。
+- `server/ddl.ts` 接收 `DdlContext` 的实际态和目标态，先拆外键，再拆约束/索引，修改列，最后恢复约束和外键。
+  新表的外键统一延后创建，因此允许循环引用。SQL Server 默认值通过实际 DEFAULT 约束名删除；Oracle MODIFY 使用变更字段。
+- SQL Server 通过 mssql 的 acquire/release 预留一条物理连接，事务、查询和 Session application lock 始终在该连接执行。
+  Oracle 使用单个 connection 与 `DBMS_LOCK`（release_on_commit=false），锁不会因 DDL 提交失效。
+- `server/history.ts` 实现历史 SQL；`DatabaseMigrationHistoryStore` 按方言选择该实现。
+  Oracle 按名称绑定 `:n`，失败 checksum 使用非空占位值，避免空字符串被解释为 NULL。
+- Oracle SQL 文件使用有状态扫描器处理引号、q-quote、注释和语句终止符；暂不执行 PL/SQL/SQL*Plus 文件。
+- `scripts/test-server-databases.sh` 创建可销毁的真实数据库容器；`tests/server-integration.test.ts` 使用随机 schema/用户隔离测试。
+
+参考：
+
+- [SQL Server sp_getapplock](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-getapplock-transact-sql)
+- [Oracle DBMS_LOCK](https://docs.oracle.com/en/database/oracle/oracle-database/23/arpls/DBMS_LOCK.html)
+- [node-oracledb SQL execution](https://node-oracledb.readthedocs.io/en/latest/user_guide/sql_execution.html)
+- [Prisma SQL Server connector](https://github.com/prisma/prisma-engines/tree/main/schema-engine/connectors/sql-schema-connector/src/flavour/mssql)

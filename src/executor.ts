@@ -2,14 +2,14 @@
  * SQL 执行能力 —— migrator 的数据库交互面。
  *
  * 在 `SqlQueryable`（只读查询）之上补两件事：事务内执行语句、迁移互斥锁。
- * 方言实现见 `src/executor/`（目前 Postgres）。
+ * 方言实现见 `src/executor/`。
  */
 import type { SqlQueryable } from "./sql.js";
 
 export interface SqlExecutor extends SqlQueryable {
   /**
-   * 在事务中执行一组语句；任意一条失败则整体回滚，并抛出带上下文的错误。
-   * 迁移是「全有或全无」的，不能留下半应用状态。
+   * 按序执行语句，失败时抛出带上下文的错误。
+   * 支持事务 DDL 的方言整体回滚；MySQL 等隐式提交方言必须明确报告可能部分生效。
    */
   executeStatements(statements: ReadonlyArray<string>): Promise<void>;
 

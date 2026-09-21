@@ -108,7 +108,10 @@ function isColumn(value: unknown): boolean {
     isOptionalString(def) &&
     isBoolean(autoIncrement) &&
     typeof ordinal === "number" &&
-    isOptionalString(comment)
+    isOptionalString(comment) &&
+    isOptionalString(value.defaultConstraint) &&
+    isOptionalString(value.collation) &&
+    (value.mysql === undefined || (isRecord(value.mysql) && isOptionalString(value.mysql.charset) && isOptionalString(value.mysql.collation) && isOptionalString(value.mysql.onUpdate)))
   );
 }
 
@@ -137,7 +140,7 @@ function isConstraint(value: unknown): boolean {
     case "CHECK": {
       const { expression, values } = value;
       return (
-        isString(expression) &&
+        isString(expression) && isOptionalString(value.comparisonExpression) &&
         (values === undefined || (Array.isArray(values) && values.every((v) => typeof v === "string" || typeof v === "number")))
       );
     }
@@ -151,6 +154,6 @@ function isIndex(value: unknown): boolean {
     isString(name) &&
     isStringArray(columns) &&
     isBoolean(unique) &&
-    isOptionalString(predicate)
+    isOptionalString(predicate) && (value.implicit === undefined || isBoolean(value.implicit))
   );
 }
