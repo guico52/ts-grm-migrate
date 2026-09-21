@@ -129,7 +129,7 @@ export class SchemaDiffer implements Differ {
       nullable: from.nullable !== to.nullable ? to.nullable : undefined,
       // default：目标 undefined = 不管理；"" = 删除；其他 = 设置（仅当与现状不同）
       default:
-        to.default !== undefined && to.default !== from.default ? to.default : undefined,
+        to.default !== undefined && (to.default === "" ? from.default !== undefined : !sameDefault(to.default, from.default)) ? to.default : undefined,
       // autoIncrement：模型侧无来源（不管理），当前版本忽略
       autoIncrement: undefined,
     };
@@ -159,9 +159,10 @@ export class SchemaDiffer implements Differ {
   /** 索引：内容匹配（唯一性 + 列集合 + 谓词），名字不算内容；DROP 先于 ADD 执行 */
   private _indexChanges(from: Table, to: Table): Array<IndexChange> {
     const changes: Array<IndexChange> = [];
+    const managedFrom = from.indexes.filter((index) => !index.implicit);
     const fromKeys = new Set(from.indexes.map(indexKey));
     const toKeys = new Set(to.indexes.map(indexKey));
-    for (const index of from.indexes) {
+    for (const index of managedFrom) {
       if (!toKeys.has(indexKey(index))) {
         changes.push({ kind: "DROP_INDEX", index });
       }
@@ -209,7 +210,7 @@ function constraintKey(constraint: Constraint): string {
     case "FOREIGN_KEY":
       return `fk:${constraint.columns.join(",")}->${constraint.referencedTable}(${constraint.referencedColumns.join(",")})@${constraint.onDelete}`;
     case "CHECK":
-      return `ck:${constraint.expression}`;
+      return `ck:${constraint.comparisonExpression ?? constraint.expression}`;
   }
 }
 
@@ -218,4 +219,18 @@ function indexKey(index: Index): string {
   return `${index.unique ? "uniq" : "idx"}:${index.columns.join(",")}${
     index.predicate != null ? `:${index.predicate}` : ""
   }`;
+}
+
+/** Catalogs often wrap DEFAULT expressions in parentheses. Preserve quoted data verbatim. */
+function sameDefault(left: string, right: string | undefined): boolean {
+  const canonical = (value: string): string => {
+    const tokens = value.match(/'(?:''|[^'])*'|"(?:""|[^"])*"|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|[^\s]/g) ?? [];
+    while (tokens[0] === "(" && tokens.at(-1) === ")") {
+      let depth = 0;
+      if (!tokens.every((t, i) => { if (t === "(") depth++; if (t === ")") depth--; return depth > 0 || i === tokens.length - 1; })) break;
+      tokens.shift(); tokens.pop();
+    }
+    return tokens.join(" ");
+  };
+  return right !== undefined && canonical(left) === canonical(right);
 }

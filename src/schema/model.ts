@@ -69,6 +69,15 @@ export interface Column extends Omit<
   /** 列在表中的序号（从 1 开始），方言重建表时需要，diff 时忽略 */
   readonly ordinal: number;
   readonly comment: string | undefined;
+  /** SQL Server named DEFAULT constraint, retained for ALTER/DROP COLUMN. */
+  readonly defaultConstraint?: string;
+  readonly collation?: string;
+  /** MySQL attributes retained when MODIFY restates a whole column definition. */
+  readonly mysql?: {
+    readonly charset?: string;
+    readonly collation?: string;
+    readonly onUpdate?: string;
+  };
 }
 
 export type Constraint =
@@ -129,9 +138,13 @@ export interface CheckConstraint extends Omit<
   readonly name: string | undefined;
   /** 条件表达式原文（如 `"TYPE" in ('Book', 'PaperBook')`） */
   readonly expression: string;
+  /** Dialect-normalized comparison form; expression remains executable SQL. */
+  readonly comparisonExpression?: string;
 }
 
 export interface Index {
+  /** Database-required supporting index, not an independently managed model index. */
+  readonly implicit?: boolean;
   readonly name: string;
   readonly columns: ReadonlyArray<string>;
   readonly unique: boolean;

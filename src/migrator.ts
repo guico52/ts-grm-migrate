@@ -13,7 +13,7 @@
  * - **数据库 advisory lock**：同一数据库上不允许多机并发迁移（进程锁管不到别的机器）
  * - **checksum 漂移检测**：已应用的迁移文件不得再被修改；历史里有、磁盘上没有的
  *   迁移也拒绝继续（两者都会导致结构不可复现）
- * - **每个迁移一个事务**：失败整体回滚并记入历史（failed + 原因）
+ * - **按方言执行迁移**：PG / SQLite 使用事务；MySQL DDL 可能部分生效，失败记入历史
  *
  * 交互层（破坏性操作确认）不在这里 —— `Diff.destructive` 由 CLI 层使用。
  */
@@ -176,13 +176,13 @@ export class Migrator {
   async dev(options: { readonly name?: string }): Promise<DevResult> {
     return await this._withLocks(true, async () => {
       this._assertNoFailed(await this._effectiveApplied());
-      const diff = await this._diffAgainstDatabase();
+      const { diff, from, to } = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
         return { diff, migrationId: undefined, applied: false, drift: [] };
       }
       await this._confirmIfNeeded(diff);
 
-      const sql = toSqlFile(this._options.ddl.statements(diff));
+      const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
       const id = generateMigrationId(new Date(), options.name ?? "");
       const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
 
@@ -195,9 +195,9 @@ export class Migrator {
   /** 无历史快速同步：diff 后直接应用，不写文件、不记历史（push 路径） */
   async push(): Promise<PushResult> {
     return await this._withLocks(false, async () => {
-      const diff = await this._diffAgainstDatabase();
+      const { diff, from, to } = await this._diffAgainstDatabase();
       await this._confirmIfNeeded(diff);
-      const statements = this._options.ddl.statements(diff);
+      const statements = this._options.ddl.statements(diff, { from, to });
       if (statements.length > 0) {
         await this._options.executor.executeStatements(statements);
       }
@@ -269,7 +269,7 @@ export class Migrator {
 
   /** 再 introspect 一次并与模型对比（空 = 一致） */
   private async _describeDrift(): Promise<ReadonlyArray<SchemaDrift>> {
-    return describeDiff(await this._diffAgainstDatabase());
+    return describeDiff((await this._diffAgainstDatabase()).diff);
   }
 
   /**
@@ -283,7 +283,7 @@ export class Migrator {
     }
     throw new Error(
       `以下迁移上次执行失败，需要先处理：${failed.map((f) => f.id).join(", ")}。` +
-        `数据库可能处于半应用状态；手工修正后删除 _migrations 中对应记录再重试。`,
+        `数据库可能处于半应用状态；检查并手工修正数据库后，使用 resolve --applied 或 resolve --rolled-back 修正状态。`,
     );
   }
 
@@ -306,12 +306,10 @@ export class Migrator {
     const lock = await acquireProcessLock(this._options.lockPath);
     let releaseDbLock: (() => Promise<void>) | undefined;
     try {
-      if (ensureHistory) {
-        await this._options.history.ensureTable();
-      }
       releaseDbLock = await this._options.executor.acquireMigrationLock(
         this._options.lockKey ?? this._options.lockPath,
       );
+      if (ensureHistory) await this._options.history.ensureTable();
       return await fn();
     } finally {
       if (releaseDbLock != null) {
@@ -345,7 +343,7 @@ export class Migrator {
     return applied.filter((a) => a.rolledBackAt == null);
   }
 
-  private async _diffAgainstDatabase(): Promise<Diff> {
+  private async _diffAgainstDatabase(): Promise<{ diff: Diff; from: Schema; to: Schema }> {
     const actual = await this._options.introspector.introspect();
     const target = await this._options.targetSchema();
 
@@ -357,7 +355,7 @@ export class Migrator {
       ? { tables: actual.tables.filter((t) => t.name !== historyTable) }
       : actual;
 
-    return this._differ.diff(business, target);
+    return { diff: this._differ.diff(business, target), from: business, to: target };
   }
 }
 
@@ -399,6 +397,6 @@ function failureLogs(file: MigrationFile, message: string): string {
     `迁移 ${file.id} 执行失败`,
     `时间：${new Date().toISOString()}`,
     `错误：${message}`,
-    "事务已回滚，本次迁移未对数据库留下改动。",
+    message.includes("已回滚") ? "执行器报告事务已回滚。" : "非事务 DDL 可能已部分生效；请检查数据库后修正迁移状态。",
   ].join("\n");
 }

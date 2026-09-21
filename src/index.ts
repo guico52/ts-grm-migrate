@@ -102,3 +102,22 @@ export type { SchemaDrift } from "./drift.js";
 // ---- CLI ------------------------------------------------------------------
 export { parseArgs, run } from "./cli.js";
 export type { ParsedArgs, RunOptions } from "./cli/types.js";
+
+export { MysqlDdlGenerator } from "./ddl/mysql.js";
+export { MysqlIntrospector } from "./introspector/mysql.js";
+export { MysqlSqlExecutor } from "./executor/mysql.js";
+export type { MysqlPoolLike, MysqlConnectionLike } from "./executor/mysql.js";
+export type { DdlContext } from "./ddl.js";
+
+export { SqlServerDdlGenerator } from "./ddl/sqlserver.js";
+export { SqlServerIntrospector } from "./introspector/sqlserver.js";
+export { SqlServerSqlExecutor } from "./executor/sqlserver.js";
+
+export { OracleDdlGenerator } from "./ddl/oracle.js";
+export { OracleIntrospector } from "./introspector/oracle.js";
+export { OracleSqlExecutor } from "./executor/oracle.js";
+export { ServerMigrationHistoryStore } from "./server/history.js";
+export { ServerSql } from "./server/sql.js";
+
+export type { SqlServerSession, SqlServerRequestLike } from "./executor/sqlserver.js";
+export type { OracleSession } from "./executor/oracle.js";
