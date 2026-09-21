@@ -22,9 +22,14 @@ export interface Introspector {
   introspect(): Promise<Schema>;
 }
 
-export type Dialect =
-  | "postgres"
-  | "mysql"
-  | "sqlite"
-  | "mssql"
-  | "oracle";
+import type { DialectName } from "./dialect.js";
+
+export type { DialectName };
+
+/**
+ * 方言标识。
+ *
+ * 与 `src/dialect.ts` 的 `DialectName` 同义，保留 `Dialect` 这个名字是为了
+ * 贴合上游（ts-grm 用 `Driver`/`dialect` 的用词）以及各实现文件现有的写法。
+ */
+export type Dialect = DialectName;

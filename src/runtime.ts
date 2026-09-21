@@ -27,6 +27,7 @@ import { quoteIdentifier } from "./ddl.js";
 import type { Diff } from "./diff/types.js";
 import type { PgPoolLike } from "./executor/postgres.js";
 import type { MigrateConfig } from "./config.js";
+import { dialectInfo, IMPLEMENTED_DIALECT_NAMES } from "./dialect.js";
 
 export interface Runtime {
   readonly migrator: Migrator;
@@ -56,9 +57,15 @@ export async function createRuntime(
   cwd: string,
   options: RuntimeOptions = {},
 ): Promise<Runtime> {
+  // 方言在装配之前就定死：未实现的直接拒掉，并说清楚上游由谁提供，
+  // 而不是等运行到 introspection/执行阶段才炸（见 src/dialect.ts）
   const dialect = config.dialect ?? "postgres";
-  if (dialect !== "postgres") {
-    throw new Error(`暂不支持的方言 "${dialect}"（目前只有 postgres）。`);
+  const dialectSupport = dialectInfo(dialect);
+  if (!dialectSupport.implemented) {
+    throw new Error(
+      `方言 "${dialect}" 尚未实现（ts-grm 侧由 ${dialectSupport.tsGrmDrivers.join(" / ")} 提供）。` +
+        `目前端到端可用的方言：${IMPLEMENTED_DIALECT_NAMES.join(" / ")}。`,
+    );
   }
 
   const pool = await createPool(config);

@@ -114,9 +114,30 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 
 ### 方言能力（待办）
 
+**方言注册表已就位**（`src/dialect.ts`）：一处维护「有哪些方言、上游由谁提供、migrate
+实现到哪一步」。ts-grm 的**驱动型号比方言多** —— SQL Server 有 2012 变体、Oracle 有
+12 变体（上游类名就是 `Oracle12Drivier`，拼写非笔误），共 7 个驱动归入 5 个方言：
+
+- `postgres` → `PostgresDriver`（**唯一端到端可用**）
+- `mysql` → `MySqlDriver`
+- `sqlite` → `SqliteDriver`（DDL 生成器已实现，缺 introspection/executor，端到端不可用）
+- `mssql` → `SqlServerDriver` / `SqlServer2012Driver`
+- `oracle` → `OracleDriver` / `Oracle12Drivier`
+
+配置层接受全部方言名，但**未知方言在 `validateConfig` 就报错**，
+**已知但未实现**的方言由 `createRuntime` 在装配前拒掉（提示带上上游驱动名）；
+不会等到 introspection 或执行阶段才炸。
+
+补齐一个方言时只需：把 `DIALECTS` 里的 `implemented` 翻过来，
+加上对应的 `introspector/` `ddl/` `executor/` 实现。
+
+其余待办：
+
 - ts-grm 的 `Driver` 已有 `typeName()`，introspection 与 DDL 生成需要扩展
 - `PostgresDriver` 尚有几个已知问题（`name` 返回 "sqlite"、类型映射缺长度、
   keywords 混入 SQLite 词）
+- Oracle / SQL Server 不走 pg 的连接池，上游另有 `OraclePool` / `SqlServerPool`
+  （已在 `src/vendor/ts-grm.ts` 占位导出）
 
 ### 对 ts-grm 的修复（历史，已随上游更新失效）
 

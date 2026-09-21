@@ -53,6 +53,9 @@ export type { PgClientLike, PgPoolLike } from "./executor/postgres.js";
 export { acquireProcessLock } from "./lock.js";
 export type { ProcessLock } from "./lock.js";
 export type { Introspector, Dialect } from "./introspector.js";
+// ---- 方言注册表（哪些方言、上游由谁提供、实现到哪一步）------------------
+export { DIALECTS, DIALECT_NAMES, IMPLEMENTED_DIALECT_NAMES, dialectInfo } from "./dialect.js";
+export type { DialectInfo } from "./dialect.js";
 export { PostgresIntrospector } from "./introspector/postgres.js";
 export type { PostgresIntrospectorOptions } from "./introspector/postgres.js";
 export type { DdlGenerator, DdlGeneratorOptions } from "./ddl.js";

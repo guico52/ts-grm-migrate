@@ -15,8 +15,10 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { dialectInfo } from "./dialect.js";
 
-export type DialectName = "postgres";
+// 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
+export type { DialectName } from "./dialect.js";
 
 /** 数据库连接（原样传给 pg 的 Pool） */
 export interface DatabaseConfig {
@@ -29,8 +31,13 @@ export interface DatabaseConfig {
 }
 
 export interface MigrateConfig {
-  /** 方言，目前仅 "postgres" */
-  readonly dialect?: DialectName;
+  /**
+   * 方言，默认 "postgres"。
+   *
+   * 接受全部 ts-grm 方言名，但**只有 postgres 端到端可用**；
+   * 其余方言会在装配运行时前被拒掉并给出准确提示（见 src/dialect.ts）。
+   */
+  readonly dialect?: import("./dialect.js").DialectName;
   /** 数据库连接 */
   readonly database: DatabaseConfig;
   /**
@@ -134,6 +141,11 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
     throw new Error(
       `配置文件 "${file}" 缺少 models（模型文件或目录，至少一项）。`,
     );
+  }
+  // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
+  // （那里的提示能带上 ts-grm 驱动名与实现进度）
+  if (config.dialect != null) {
+    dialectInfo(config.dialect);
   }
   return config as MigrateConfig;
 }
