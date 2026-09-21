@@ -30,7 +30,7 @@
  *   drop+add；归一化留待后续（见 `src/differ.ts` 注释）。
  * - 暂不处理分区表（`relkind = 'p'`）与排他约束。
  */
-import type { CascadeType } from "@ts-grm/core";
+import type { CascadeType } from "../vendor/ts-grm.js";
 import type { Dialect, Introspector, SqlQueryable } from "../introspector.js";
 import type {
   Column,

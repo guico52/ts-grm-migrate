@@ -120,7 +120,7 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
 
 - `postgres` → `PostgresDriver`（**唯一端到端可用**）
 - `mysql` → `MySqlDriver`
-- `sqlite` → `SqliteDriver`（DDL 生成器已实现，缺 introspection/executor，端到端不可用）
+- `sqlite` → `SqliteDriver`（**端到端可用**：introspector + executor + DDL 均已实现）
 - `mssql` → `SqlServerDriver` / `SqlServer2012Driver`
 - `oracle` → `OracleDriver` / `Oracle12Drivier`
 
@@ -186,6 +186,8 @@ ts-grm 的模型发现是**全局注册 + 按需加载**两步：
   还原的写法不同，diff 会判为变化并 drop+add；归一化留待后续
 - 暂不处理分区表与排他约束
 
-**未实现**：SQLite 尚无 introspector 与 executor；shadow database（应用前在临时库试跑）未做。
+**未实现**：SQLite 的**重建表**路径（drop column / 改类型 / 改约束）—— SQLite 无法原地执行，
+而正确的重建还要处理外部外键重定向、索引重建与数据搬迁，当前显式报错而非生成丢数据的语句；
+mysql / mssql / oracle 三个方言只有注册表占位。shadow database（应用前在临时库试跑）未做。
 
-下一步候选：SQLite 方言（introspector + executor）。
+下一步候选：SQLite 重建表路径；或按可用的数据库环境补 mysql / mssql / oracle。
