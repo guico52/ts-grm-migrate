@@ -24,7 +24,20 @@ import type { CascadeType, ScalarType, SqlClient, spi } from "@ts-grm/core";
 
 // ---- 上游公开 API 的再导出（值）--------------------------------------------
 
-export { newSqlClient, MySqlDriver, PostgresDriver, SqliteDriver } from "@ts-grm/sql";
+export {
+  newSqlClient,
+  PostgresDriver,
+  SqliteDriver,
+  MySqlDriver,
+  OracleDriver,
+  // 上游拼写就是 Drivier（不是笔误），此处沿用
+  Oracle12Drivier,
+  SqlServerDriver,
+  SqlServer2012Driver,
+  // 驱动配套的连接池（Oracle / SQL Server 不走 pg 的连接池）
+  OraclePool,
+  SqlServerPool,
+} from "@ts-grm/sql";
 export { ScalarType, EntityManager, model, prop } from "@ts-grm/core";
 export type { SqlClientOptions } from "@ts-grm/sql";
 export type { CascadeType, SqlClient } from "@ts-grm/core";
