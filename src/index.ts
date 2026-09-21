@@ -1,5 +1,5 @@
 /**
- * @ts-grm/migrate — ts-grm 的 schema 迁移引擎。
+ * ts-grm-migrate — ts-grm 的 schema 迁移引擎。
  *
  * 分层（对应 prisma-engines 的目录结构）：
  * - schema/model.ts   统一比较形状（继承 ts-grm 原生定义）

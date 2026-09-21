@@ -2,7 +2,7 @@
  * CLI 配置 —— 在项目根放一个 `ts-grm-migrate.config.ts`（或 `.mts` / `.mjs` / `.js`）。
  *
  * ```ts
- * import { defineConfig } from "@ts-grm/migrate";
+ * import { defineConfig } from "ts-grm-migrate";
  *
  * export default defineConfig({
  *   database: { host: "localhost", database: "app", user: "postgres" },

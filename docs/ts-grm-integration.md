@@ -1,7 +1,7 @@
 # ts-grm 对接分析：migrate 需要的工作
 
 > 状态：探索分析（2026-08-13），基于 ts-grm 本地仓库当前源码。
-> 目的：明确 `@ts-grm/migrate` 各分层需要从 ts-grm 对接什么、阻塞点、以及建议的实施顺序。
+> 目的：明确 `ts-grm-migrate` 各分层需要从 ts-grm 对接什么、阻塞点、以及建议的实施顺序。
 > 所有事实均标注 ts-grm 源码路径与行号，可复核。
 
 ## 1. 背景
@@ -80,7 +80,7 @@ export type { SqlClientImplementor } from "@/sql_client";
 > - 索引/默认值/主键生成策略：作者补齐后，模型侧直接产出这些信息（createSchema 的 TableDef 字段扩展），
 >   migrate 的 `Schema` 字段早已预留（default/autoIncrement/comment/Index），适配器按「模型字段优先、
 >   补充声明兜底」的优先级合并，**零破坏平滑接入**，补充声明机制随后可逐项退役；
-> - 作者的 migrate 能力：如为完整迁移引擎，@ts-grm/migrate 需重新定位（共存/对齐/让位）；
+> - 作者的 migrate 能力：如为完整迁移引擎，ts-grm-migrate 需重新定位（共存/对齐/让位）；
 >   如仅指建表/DDL 能力增强（toCreationStatements 方向），则正是我们条件复用的对象，越强越好。
 
 ### 3.2 方言能力接入（类型映射）
