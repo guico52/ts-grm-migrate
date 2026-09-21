@@ -16,6 +16,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { quoteIdentifier } from "./ddl.js";
 import type { SqlExecutor } from "./executor.js";
+import type { DialectName } from "./dialect.js";
 
 /** 磁盘上的一个迁移文件（`<id>.sql`） */
 export interface MigrationFile {
@@ -124,38 +125,78 @@ export const DEFAULT_HISTORY_TABLE = "_migrations";
 
 /**
  * 基于数据库的迁移历史存储。
- * 语句为标准 SQL + 参数化查询，方言相关部分仅在时间类型上（Postgres 的 `timestamptz`）。
+ *
+ * 语句是标准 SQL，方言差异集中在三处：时间类型（PG `timestamptz` / SQLite `text`）、
+ * 当前时间表达式（`now()` / `current_timestamp`）、以及参数占位符（`$n` / `?`）。
+ * 另有 SQLite 不支持 `alter table ... add column if not exists`，改查 catalog 实现幂等。
  */
 export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
   readonly tableName: string;
   private readonly _table: string;
 
+  private readonly _dialect: DialectName;
+
   constructor(
     private readonly _options: {
       readonly executor: SqlExecutor;
       readonly table?: string;
+      /** 方言，默认 postgres（用于时间类型、now() 与占位符） */
+      readonly dialect?: DialectName;
     },
   ) {
     this.tableName = _options.table ?? DEFAULT_HISTORY_TABLE;
     this._table = quoteIdentifier(this.tableName);
+    this._dialect = _options.dialect ?? "postgres";
+  }
+
+  /** 当前时间表达式：PG 用 now()，SQLite 用 current_timestamp */
+  private get _now(): string {
+    return this._dialect === "postgres" ? "now()" : "current_timestamp";
+  }
+
+  /** 参数占位符：PG 是 $n，SQLite 是 ?（位置绑定，顺序一致） */
+  private _ph(index: number): string {
+    return this._dialect === "postgres" ? `$${index}` : "?";
   }
 
   async ensureTable(): Promise<void> {
+    const ts = this._dialect === "postgres" ? "timestamptz" : "text";
     await this._options.executor.executeStatements([
       `create table if not exists ${this._table} (
   id text primary key,
   checksum text not null,
-  applied_at timestamptz not null default now(),
-  rolled_back_at timestamptz,
+  applied_at ${ts} not null default ${this._now},
+  rolled_back_at ${ts},
   failed boolean not null default false,
   error text,
   logs text
 )`,
     ]);
     // 历史表自己的演进：`create table if not exists` 不会给已存在的表加列，
-    // 所以显式幂等地补上后加的列（PG 9.6+ 支持 ADD COLUMN IF NOT EXISTS）。
+    // 所以显式幂等地补上后加的列。
+    await this._addColumnIfMissing("logs", "text");
+  }
+
+  /**
+   * 幂等补列。
+   * PG 9.6+ 有 `add column if not exists`；SQLite 没有该语法，改查 catalog
+   * （`pragma_table_info` 表值函数，SQLite 3.16+）。
+   */
+  private async _addColumnIfMissing(column: string, definition: string): Promise<void> {
+    if (this._dialect === "postgres") {
+      await this._options.executor.executeStatements([
+        `alter table ${this._table} add column if not exists ${column} ${definition}`,
+      ]);
+      return;
+    }
+    const { rows } = await this._options.executor.query(
+      `select name from pragma_table_info(${quoteLiteral(this.tableName)})`,
+    );
+    if (rows.some((r) => asString(r["name"]) === column)) {
+      return;
+    }
     await this._options.executor.executeStatements([
-      `alter table ${this._table} add column if not exists logs text`,
+      `alter table ${this._table} add column ${column} ${definition}`,
     ]);
   }
 
@@ -171,10 +212,10 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
   async recordApplied(migration: MigrationFile): Promise<void> {
     await this._options.executor.query(
       `insert into ${this._table} (id, checksum, applied_at, rolled_back_at, failed, error, logs)
-       values ($1, $2, now(), null, false, null, null)
+       values (${this._ph(1)}, ${this._ph(2)}, ${this._now}, null, false, null, null)
        on conflict (id) do update
          set checksum = excluded.checksum,
-             applied_at = now(),
+             applied_at = ${this._now},
              rolled_back_at = null,
              failed = false,
              error = null,
@@ -186,7 +227,7 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
   async markFailed(id: string, error: string, logs?: string): Promise<void> {
     await this._options.executor.query(
       `insert into ${this._table} (id, checksum, applied_at, failed, error, logs)
-       values ($1, '', now(), true, $2, $3)
+       values (${this._ph(1)}, '', ${this._now}, true, ${this._ph(2)}, ${this._ph(3)})
        on conflict (id) do update
          set failed = true,
              error = excluded.error,
@@ -198,9 +239,9 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
   async markRolledBack(id: string): Promise<boolean> {
     const { rows } = await this._options.executor.query(
       `update ${this._table}
-       set rolled_back_at = now(),
+       set rolled_back_at = ${this._now},
            failed = false
-       where id = $1
+       where id = ${this._ph(1)}
        returning id`,
       [id],
     );
@@ -214,10 +255,16 @@ function toAppliedMigration(row: Record<string, unknown>): AppliedMigration {
     checksum: asString(row["checksum"]),
     appliedAt: toDate(row["applied_at"]),
     rolledBackAt: row["rolled_back_at"] == null ? undefined : toDate(row["rolled_back_at"]),
-    failed: row["failed"] === true,
+    // SQLite 没有布尔类型，存的是 1/0；PG 返回 boolean
+    failed: row["failed"] === true || Number(row["failed"]) === 1,
     error: row["error"] == null ? undefined : asString(row["error"]),
     logs: row["logs"] == null ? undefined : asString(row["logs"]),
   };
+}
+
+/** SQL 字符串字面量（用于 pragma 之类不能参数化的位置） */
+function quoteLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function asString(value: unknown): string {

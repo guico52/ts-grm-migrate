@@ -13,6 +13,7 @@
  */
 import type {ColumnDef, ConstraintDef, SchemaDriver, TableDef,} from "../vendor/ts-grm.js";
 import type {CheckConstraint, Column, Constraint, ForeignKeyConstraint, OnDelete, Schema, Table,} from "./model.js";
+import type { DialectName } from "../dialect.js";
 
 /**
  * 方言映射能力（上游 Driver 的最小结构化投影）。
@@ -38,7 +39,7 @@ export type { SchemaDriver };
  * 折叠规则属于方言知识（PG 折叠小写；MySQL/SQLite 不折叠），
  * 将来支持多方言时应下移到方言层。
  */
-function toPhysicalName(value: string): string {
+function toPhysicalName(value: string, dialect: DialectName): string {
   if (value.startsWith("\"") && value.endsWith("\"")) {
     return value.slice(1, -1);
   }
@@ -48,7 +49,8 @@ function toPhysicalName(value: string): string {
   if (value.startsWith("[") && value.endsWith("]")) {
     return value.slice(1, -1);
   }
-  return value.toLowerCase();
+  // 未加引号的标识符：PG 折叠为小写；MySQL / SQLite 原样保留（见上方注释）
+  return dialect === "postgres" ? value.toLowerCase() : value;
 }
 
 /** ts-grm 的 CascadeType（ORM 语义）→ 数据库 ON DELETE 动作 */
@@ -72,9 +74,14 @@ function checkExpression(constraint: Extract<ConstraintDef, { readonly kind: "CH
   return `${constraint.column.name} in (${values})`;
 }
 
-function toColumn(columnDef: ColumnDef, ordinal: number, driver: SchemaDriver): Column {
+function toColumn(
+  columnDef: ColumnDef,
+  ordinal: number,
+  driver: SchemaDriver,
+  dialect: DialectName,
+): Column {
   return {
-    name: toPhysicalName(columnDef.name),
+    name: toPhysicalName(columnDef.name, dialect),
     type: driver.typeName(columnDef),
     nullable: columnDef.nullable,
     length: columnDef.length,
@@ -88,6 +95,7 @@ function toColumn(columnDef: ColumnDef, ordinal: number, driver: SchemaDriver): 
 function toConstraint(
   constraint: ConstraintDef,
   driver: SchemaDriver,
+  dialect: DialectName,
 ): Constraint {
   const name: string | undefined = undefined;
   switch (constraint.kind) {
@@ -95,25 +103,26 @@ function toConstraint(
       return {
         kind: "PRIMARY_KEY",
         name,
-        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
+        columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         implicit: constraint.implicit,
       };
     case "UNIQUE":
       return {
         kind: "UNIQUE",
         name,
-        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
+        columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         implicit: constraint.implicit,
       };
     case "FOREIGN_KEY": {
       return {
         kind: "FOREIGN_KEY",
         name,
-        columns: constraint.columns.map((c) => toPhysicalName(c.name)),
+        columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         referencedTable: toPhysicalName(
-            constraint.referencedColumns[0]!.declaringTable.name,
+          constraint.referencedColumns[0]!.declaringTable.name,
+          dialect,
         ),
-        referencedColumns: constraint.referencedColumns.map((c) => toPhysicalName(c.name)),
+        referencedColumns: constraint.referencedColumns.map((c) => toPhysicalName(c.name, dialect)),
         onDelete: toOnDelete(constraint.cascade),
         deferrable: false,
         cascade: constraint.cascade,
@@ -136,11 +145,11 @@ function toConstraint(
   }
 }
 
-function toTable(tableDef: TableDef, driver: SchemaDriver): Table {
+function toTable(tableDef: TableDef, driver: SchemaDriver, dialect: DialectName): Table {
   return {
-    name: toPhysicalName(tableDef.name),
-    columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver)),
-    constraints: tableDef.constraints.map((c) => toConstraint(c, driver)),
+    name: toPhysicalName(tableDef.name, dialect),
+    columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver, dialect)),
+    constraints: tableDef.constraints.map((c) => toConstraint(c, driver, dialect)),
     // ts-grm 模型无索引概念，migrate 侧补充声明 / introspection 另行填充
     indexes: [],
   };
@@ -155,8 +164,11 @@ function toTable(tableDef: TableDef, driver: SchemaDriver): Table {
 export function tableDefsToSchema(
   tableDefs: ReadonlyArray<TableDef>,
   driver: SchemaDriver,
+  options: { readonly dialect?: DialectName } = {},
 ): Schema {
+  // 标识符折叠规则属于方言知识，默认按 PG（当前唯一端到端可用的方言）
+  const dialect = options.dialect ?? "postgres";
   return {
-    tables: tableDefs.map((td) => toTable(td, driver)),
+    tables: tableDefs.map((td) => toTable(td, driver, dialect)),
   };
 }

@@ -100,24 +100,24 @@ export class SqliteDdlGenerator implements DdlGenerator {
   }
 
   /**
-   * 重建表路径：drop 旧表 + 原生建表（目标态 TableDef）+ 数据迁移 TODO。
-   * 需要目标表结构 → 依赖 tableDefs；SQLite 无法原地 drop column / 改类型 / 改约束。
+   * 重建表路径：SQLite 无法原地 drop column / 改类型 / 改约束，官方做法是
+   * 「建新表 → 搬数据 → 换名」。但正确的重建还要同时处理三件目前无法安全完成的事：
+   *
+   * 1. **外部外键要重定向**。引用该表的其他表，会因 `alter table rename` 被 SQLite
+   *    一并改成指向临时表，换名后需要逐个改回；
+   * 2. **索引与触发器会随旧表消失**，需按目标态重建 —— 而索引在模型侧无来源
+   *    （见 docs/design.md 的补充声明待办）；
+   * 3. **可搬迁的列是目标与现状的交集**，需要现状信息，而 DDL 生成器只有目标态。
+   *
+   * 在这三件事设计清楚之前，这里**显式报错**，而不是生成会丢数据的语句 ——
+   * 后者只会在真实库里安静地把表清空。这是刻意的取舍，不是遗漏。
    */
   private _rebuildTable(tableName: string): ReadonlyArray<string> {
-    const tableDef = this._options.tableDefs?.get(tableName);
-    if (tableDef == null || this._options.driver == null) {
-      throw new Error(
-        `SQLite 重建表 "${tableName}" 需要目标态 TableDef 与方言 driver（DdlGeneratorOptions），` +
-          `当前无法从 diff 反推完整目标结构`,
-      );
-    }
-    const newColumns = tableDef.columns.map((c) => q(c.name)).join(", ");
-    return [
-      `-- SQLite 重建表: ${q(tableName)}（drop column / 改类型 / 改约束无法原地执行）`,
-      `drop table if exists ${q(tableName)}`,
-      ...tableDef.toCreationStatements(this._options.driver),
-      `-- 数据迁移 TODO: insert into ${q(tableName)} (${newColumns}) select ${newColumns} from <旧表备份>`,
-    ];
+    throw new Error(
+      `SQLite 无法原地修改列或约束，表 "${tableName}" 需要重建，但重建路径尚未实现` +
+        `（涉及外部外键重定向、索引重建与数据搬迁，贸然执行会丢数据）。` +
+        `可行的替代：手工完成重建后，用 tgm resolve --applied <id> 把对应迁移标记为已应用。`,
+    );
   }
 
   private _indexChanges(table: string, indexes: ReadonlyArray<IndexChange>): ReadonlyArray<string> {

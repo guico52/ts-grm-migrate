@@ -25,8 +25,8 @@ export interface DialectInfo {
   /**
    * migrate 是否**端到端可用**（结构读取 + DDL 生成 + 语句执行都具备）。
    *
-   * 注意与「有部分实现」区分：`sqlite` 的 DDL 生成器已经写好并通过测试，
-   * 但还缺 introspection 与 executor，所以端到端不可用，这里仍是 false。
+   * `postgres` 与 `sqlite` 均为 true；mysql / mssql / oracle 只登记了上游驱动，
+   * migrate 侧尚无实现（见 src/introspector、src/ddl、src/executor 下各只有一个方言）。
    */
   readonly implemented: boolean;
 }
@@ -34,7 +34,7 @@ export interface DialectInfo {
 export const DIALECTS: ReadonlyArray<DialectInfo> = [
   { name: "postgres", tsGrmDrivers: ["PostgresDriver"], implemented: true },
   { name: "mysql", tsGrmDrivers: ["MySqlDriver"], implemented: false },
-  { name: "sqlite", tsGrmDrivers: ["SqliteDriver"], implemented: false },
+  { name: "sqlite", tsGrmDrivers: ["SqliteDriver"], implemented: true },
   { name: "mssql", tsGrmDrivers: ["SqlServerDriver", "SqlServer2012Driver"], implemented: false },
   { name: "oracle", tsGrmDrivers: ["OracleDriver", "Oracle12Drivier"], implemented: false },
 ];

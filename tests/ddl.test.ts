@@ -278,7 +278,9 @@ describe("SqliteDdlGenerator", () => {
     ]);
   });
 
-  it("DROP_COLUMN 触发重建表（复用原生建表 + 数据迁移 TODO）", () => {
+  it("DROP_COLUMN 需要重建表时显式报错（不生成丢数据的语句）", () => {
+    // 正确的重建还要处理外部外键重定向、索引重建与数据搬迁；在这些设计清楚之前
+    // 宁可报错，也不要生成会安静清空表的 SQL。
     const td = makeTableDef("BOOK", [["ID", "I32", false], ["TITLE", "STR", false]]);
     const gen = new SqliteDdlGenerator({ driver: fakeDriver, tableDefs: new Map([["BOOK", td]]) });
     const d = diff([{
@@ -288,14 +290,10 @@ describe("SqliteDdlGenerator", () => {
       constraints: [],
       indexes: [],
     }]);
-    const sql = gen.statements(d);
-    expect(sql[0]).toContain("SQLite 重建表");
-    expect(sql[1]).toBe('drop table if exists "BOOK"');
-    expect(sql[2]).toContain("create table BOOK");
-    expect(sql.join("\n")).toContain("数据迁移 TODO");
+    expect(() => gen.statements(d)).toThrow(/需要重建，但重建路径尚未实现/);
   });
 
-  it("重建表缺少 TableDef 时抛错提示", () => {
+  it("ALTER_COLUMN 同样触发重建表的显式报错", () => {
     const gen = new SqliteDdlGenerator();
     const d = diff([{
       kind: "ALTER_TABLE",
@@ -311,7 +309,7 @@ describe("SqliteDdlGenerator", () => {
       constraints: [],
       indexes: [],
     }]);
-    expect(() => gen.statements(d)).toThrow(/重建表/);
+    expect(() => gen.statements(d)).toThrow(/需要重建，但重建路径尚未实现/);
   });
 
   it("索引变更独立执行，不触发重建", () => {

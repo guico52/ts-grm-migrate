@@ -28,15 +28,15 @@ describe("方言注册表", () => {
     expect(dialectInfo("oracle").tsGrmDrivers).toEqual(["OracleDriver", "Oracle12Drivier"]);
   });
 
-  it("目前只有 postgres 端到端可用", () => {
-    expect(IMPLEMENTED_DIALECT_NAMES).toEqual(["postgres"]);
-    expect(DIALECTS.filter((d) => d.implemented).map((d) => d.name)).toEqual(["postgres"]);
-  });
-
-  it("sqlite 有 DDL 生成器，但端到端仍未实现", () => {
-    const info = dialectInfo("sqlite");
-    expect(info.implemented).toBe(false);
-    expect(info.tsGrmDrivers).toEqual(["SqliteDriver"]);
+  it("postgres 与 sqlite 端到端可用，其余仍是占位", () => {
+    expect(IMPLEMENTED_DIALECT_NAMES).toEqual(["postgres", "sqlite"]);
+    expect(DIALECTS.filter((d) => d.implemented).map((d) => d.name)).toEqual([
+      "postgres",
+      "sqlite",
+    ]);
+    // 未实现的方言仍要能报出上游驱动名
+    expect(dialectInfo("sqlite").tsGrmDrivers).toEqual(["SqliteDriver"]);
+    expect(dialectInfo("mysql").implemented).toBe(false);
   });
 
   it("未知方言报错并列出已知方言", () => {

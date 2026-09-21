@@ -20,7 +20,12 @@ import { dialectInfo } from "./dialect.js";
 // 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
 export type { DialectName } from "./dialect.js";
 
-/** 数据库连接（原样传给 pg 的 Pool） */
+/**
+ * 数据库连接。
+ *
+ * - postgres：原样传给 pg 的 Pool（host / port / user / password / database / connectionString）；
+ * - sqlite：用 `file` 指定库文件（相对项目根；`:memory:` 为内存库），其余字段忽略。
+ */
 export interface DatabaseConfig {
   readonly host?: string;
   readonly port?: number;
@@ -28,14 +33,19 @@ export interface DatabaseConfig {
   readonly user?: string;
   readonly password?: string;
   readonly connectionString?: string;
+  /** sqlite 专用：库文件路径（相对项目根）或 ":memory:" */
+  readonly file?: string;
 }
 
 export interface MigrateConfig {
   /**
    * 方言，默认 "postgres"。
    *
-   * 接受全部 ts-grm 方言名，但**只有 postgres 端到端可用**；
+   * 接受全部 ts-grm 方言名，但**只有 postgres 与 sqlite 端到端可用**；
    * 其余方言会在装配运行时前被拒掉并给出准确提示（见 src/dialect.ts）。
+   *
+   * sqlite 时用 `database.file` 指定库文件（相对项目根，或 ":memory:"），
+   * 且**不能**配 `schema`（SQLite 没有 schema 概念，配了会报错）。
    */
   readonly dialect?: import("./dialect.js").DialectName;
   /** 数据库连接 */
