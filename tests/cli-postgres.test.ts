@@ -111,7 +111,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const code = await runCli(["dev", "--name", "init", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{14}_init/);
+    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}_init/);
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
@@ -120,7 +120,7 @@ describePg("CLI 端到端（真实数据库）", () => {
 
     expect(code).toBe(0);
     // 迁移 id 是纯 14 位时间戳，不带下划线后缀
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{14}\b/);
+    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}\b/);
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 

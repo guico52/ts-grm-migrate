@@ -1,5 +1,10 @@
 /**
  * ts-grm 依赖的唯一入口（适配层）。
+ * TableDef、ColumnDef 与约束类型声明改写自 ts-grm 的 schema_def.ts：
+ * 仅保留迁移器所需字段，调整类型名称和引用，并添加本项目的适配接口及实现。
+ * 原作者 陈涛 (Chen Tao)；改写部分保留 Apache-2.0 许可与署名。
+ * @see ../../THIRD_PARTY_NOTICES.md
+ * @see https://github.com/babyfish-ct/ts-grm/blob/fe78eb6c323bf335ff23650a414856eb36bfbce7/packages/sql/src/impl/schema_def.ts
  *
  * 约定：migrate 源码中所有对 `@ts-grm/*` 的 import 必须经过本文件，
  * 禁止在业务代码里直接 `import ... from "@ts-grm/sql"` 等。
@@ -145,7 +150,7 @@ export async function createSchema(
 }
 
 /** Upstream 0.0.13 spells FLOAT as flat. Keep the correction at the upstream boundary.
- * @see https://github.com/ts-grm/ts-grm/blob/main/packages/sql/src/driver/mysql_driver.ts
+ * @see https://github.com/babyfish-ct/ts-grm/blob/main/packages/sql/src/driver/mysql_driver.ts
  */
 export class MySqlDriver extends UpstreamMySqlDriver {
   override typeName(column: Parameters<UpstreamMySqlDriver["typeName"]>[0]): string {

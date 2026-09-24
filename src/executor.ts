@@ -6,12 +6,18 @@
  */
 import type { SqlQueryable } from "./sql.js";
 
+export type MigrationCompletion = (connection: SqlQueryable) => Promise<void>;
+
 export interface SqlExecutor extends SqlQueryable {
   /**
    * 按序执行语句，失败时抛出带上下文的错误。
    * 支持事务 DDL 的方言整体回滚；MySQL 等隐式提交方言必须明确报告可能部分生效。
+   * complete 必须使用同一连接调用，支持事务 DDL 时必须在 COMMIT 前完成。
    */
-  executeStatements(statements: ReadonlyArray<string>): Promise<void>;
+  executeStatements(
+    statements: ReadonlyArray<string>,
+    complete?: MigrationCompletion,
+  ): Promise<void>;
 
   /**
    * 获取迁移互斥锁（PG 用 advisory lock），阻止其他 migrate 实例并发执行；

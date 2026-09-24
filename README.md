@@ -1,26 +1,42 @@
 # ts-grm-migrate
 
-[ts-grm](https://github.com/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
+[ts-grm](https://github.com/babyfish-ct/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
 但**模型就是你写的 ts-grm 代码**，不需要额外的 schema 文件，也没有代码生成步骤。
 
-## 它能做什么
+## 功能清单
 
 - **增量迁移**：对比你的模型与数据库现状，生成可读的 SQL 迁移文件，并记录应用历史
 - **按序部署**：把所有未应用的迁移依次应用到目标库（部署 / CI 场景）
-- **快速同步**：直接把数据库改成模型的样子，不写迁移文件、不记历史（开发期图快时用）
-- **迁移后对账**：应用完再核对一次数据库与模型，不一致就指出「哪个库、哪张表、差在哪」
+- **快速同步**：快速执行迁移SQL，将数据库同步为model定义的形状
+- **迁移后对账**：应用完再核对数据库与模型，不一致就指出「哪个库、哪张表、差在哪」
 - **失败可恢复**：迁移中途失败会记入历史并阻止后续部署，用 `resolve` 修正状态后继续
 
-## 安装
+## 状态与安装
+
+**Alpha / 尚未正式发布。** 当前仅承诺下表列出的验证范围；不保证任意数据库结构或历史版本兼容。
+运行环境与当前 ts-grm 工具链一致：Node `>=24.11.0`、ESM。
+开发使用 Yarn 4.1.0、TypeScript 7、tsdown、Biome 与 Vitest 4。
+
+先在本仓库构建安装包：
 
 ```sh
-yarn add -D ts-grm-migrate
+corepack yarn install --immutable
+corepack yarn check
+corepack yarn pack --out /tmp/ts-grm-migrate.tgz
 ```
 
-- `@ts-grm/core` / `@ts-grm/sql` 是 **peerDependencies**，由你的项目提供
-- 连 Postgres 还需要 `pg`，连 MySQL 还需要 `mysql2`（都是可选 peer）
+再在使用者项目中安装（以下示例使用 SQLite）：
 
-装上后可用两个等价的可执行名：`ts-grm-migrate` 与 **`tgm`**。
+```sh
+npm install @ts-grm/core@0.0.13 @ts-grm/sql@0.0.13 better-sqlite3
+npm install -D /tmp/ts-grm-migrate.tgz
+```
+
+- core/sql 是 peerDependencies，请使用**相同版本**；当前支持 `>=0.0.9 <0.0.14`。
+  这是已验证范围，不自动承诺未来版本；验证方法见 [兼容性](docs/compatibility.md)。
+- 数据库驱动按需安装，完整列表见下方支持表。
+- 安装后使用 `npx tgm`，或通过包管理器运行 `tgm` / `ts-grm-migrate`。
+- npm 发布步骤见 [发布](docs/releasing.md)。
 
 ## 快速开始
 
@@ -35,6 +51,7 @@ yarn add -D ts-grm-migrate
 import { defineConfig } from "ts-grm-migrate";
 
 export default defineConfig({
+  dialect: "postgres",
   database: { host: "localhost", database: "app", user: "postgres" },
   models: ["./src/models"], // 交给 ts-grm 加载你的模型（.ts 或编译后的 .js）
 });
@@ -50,6 +67,8 @@ tgm status               # 看看应用了哪些、还剩哪些
 
 ### 配置项
 
+- **`dialect`**：数据库方言，可选 `postgres`、`sqlite`、`mysql`、`mssql`、`oracle`，默认 `postgres`。
+  它决定使用哪个数据库驱动，以及结构读取、SQL 生成和迁移执行的具体实现；各方言的驱动依赖与支持范围见下表。
 - **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
 - **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
   **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
@@ -111,7 +130,15 @@ GRANT EXECUTE ON SYS.DBMS_LOCK TO APP;
 
 MySQL / Oracle 的 DDL 会隐式提交，失败可能留下部分改动。`resolve --rolled-back` 仅修改历史状态，
 **不会撤销 SQL**；应先手工恢复数据库再重试，或补完 SQL 后 `resolve --applied`。
-SQL Server 的迁移在同一会话事务中执行，失败会回滚。
+PostgreSQL、SQLite、SQL Server 在同一事务内执行迁移 SQL 并记录成功，记账失败也会回滚。
+所有方言都会在执行前持久化未完成记录；进程中断、连接丢失或记账失败后会阻止自动重放，
+需检查数据库实际状态，再使用 `resolve`。未完成记录在 `status` 中显示为 failed。
+`status` 仅将确认不存在的历史表视为空历史，连接和权限错误会向上传递；Oracle 跨 schema
+的 ORA-00942 无法区分缺表与无权限，因此保留错误。
+
+新迁移 ID 使用毫秒时间戳，并在本地锁内保证晚于已有生成时间戳；文件使用独占创建，
+遇到已有同名文件会报错，不覆盖历史 SQL。PostgreSQL 数据库锁按数据库和当前 schema
+限定固定资源名，不依赖 checkout 的本地路径。
 
 当前边界：
 
@@ -134,8 +161,9 @@ corepack yarn install
 corepack yarn test:servers
 ```
 
-脚本用 Podman 启动 SQL Server Developer 与 Oracle Free，随机分配仅监听 `127.0.0.1` 的端口，
+脚本默认用 Podman 启动 SQL Server Developer 与 Oracle Free（`CONTAINER_RUNTIME=docker` 可切换 Docker），随机分配仅监听 `127.0.0.1` 的端口，
 在独立 schema/用户中验证迁移、数据保留、锁、失败恢复与 CLI，完成后清理本次容器和数据卷。
+MySQL 集成测试始终创建随机专属数据库并清理，不使用 `MYSQL_DATABASE`；测试账号需要建库权限。
 可通过 `MSSQL_TEST_IMAGE` / `ORACLE_TEST_IMAGE` 指定镜像。首次拉取镜像需要网络及足够磁盘空间。
 SQL Server Developer 的测试用途受其许可条款约束，脚本用 `ACCEPT_EULA=Y` 启动。
 
@@ -183,7 +211,27 @@ migrate 是 ts-grm 的插件，必须与你项目里的 ts-grm **共用同一份
 
 因此 `@ts-grm/core` / `@ts-grm/sql` 声明为 peerDependencies，由你的项目提供。
 
-## 更进一步
+## 开发与协作
 
-- [设计与内部分层](docs/design.md) —— 模块划分、设计决策、与 ts-grm 的对接方式、当前进度
-- [ts-grm 对接分析](docs/ts-grm-integration.md) —— 早期对 ts-grm 源码的调研快照
+```sh
+corepack yarn check
+corepack yarn test:compat 0.0.9 0.0.13
+corepack yarn test:package 0.0.9
+corepack yarn test:postgres-mysql
+corepack yarn test:servers
+```
+
+GitHub CI 分别运行本地检查、历史依赖/安装包测试、真实数据库测试；本地缺少数据库环境变量时
+相关测试会跳过，因此不能仅凭 `yarn test` 绿色判断全部数据库通过。
+
+- [贡献指南](CONTRIBUTING.md)
+- [安全报告](SECURITY.md)
+- [变更记录](CHANGELOG.md)
+- [设计](docs/design.md)：代码分层、差分规则与失败恢复
+- [兼容性](docs/compatibility.md)：ts-grm 版本范围及复现命令
+- [发布](docs/releasing.md)：npm 发布前检查
+
+## 许可证
+
+原创代码采用 [MIT](LICENSE)。ts-grm 使用 Apache-2.0；本项目改写的上游结构类型保留其许可与署名，
+见[第三方声明](THIRD_PARTY_NOTICES.md)。

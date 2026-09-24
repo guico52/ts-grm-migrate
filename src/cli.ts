@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * CLI 入口 —— 装好依赖后，在项目根敲命令即可。
  *
@@ -10,8 +9,6 @@
  * 配置文件在项目根自动查找（见 `src/config.ts` 的候选名）。
  */
 import { createInterface } from "node:readline/promises";
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { CONFIG_FILENAMES, loadConfig } from "./config.js";
 import { abnormalDrift } from "./drift.js";
 import { MigrationAbortedError } from "./migrator.js";
@@ -338,49 +335,4 @@ function printDestructive(
         break;
     }
   }
-}
-
-async function main(): Promise<void> {
-  try {
-    process.exitCode = await run(process.argv.slice(2), process.cwd());
-  } catch (e) {
-    if (e instanceof MigrationAbortedError) {
-      console.log("已取消。");
-      process.exitCode = 0;
-      return;
-    }
-    console.error(`错误：${(e as Error).message}`);
-    process.exitCode = 1;
-  }
-}
-
-/**
- * 是否作为可执行入口运行（被 import 时不触发）。
- *
- * **必须对 argv[1] 取 realpath**：通过 `node_modules/.bin/xxx` 这类**符号链接**启动时，
- * argv[1] 是链接路径而 import.meta.url 是真实路径，直接比较不相等 ——
- * 表现为「命令退出码 0 但什么都没做」（实测踩过）。
- */
-function isEntryPoint(): boolean {
-  const argv1 = process.argv[1];
-  if (argv1 == null) {
-    return false;
-  }
-  try {
-    return realpathSync(argv1) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
-}
-
-if (isEntryPoint()) {
-  // 刻意**不用 top-level await**：cli.js 被 index.js 再导出（库入口对外提供 run/parseArgs），
-  // 而使用者的配置文件又会 `import { defineConfig } from "ts-grm-migrate"` →
-  // 形成 cli.js → config → index.js → cli.js 的环。若 cli.js 停在 TLA，
-  // 环上两个模块会互相等待而死锁（表现为 `unsettled top-level await` 后静默退出）。
-  // 这里 fire-and-forget：cli.js 求值立即完成，进程由 main() 内部的 I/O 保持存活。
-  main().catch((e: unknown) => {
-    console.error(`错误：${(e as Error).message}`);
-    process.exitCode = 1;
-  });
 }

@@ -1,212 +1,41 @@
-# 设计文档
+# 设计
 
-> 面向开发者：内部分层、设计决策、与 ts-grm 的对接方式、当前进度。
-> 使用者请看 [README](../README.md)。
+使用方法和数据库限制见 [README](../README.md)。这里记录代码的主要边界，便于修改迁移行为时找到对应模块。
 
-## 分层（对应 prisma-engines 的源码结构）
+## 从模型到 SQL
 
-| 本模块 | 职责 | prisma-engines 参考 |
-| --- | --- | --- |
-| `src/schema/model.ts` | 数据库 schema 中间表示 | `schema-engine/connectors/sql-schema-connector/src/database_schema.rs` |
-| `src/differ.ts` | 语义层 diff（方言无关） | `.../sql_schema_differ.rs` |
-| `src/introspector.ts` | 读取数据库现状（每方言一个实现） | `.../introspection.rs` + `schema-engine/sql-schema-describer/` |
-| `src/ddl.ts` | 语义 diff → 方言 SQL | `libs/sql-ddl/src/postgres.rs` + `.../sql_renderer.rs` |
-| `src/store.ts` | 迁移文件 + 历史表（`_migrations`） | `.../sql_migration.rs` / `sql_migration_persistence.rs` |
-| `src/migrator.ts` | 迁移应用器（deploy/dev） | `.../apply_migration.rs` + `commands/apply_migrations.rs` |
+`src/runtime.ts` 同时组装 CLI 和程序化入口。它加载 `models`，创建 ts-grm 的 `SqlClient`，再将模型转换成迁移器使用的 `Schema`：
 
-## 设计决策（已定，见各文件注释）
-
-- **判别联合 + 类型守卫**，不用 type-erasure downcast（对应 TS 对 Prisma Rust 模式的改进）
-- **语义层 / 语法层分离**：diff 方言无关，DDL 生成方言化
-- diff **忽略列顺序**；约束/索引按内容匹配而非名字
-- **破坏性操作可识别**（`Diff.destructive`），供 CLI 确认 / data-loss 警告
-- introspection 是外部输入路径：错误处理优雅报错，绝不 fail-fast
-- **删表分两阶段**：先把被删表**自身**的外键全部摘掉，再删所有表。
-  否则被引用的表（同样要删）会因依赖关系删不掉 —— PG 报
-  `cannot drop table ... because other objects depend on it`，整个迁移事务回滚。
-  摘完外键后各 `drop table` 无依赖，与遍历顺序（introspection 的字母序）无关。
-  对应 prisma 把 `DropForeignKey` 作为独立步骤、排序后置于 `DropTable` 之前
-  （其 `should_drop_foreign_keys_from_dropped_tables` 默认 true）。
-  注意：**不使用 `drop table ... cascade`** —— 它会静默删掉一切依赖对象
-  （包括模型里没有概念的视图），与「不静默破坏、错误要可见」冲突；
-  prisma 也只把它用在「重定义表」的内部流程里
-- PG 的 DDL 可事务：每个迁移一个事务 + advisory lock 防并发
-- **定位：开发期工具**。在开发者机器上作为独立进程运行，用 `EntityManager.of()` 加载
-  使用者的全部 model，据此管理数据库版本；因此与宿主共享同一份 ts-grm 实例
-  （peerDependencies），而非自带一份
-- **一个项目 = 一套模型集合**，不支持 monorepo / 同目录塞多个后端：数据库对接是单个
-  后端程序的事。CLI 因此只需一个模型根目录，不需要集合隔离机制；模型重名由上游
-  `StateError` 直接抛出，按使用者错误处理
-- **并发防护用进程锁文件**：migrate 每次运行是独立进程（`ALL_MODEL_MAP` 天然干净），
-  用项目级锁文件阻止同一项目上同时运行多个实例，避免迁移与 DDL 交叉
-- **历史表用原生 SQL 维护**（`store.ts`），**不基于 ts-grm 模型**：历史表若定义成 ts-grm
-  model，会进入全局 `ALL_MODEL_MAP` 而混进使用者的模型集合，让 diff 以为「模型里有一张
-  `_migrations` 表要建」。它在 introspection 时被显式剔除（见 `migrator.ts` 的 `_diffAgainstDatabase`）
-- **回滚用标记而非删记录**：`resolve --rolled-back` 写 `rolled_back_at` 并清 `failed`，
-  记录保留作审计；被标记回滚的迁移重新算「待应用」（`_effectiveApplied` 会排除它们）
-- **历史表自身的演进**：`ensureTable` 除建表外还幂等补列（`add column if not exists`）——
-  因为 `create table if not exists` 不会给已存在的表加列，旧库需要平滑升级
-
-## 与 ts-grm 的对接
-
-### 依赖接入（已完成）
-
-`@ts-grm/core` / `@ts-grm/sql` 声明为 **peerDependencies**（`^0.0.13`），本地开发由
-devDependencies 提供同一版本 —— migrate 是 ts-grm 的插件，宿主由使用者提供：
-
-```sh
-corepack yarn install
+```text
+ts-grm models → src/vendor/ts-grm.ts → src/schema/adapter.ts → Schema
+                                                       ↕
+database → introspector → Schema → differ → DDL generator → executor
+                                                       ↕
+                                              migration files / history
 ```
 
-**为什么必须是 peer 而不是 dependencies**：ts-grm 的模型注册表是**模块级单例**。
-`model()` 在构造时把自己写进 `ALL_MODEL_MAP`（`packages/core/src/impl/model_impl.ts:57`），
-`EntityManager.of()` 取值时遍历的也是这个全局 map（`packages/core/src/schema/entity_manager.ts:75`）。
-若 migrate 自带一份 `@ts-grm/core`，它看到的是**空注册表**，拿不到使用者定义的任何 model。
-同理，CJS `require` 与 ESM import 混用也会分裂成两份（实测 `ESM !== CJS`），
-因此 `@ts-grm/*` 一律走 **ESM import** —— 见 `tests/util/ts-grm-client.ts`。
+`src/vendor/ts-grm.ts` 是唯一读取上游内部 `tableDefs` 的位置。上游公开的 `Schema` 类型没有结构化表定义，因此这个适配点需要随 peer 版本验证。`src/dialect.ts` 集中维护方言名称和支持状态；具体的读取、DDL 与执行逻辑分别放在 `src/introspector/`、`src/ddl/` 和 `src/executor/`。
 
-- **上游 API 隔离**：所有 `@ts-grm/*` import 集中在 `src/vendor/ts-grm.ts`（唯一修改点）。
-  上游改名 / 改 API 时只需改该文件与 `package.json`，业务代码零改动。
+ts-grm 的模型注册表是进程级单例。CLI 在独立进程中加载模型，程序化使用时应避免在同一进程中混用互不相关的模型集合。
 
-#### 上游 API 现状（0.0.13）与适配点
+## 差分规则
 
-上游把 schema 定义收回了内部模块：公开导出里**没有** `createSchema` / `TableDef` /
-`ColumnDef` / `ConstraintDef` / `SqlClientImplementor`。
+数据库现状和模型目标都转成 `Schema` 后，由 `src/differ.ts` 比较。列按名字匹配；约束和索引按内容匹配，因为数据库或 ts-grm 生成的名字不一定稳定；列顺序不参与比较。
 
-- 结构化表定义唯一的公开入口是 `sqlClient.createSchema()`，但它的**公开类型**（core 的
-  `Schema`）只暴露 `creationSqlArray` / `deletionSqlArray` / `execute` / `toString`
-  —— 只有 SQL 字符串，而 diff 需要结构。
-- 该调用的运行时返回值（上游内部的 `SchemaImpl`）带 `tableDefs: TableDef[]`。
-  `src/vendor/ts-grm.ts` 的 `createSchema()` 是全仓库**唯一**读取该内部字段的地方；
-  上游一旦公开结构化 API，只需替换这一个函数。
-- `TableDef` / `ColumnDef` / `ConstraintDef` 上游未导出，vendor 层按 dist 类型声明镜像
-  （结构等价，子类型引用 core 的公开类型，不引入 `any`）。
+模型没有提供的列默认值和注释不由迁移器删除。模型无法表达的自增策略目前也不参与差分；约束和索引则以目标态为准。模型的多态字段在适配时转换成普通列和数据库约束，之后不再保留 ts-grm 的模型语义。
 
-### 获取使用者定义的 model（机制已查清）
+SQLite 读取不到约束名，因此按内容比较尤其必要。部分 CHECK 表达式在数据库中会被重新格式化；等价表达式仍可能被判定为变更。需要扩大归一化范围时，应先补对应方言的真实数据库测试。
 
-ts-grm 的模型发现是**全局注册 + 按需加载**两步：
+## 迁移与恢复
 
-1. **注册**：`model(...)` 构造 `ModelImpl` 时即写入模块级 `ALL_MODEL_MAP`
-   （`packages/core/src/impl/model_impl.ts:57-60`，重名抛 `StateError`）。
-2. **加载**：`EntityManager.of(baseDir, ...modelPaths)`（`packages/core/src/schema/entity_manager.ts:59`）
-   递归 `import()` 指定路径下的 `.js` / `.ts` 触发注册；随后 `entities()` 遍历的是
-   **全局 `ALL_MODEL_MAP`**（而非扫描结果），再由 `_add` 展开继承与关联
-   （superEntity / targetEntity / middleEntity）。
+`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
 
-所以 `EntityManager.of(模型目录)` 是 migrate 拿到「使用者全部 model」的公开入口
-（`ALL_MODEL_MAP` 本身未导出）。实测：只传一个模型文件路径，同进程内任何位置定义、
-未参与扫描的 model 也会被一并带上。
+同一项目的本地并发由 `src/lock.ts` 的进程锁限制，跨机器并发由数据库锁限制。PostgreSQL、SQLite 和 SQL Server 把迁移 SQL 与成功记录放在同一事务中。MySQL 和 Oracle 的 DDL 可能隐式提交，失败后必须根据实际数据库状态决定如何恢复。
 
-这带来一条设计约束：**同进程内多套模型集合会互相污染**。migrate 的定位是开发期独立
-进程工具（每次运行 `ALL_MODEL_MAP` 天然干净），并用**进程锁文件**保证同一项目上不会
-并发运行多个实例，因此该问题在实际用法下不出现。
+`src/drift.ts` 在迁移后再次读取数据库，并比较它与当前模型。它不重放全部迁移文件，因此不能证明历史文件与数据库从未发生偏离；已应用文件的 checksum 检查覆盖的是文件修改。
 
-**明确不支持 monorepo / 同目录多后端** —— 一个项目就是一套模型集合，所以 CLI 只需一个
-模型根目录；模型重名由上游 `StateError` 直接抛出，按使用者错误处理，不做集合隔离。
+SQLite 需要重建表的变更目前明确报错。安全重建还需要处理外部外键、索引及数据搬迁，不能仅靠把旧表改名解决。其他方言的结构限制见 [README](../README.md#数据库支持与配置)。
 
-### 目标 schema 来源（已接入）
+## 验证修改
 
-`tableDefsToSchema()`（`src/schema/adapter.ts`）把上游 `TableDef[]` 适配为 migrate 的
-`Schema`：表名去引号、`CascadeType` → `ON DELETE` 归一化、CHECK 表达式还原；
-多态语义（`when` 列、implicit 约束）在适配层归一化。
-
-待办：`default` / `comment` / 索引在模型侧无来源，需补充声明机制填充。
-
-### 方言能力
-
-**方言注册表已就位**（`src/dialect.ts`）：一处维护「有哪些方言、上游由谁提供、migrate
-实现到哪一步」。ts-grm 的**驱动型号比方言多** —— SQL Server 有 2012 变体、Oracle 有
-12 变体（上游类名就是 `Oracle12Drivier`，拼写非笔误），共 7 个驱动归入 5 个方言：
-
-- `postgres` → `PostgresDriver`（**端到端可用**）
-- `mysql` → `MySqlDriver`（**端到端可用**：MySQL 8.0.16+ / InnoDB）
-- `sqlite` → `SqliteDriver`（**端到端可用**：introspector + executor + DDL 均已实现）
-- `mssql` → `SqlServerDriver` / `SqlServer2012Driver`（迁移已实现，SQL Server 2016+）
-- `oracle` → `OracleDriver` / `Oracle12Drivier`（迁移已实现，Oracle 19c+）
-
-配置层接受全部方言名，但**未知方言在 `validateConfig` 就报错**，
-**已知但未实现**的方言由 `createRuntime` 在装配前拒掉（提示带上上游驱动名）；
-不会等到 introspection 或执行阶段才炸。
-
-补齐一个方言时只需：把 `DIALECTS` 里的 `implemented` 翻过来，
-加上对应的 `introspector/` `ddl/` `executor/` 实现。
-
-其余待办：
-
-- ts-grm 的 `Driver` 已有 `typeName()`，introspection 与 DDL 生成需要扩展
-- `PostgresDriver` 尚有几个已知问题（`name` 返回 "sqlite"、类型映射缺长度、
-  keywords 混入 SQLite 词）
-- Oracle / SQL Server 不走 pg 的连接池，上游另有 `OraclePool` / `SqlServerPool`
-  （已在 `src/vendor/ts-grm.ts` 占位导出）
-
-### 对 ts-grm 的修复（历史，已随上游更新失效）
-
-骨架期曾在本地 ts-grm 仓库打过三个补丁（`aggregate.ts` 语法错误、`package.json` 的
-`exports.require`、`sql/src/index.ts` 补导出 schema 定义）。上游仓库更新后这些改动已被覆盖，
-**migrate 不再依赖它们**：
-
-- `exports.require`：上游现在直接产出 `./dist/index.cjs`，问题自然消失
-- schema 定义导出：上游已确认不再公开，改由 vendor 层适配（见上「上游 API 现状」）
-
-## 参考学习笔记
-
-- Prisma 迁移引擎源码：`~/code/open-source/prisma-engines`
-- 精读顺序：`database_schema.rs` → `sql_schema_differ.rs` → `libs/sql-ddl/src/postgres.rs`
-  → `sql_migration_persistence.rs` → `apply_migration.rs` → 命令层
-- 替代参考：drizzle-kit（TS，与 ts-grm 同构）、atlas（Go）
-
-## 状态
-
-**已实现**：
-
-- 语义层 IR（`schema/model.ts`）、目标态适配（`schema/adapter.ts`）
-- 快照序列化与校验（`snapshot.ts`）
-- diff 引擎（`differ.ts`）
-- 双方言 DDL 生成（`ddl/postgres.ts`、`ddl/sqlite.ts`）
-- Postgres Introspector（`introspector/postgres.ts`）：从 pg_catalog 读表 / 列 / 主键 /
-  唯一 / 外键 / CHECK / 索引；类型串与 ts-grm `typeName()` 对齐（见该文件头注释）
-- 迁移存储（`store.ts`）：磁盘 `<id>.sql` 文件 + 数据库 `_migrations` 历史表
-- 迁移应用器（`migrator.ts`）：`deploy` / `dev` / `push`；进程锁 + database advisory lock、
-  checksum 漂移检测、按方言执行事务或报告部分提交、失败记入历史；diff 时自动剔除历史表
-  （否则会被当成业务表 DROP）
-- 对账（`drift.ts`）：迁移之后再确认一次「数据库 == 模型」，把差异转成可读报告
-  （`deploy` / `dev` / `push` 自动调用，也可用 `migrator.checkDrift()`）
-- 进程锁文件（`lock.ts`）、Postgres 执行器（`executor/postgres.ts`，只依赖结构接口，
-  不把 pg 当运行时依赖）
-- **CLI**（`cli.ts` + `config.ts` + `runtime.ts`）：`dev` / `deploy` / `push` / `status` /
-  `resolve`，配置文件驱动、破坏性变更交互确认；与程序化调用共用同一条组装链
-
-测试包括单元测试、SQLite 本地集成，以及 PostgreSQL / MySQL / SQL Server / Oracle 的真实数据库套件。
-未配置对应 `*_HOST` 时外部数据库套件跳过；SQL Server / Oracle 可用 `yarn test:servers`
-自动创建 Podman 测试环境。类型检查：`yarn typecheck`。
-
-**已知限制**（introspection）：
-
-- CHECK 的表达式原文由 PG deparse（`((col)::text = ANY (ARRAY[...]))`），与模型侧适配器
-  还原的写法不同，diff 会判为变化并 drop+add；归一化留待后续
-- 暂不处理分区表与排他约束
-
-**未实现**：SQLite 的**重建表**路径（drop column / 改类型 / 改约束）—— SQLite 无法原地执行，
-而正确的重建还要处理外部外键重定向、索引重建与数据搬迁，当前显式报错而非生成丢数据的语句；
-五种数据库方言均有实现，具体版本与结构边界见 README。MySQL / Oracle DDL 可能隐式提交，失败后需检查数据库再 resolve。shadow database（应用前在临时库试跑）未做。
-
-下一步候选：SQLite 重建表路径；扩展复杂索引、生成列和 shadow database。
-
-## SQL Server / Oracle 接入
-
-- `server/sql.ts` 集中标识符、schema、占位符和类型归一化，历史表与 DDL 使用同一个 schema。
-- `server/ddl.ts` 接收 `DdlContext` 的实际态和目标态，先拆外键，再拆约束/索引，修改列，最后恢复约束和外键。
-  新表的外键统一延后创建，因此允许循环引用。SQL Server 默认值通过实际 DEFAULT 约束名删除；Oracle MODIFY 使用变更字段。
-- SQL Server 通过 mssql 的 acquire/release 预留一条物理连接，事务、查询和 Session application lock 始终在该连接执行。
-  Oracle 使用单个 connection 与 `DBMS_LOCK`（release_on_commit=false），锁不会因 DDL 提交失效。
-- `server/history.ts` 实现历史 SQL；`DatabaseMigrationHistoryStore` 按方言选择该实现。
-  Oracle 按名称绑定 `:n`，失败 checksum 使用非空占位值，避免空字符串被解释为 NULL。
-- Oracle SQL 文件使用有状态扫描器处理引号、q-quote、注释和语句终止符；暂不执行 PL/SQL/SQL*Plus 文件。
-- `scripts/test-server-databases.sh` 创建可销毁的真实数据库容器；`tests/server-integration.test.ts` 使用随机 schema/用户隔离测试。
-
-参考：
-
-- [SQL Server sp_getapplock](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-getapplock-transact-sql)
-- [Oracle DBMS_LOCK](https://docs.oracle.com/en/database/oracle/oracle-database/23/arpls/DBMS_LOCK.html)
-- [node-oracledb SQL execution](https://node-oracledb.readthedocs.io/en/latest/user_guide/sql_execution.html)
-- [Prisma SQL Server connector](https://github.com/prisma/prisma-engines/tree/main/schema-engine/connectors/sql-schema-connector/src/flavour/mssql)
+运行 `corepack yarn check` 做静态检查、构建和本地测试。数据库测试使用 `corepack yarn test:postgres-mysql` 和 `corepack yarn test:servers`；没有相应数据库环境时，普通测试会跳过这些用例。版本范围的验证步骤见 [兼容性](compatibility.md)。

@@ -18,6 +18,7 @@ import { ServerMigrationHistoryStore } from "./server/history.js";
 import { ServerSql } from "./server/sql.js";
 import { quoteMysqlIdentifier } from "./mysql/sql.js";
 import { quoteIdentifier } from "./ddl.js";
+import type { SqlQueryable } from "./sql.js";
 import type { SqlExecutor } from "./executor.js";
 import type { DialectName } from "./dialect.js";
 
@@ -39,7 +40,7 @@ export interface AppliedMigration {
   readonly checksum: string;
   readonly appliedAt: Date;
   readonly rolledBackAt: Date | undefined;
-  /** 上次执行失败则 true（对应 prisma 的 failed 状态 + migrate resolve） */
+  /** 执行未完成或失败时为 true；执行前持久化，成功提交后清除（migrate resolve 可恢复） */
   readonly failed: boolean;
   /** 失败摘要（一行，便于快速判断与增删查） */
   readonly error: string | undefined;
@@ -66,8 +67,8 @@ export interface MigrationHistoryStore {
   ensureTable(): Promise<void>;
   /** 已应用的迁移（含失败的），按应用时间升序 */
   listApplied(): Promise<ReadonlyArray<AppliedMigration>>;
-  /** 记录一条成功应用 */
-  recordApplied(migration: MigrationFile): Promise<void>;
+  /** 记录成功；提供 connection 时必须使用该事务连接，不能转交连接池。 */
+  recordApplied(migration: MigrationFile, connection?: SqlQueryable): Promise<void>;
   /** 标记失败（`error` 为摘要，`logs` 为可读详情）；供 resolve / 重试 */
   markFailed(id: string, error: string, logs?: string): Promise<void>;
   /**
@@ -118,7 +119,7 @@ export class FileMigrationStore implements MigrationFileStore {
 
   async write(file: MigrationFile): Promise<void> {
     await mkdir(this._dir, { recursive: true });
-    await writeFile(path.join(this._dir, `${file.id}.sql`), file.sql, "utf8");
+    await writeFile(path.join(this._dir, `${file.id}.sql`), file.sql, { encoding: "utf8", flag: "wx" });
   }
 }
 
@@ -213,17 +214,25 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
 
   async listApplied(): Promise<ReadonlyArray<AppliedMigration>> {
     if (this._server) return this._server.listApplied();
-    const { rows } = await this._options.executor.query(
-      `select id, checksum, applied_at, rolled_back_at, failed, error, logs
-       from ${this._table}
-       order by applied_at, id`,
-    );
+    let rows: ReadonlyArray<Record<string, unknown>>;
+    try {
+      ({ rows } = await this._options.executor.query(
+        `select id, checksum, applied_at, rolled_back_at, failed, error, logs
+         from ${this._table} order by applied_at, id`,
+      ));
+    } catch (error) {
+      const e = error as { code?: string; message?: string };
+      if ((this._dialect === "postgres" && e.code === "42P01") ||
+          (this._dialect === "mysql" && e.code === "ER_NO_SUCH_TABLE") ||
+          (this._dialect === "sqlite" && e.code === "SQLITE_ERROR" && e.message === `no such table: ${this.tableName}`)) return [];
+      throw error;
+    }
     return rows.map(toAppliedMigration);
   }
 
-  async recordApplied(migration: MigrationFile): Promise<void> {
-    if (this._server) return this._server.recordApplied(migration);
-    await this._options.executor.query(
+  async recordApplied(migration: MigrationFile, connection: SqlQueryable = this._options.executor): Promise<void> {
+    if (this._server) return this._server.recordApplied(migration, connection);
+    await connection.query(
       `insert into ${this._table} (id, checksum, applied_at, rolled_back_at, failed, error, logs)
        values (${this._ph(1)}, ${this._ph(2)}, ${this._now}, null, false, null, null)
        ${this._dialect === "mysql"

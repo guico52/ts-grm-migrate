@@ -7,7 +7,6 @@ import type {
   PrimaryKeyConstraint,
   Schema,
   Table as SchemaTable,
-  UniqueConstraint,
 } from "../src/schema/model";
 import type { Diff } from "../src/diff/types";
 import {
@@ -51,9 +50,7 @@ function fk(columns: Array<string>, referencedTable: string, referencedColumns: 
   };
 }
 
-function uq(columns: Array<string>): UniqueConstraint {
-  return { kind: "UNIQUE", name: undefined, columns, implicit: undefined };
-}
+
 
 function ck(expression: string, values: Array<string | number> = []): CheckConstraint {
   return { kind: "CHECK", name: undefined, expression, values, implicit: undefined };

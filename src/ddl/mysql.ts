@@ -113,8 +113,9 @@ export class MysqlDdlGenerator implements DdlGenerator {
 
 function columnSql(column: Column): string {
   let sql = `${q(column.name)} ${column.type}`;
-  if (column.mysql?.charset) sql += ` character set ${q(column.mysql.charset)}`;
-  if (column.mysql?.collation) sql += ` collate ${q(column.mysql.collation)}`;
+  const characterType = /^(?:char|varchar|tinytext|text|mediumtext|longtext|enum|set)\b/i.test(column.type);
+  if (characterType && column.mysql?.charset) sql += ` character set ${q(column.mysql.charset)}`;
+  if (characterType && column.mysql?.collation) sql += ` collate ${q(column.mysql.collation)}`;
   sql += column.nullable ? " null" : " not null";
   if (column.default !== undefined && column.default !== "") sql += ` default ${column.default}`;
   if (column.mysql?.onUpdate) sql += ` on update ${column.mysql.onUpdate}`;

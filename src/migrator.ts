@@ -54,7 +54,7 @@ export interface MigratorOptions {
   readonly migrationsDir: string;
   /** 进程锁文件路径（通常在项目根） */
   readonly lockPath: string;
-  /** 数据库 advisory lock 的 key；默认取 lockPath */
+  /** 数据库 advisory lock 的 key；默认使用固定资源名，由执行器限定数据库/schema */
   readonly lockKey?: string;
   /**
    * 破坏性变更的确认钩子。返回 false 则中止（抛 `MigrationAbortedError`）。
@@ -183,7 +183,21 @@ export class Migrator {
       await this._confirmIfNeeded(diff);
 
       const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
-      const id = generateMigrationId(new Date(), options.name ?? "");
+      // Allocate after all existing generated timestamps, even if the clock moves backwards.
+      const existing = await this._options.files.listFiles();
+      let time = Date.now();
+      for (const file of existing) {
+        const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})?(?:_|$)/.exec(file.id);
+        if (match) {
+          const previous = Date.UTC(
+            +match[1]!, +match[2]! - 1, +match[3]!,
+            +match[4]!, +match[5]!, +match[6]!, +(match[7] ?? 0),
+          );
+          // A legacy seconds-only ID must sort before the new ID, including its slug.
+          time = Math.max(time, previous + (match[7] ? 1 : 1000));
+        }
+      }
+      const id = generateMigrationId(new Date(time), options.name ?? "");
       const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
 
       await this._options.files.write(file);
@@ -208,12 +222,7 @@ export class Migrator {
   /** 迁移状态（只读，不加锁，不改库） */
   async status(): Promise<MigrationStatus> {
     const files = await this._options.files.listFiles();
-    let applied: ReadonlyArray<AppliedMigration> = [];
-    try {
-      applied = await this._effectiveApplied();
-    } catch {
-      // 历史表尚不存在 = 还没应用过任何迁移
-    }
+    const applied = await this._effectiveApplied();
     const appliedIds = new Set(applied.map((a) => a.id));
     return {
       applied: applied.map((a) => ({
@@ -307,7 +316,7 @@ export class Migrator {
     let releaseDbLock: (() => Promise<void>) | undefined;
     try {
       releaseDbLock = await this._options.executor.acquireMigrationLock(
-        this._options.lockKey ?? this._options.lockPath,
+        this._options.lockKey ?? "ts-grm-migrate",
       );
       if (ensureHistory) await this._options.history.ensureTable();
       return await fn();
@@ -320,17 +329,26 @@ export class Migrator {
   }
 
   private async _applyOne(file: MigrationFile): Promise<void> {
+    // A durable guard survives process death, connection loss and implicit DDL commits.
+    // failed also represents an unfinished attempt: only resolve may unblock it.
+    await this._options.history.markFailed(file.id, "迁移已开始但尚未确认完成；请检查数据库后使用 resolve 修正状态。", file.sql);
     try {
-      await this._options.executor.executeStatements([file.sql]);
+      let completed = false;
+      await this._options.executor.executeStatements([file.sql], async (connection) => {
+        await this._options.history.recordApplied(file, connection);
+        completed = true;
+      });
+      if (!completed) throw new Error("SQL 执行器未调用迁移完成回调，无法确认成功状态");
     } catch (e) {
       const message = (e as Error).message;
       // 失败要留在历史里：否则下次 deploy 会以为这是全新迁移而重试
-      await this._options.history
-        .markFailed(file.id, message, failureLogs(file, message))
-        .catch(() => undefined);
+      try {
+        await this._options.history.markFailed(file.id, message, failureLogs(file, message));
+      } catch (historyError) {
+        throw new AggregateError([e, historyError], `迁移 "${file.id}" 执行失败：${message}；更新失败历史也失败，保留未完成状态。`);
+      }
       throw new Error(`迁移 "${file.id}" 执行失败：${message}`);
     }
-    await this._options.history.recordApplied(file);
   }
 
   /**
@@ -360,14 +378,14 @@ export class Migrator {
 }
 
 /**
- * 迁移 id：UTC 时间戳 + 名字 slug（`20260911T120000_init` 风格，无分隔符的紧凑形式）。
+ * 迁移 id：UTC 毫秒时间戳 + 名字 slug（`20260911120000000_init`）。
  * 时间戳前缀保证**字典序即时间序**，`sortKey` 直接复用它。
  */
 export function generateMigrationId(now: Date, name: string): string {
   const pad = (n: number): string => n.toString().padStart(2, "0");
   const stamp =
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
-    `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
+    `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}${now.getUTCMilliseconds().toString().padStart(3, "0")}`;
   const slug = name
     .trim()
     .toLowerCase()

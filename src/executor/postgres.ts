@@ -4,7 +4,7 @@
  * 只依赖结构接口（`PgPoolLike` / `PgClientLike`），不 import pg 的类型 ——
  * migrate 核心因此不需要把 pg 作为运行时依赖，调用方传自己的 Pool 实例即可。
  */
-import type { SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 /** pg 的 Pool（只声明用到的部分） */
 export interface PgPoolLike {
@@ -34,13 +34,14 @@ export class PostgresSqlExecutor implements SqlExecutor {
     return await this._pool.query(sql, params);
   }
 
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     const client = await this._pool.connect();
     try {
       await client.query("begin");
       for (const sql of statements) {
         await client.query(sql);
       }
+      await complete?.(client);
       await client.query("commit");
     } catch (e) {
       await client.query("rollback").catch(() => undefined);
@@ -58,7 +59,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
       // 持有（残留连接、异常退出的实例）就会永久挂住，表现为测试莫名超时。
       // Prisma 同样带 ADVISORY_LOCK_TIMEOUT。
       await client.query("set lock_timeout = '10s'");
-      await client.query("select pg_advisory_lock(hashtext($1)::bigint)", [key]);
+      await client.query("select pg_advisory_lock(hashtext(current_database()), hashtext(current_schema() || ':' || $1))", [key]);
     } catch (e) {
       await client.query("reset lock_timeout").catch(() => undefined);
       client.release();
@@ -73,7 +74,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
       }
       released = true;
       try {
-        await client.query("select pg_advisory_unlock(hashtext($1)::bigint)", [key]);
+        await client.query("select pg_advisory_unlock(hashtext(current_database()), hashtext(current_schema() || ':' || $1))", [key]);
       } catch {
         // 解锁失败通常意味着连接已断（锁会随会话结束自动释放），
         // 不掩盖主流程里真正的错误

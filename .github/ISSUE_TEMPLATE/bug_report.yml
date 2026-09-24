@@ -1,0 +1,22 @@
+name: Bug report
+description: 报告可复现的问题；安全问题请先阅读 SECURITY.md。
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: Node、ts-grm-migrate、core/sql、数据库及驱动的版本。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现
+      description: 模型、脱敏配置、操作步骤、预期和实际结果。
+    validations:
+      required: true
+  - type: textarea
+    id: sql
+    attributes:
+      label: SQL 与错误日志
+      description: 移除口令、连接串、个人信息及业务数据。

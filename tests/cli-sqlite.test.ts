@@ -77,7 +77,7 @@ describe("CLI 端到端（SQLite）", () => {
     const code = await runCli(["dev", "-n", "init", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{14}_init/);
+    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}_init/);
     expect(tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
   });
 
