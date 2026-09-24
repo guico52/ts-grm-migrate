@@ -13,30 +13,23 @@
 
 ## 状态与安装
 
-**Alpha / 尚未正式发布。** 当前仅承诺下表列出的验证范围；不保证任意数据库结构或历史版本兼容。
+**Alpha，已发布到 [npm](https://www.npmjs.com/package/ts-grm-migrate)。** 首版为 `0.1.0-alpha.0`；
+仅承诺下表列出的验证范围，不保证任意数据库结构或历史版本兼容。
 运行环境与当前 ts-grm 工具链一致：Node `>=24.11.0`、ESM。
 开发使用 Yarn 4.1.0、TypeScript 7、tsdown、Biome 与 Vitest 4。
 
-先在本仓库构建安装包：
+在使用者项目中安装。以下命令对应下方的 PostgreSQL 快速开始示例：
 
 ```sh
-corepack yarn install --immutable
-corepack yarn check
-corepack yarn pack --out /tmp/ts-grm-migrate.tgz
-```
-
-再在使用者项目中安装（以下示例使用 SQLite）：
-
-```sh
-npm install @ts-grm/core@0.0.13 @ts-grm/sql@0.0.13 better-sqlite3
-npm install -D /tmp/ts-grm-migrate.tgz
+npm install @ts-grm/core@0.0.13 @ts-grm/sql@0.0.13 pg
+npm install -D ts-grm-migrate@next
 ```
 
 - core/sql 是 peerDependencies，请使用**相同版本**；当前支持 `>=0.0.9 <0.0.14`。
   这是已验证范围，不自动承诺未来版本；验证方法见 [兼容性](docs/compatibility.md)。
 - 数据库驱动按需安装，完整列表见下方支持表。
+- `@next` 跟随预发布版本；需要固定版本时请写明版本号，例如 `ts-grm-migrate@0.1.0-alpha.0`。
 - 安装后使用 `npx tgm`，或通过包管理器运行 `tgm` / `ts-grm-migrate`。
-- npm 发布步骤见 [发布](docs/releasing.md)。
 
 ## 快速开始
 
@@ -60,9 +53,9 @@ export default defineConfig({
 然后：
 
 ```sh
-tgm dev -n init          # 对比模型与数据库，生成并应用第一个迁移
-tgm dev                  # 不写名字也行：迁移只用时间戳命名
-tgm status               # 看看应用了哪些、还剩哪些
+npx tgm dev -n init      # 对比模型与数据库，生成并应用第一个迁移
+npx tgm dev              # 不写名字也行：迁移只用时间戳命名
+npx tgm status           # 看看应用了哪些、还剩哪些
 ```
 
 ### 配置项
@@ -202,34 +195,8 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 - **并发防护**：同一项目上的多个 migrate 实例由进程锁文件挡住；多机部署时再由数据库的
   advisory lock 兜底
 - **`schema` 是全局生效的**：同时作用于结构读取与 DDL 执行（PostgreSQL `search_path`，SQL Server / Oracle 限定表名），
-  不会出现「读了 A schema、却往 B schema 写」的情况
+  避免出现schema读取和写入不一致的情况
 
-## 为什么是 peer 依赖
-
-migrate 是 ts-grm 的插件，必须与你项目里的 ts-grm **共用同一份实例**：ts-grm 的模型注册表是
-模块级单例，若 migrate 自带一份 `@ts-grm/core`，它看到的是空注册表，拿不到你定义的任何模型。
-
-因此 `@ts-grm/core` / `@ts-grm/sql` 声明为 peerDependencies，由你的项目提供。
-
-## 开发与协作
-
-```sh
-corepack yarn check
-corepack yarn test:compat 0.0.9 0.0.13
-corepack yarn test:package 0.0.9
-corepack yarn test:postgres-mysql
-corepack yarn test:servers
-```
-
-GitHub CI 分别运行本地检查、历史依赖/安装包测试、真实数据库测试；本地缺少数据库环境变量时
-相关测试会跳过，因此不能仅凭 `yarn test` 绿色判断全部数据库通过。
-
-- [贡献指南](CONTRIBUTING.md)
-- [安全报告](SECURITY.md)
-- [变更记录](CHANGELOG.md)
-- [设计](docs/design.md)：代码分层、差分规则与失败恢复
-- [兼容性](docs/compatibility.md)：ts-grm 版本范围及复现命令
-- [发布](docs/releasing.md)：npm 发布前检查
 
 ## 许可证
 
