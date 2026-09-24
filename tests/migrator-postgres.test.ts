@@ -10,7 +10,7 @@
  * 里不带 schema 前缀也能落对位置 —— 与真实用法一致（migrate 生成的 SQL 就是不带前缀的）。
  */
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Pool } from "pg";
@@ -87,6 +87,34 @@ describePg("Migrator 集成（真实数据库）", () => {
       lockPath: path.join(dir, "migrate.lock"),
     });
   }
+
+  it("rolls back DDL if recording success fails on the transaction connection", async () => {
+    const history = new DatabaseMigrationHistoryStore({ executor });
+    await history.ensureTable();
+    await history.markFailed("atomic", "unfinished");
+    await expect(executor.executeStatements(['create table atomic_test (id int)'], async connection => {
+      await history.recordApplied({ id: "atomic", sortKey: "atomic", sql: "", checksum: "ok" }, connection);
+      throw new Error("history failure");
+    })).rejects.toThrow("history failure");
+    expect(await tablesInSchema()).not.toContain("atomic_test");
+    expect((await history.listApplied())[0]?.failed).toBe(true);
+  });
+
+  it("database lock is exclusive on the same schema and independent across schemas", async () => {
+    const release = await executor.acquireMigrationLock("ts-grm-migrate");
+    const client = await execPool.connect();
+    try {
+      const sql = "select pg_try_advisory_lock(hashtext(current_database()), hashtext(current_schema() || ':' || $1)) as acquired";
+      expect((await client.query(sql, ["ts-grm-migrate"])).rows[0].acquired).toBe(false);
+      await client.query("set search_path=public");
+      expect((await client.query(sql, ["ts-grm-migrate"])).rows[0].acquired).toBe(true);
+      await client.query("select pg_advisory_unlock_all()");
+    } finally {
+      await client.query(`set search_path=${TEST_SCHEMA}`);
+      client.release();
+      await release();
+    }
+  });
 
   async function tablesInSchema(): Promise<Array<string>> {
     const { rows } = await pool.query(
@@ -174,7 +202,7 @@ describePg("Migrator 集成（真实数据库）", () => {
     await migrator.dev({ name: "init" });
 
     const [file] = await fileStore.listFiles();
-    await fileStore.write({ ...file!, sql: `${file!.sql}\n-- tampered\n` });
+    await writeFile(path.join(dir, "migrations", `${file!.id}.sql`), `${file!.sql}\n-- tampered\n`);
 
     await expect(migrator.deploy()).rejects.toThrow(/checksum/);
   });

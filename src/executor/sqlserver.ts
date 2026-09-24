@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 export interface SqlServerRequestLike {
   input(name: string, value: unknown): SqlServerRequestLike;
@@ -36,10 +36,11 @@ export class SqlServerSqlExecutor implements SqlExecutor {
     return { rows: (await request.query(sql)).recordset ?? [] };
   }
 
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     await this._session.request().batch("begin transaction");
     try {
       for (const sql of statements) await this._session.request().batch(sql);
+      await complete?.(this);
       await this._session.request().batch("commit transaction");
     } catch (e) {
       try {

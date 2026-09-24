@@ -13,7 +13,7 @@
  *    本地多进程由进程锁文件挡住，同一文件的并发写由 SQLite 自身串行化。
  *    这是刻意的取舍，不是遗漏。
  */
-import type { SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 /** better-sqlite3 的 Database（只声明用到的部分） */
 export interface SqliteDatabaseLike {
@@ -48,13 +48,14 @@ export class SqliteSqlExecutor implements SqlExecutor {
     return { rows: statement.all(...(params ?? [])) };
   }
 
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     this._database.exec("begin");
     try {
       for (const sql of statements) {
         // exec 而非 prepare：迁移文件里往往是整段 SQL 文本（可能含多条语句）
         this._database.exec(sql);
       }
+      await complete?.(this);
       this._database.exec("commit");
     } catch (e) {
       try {

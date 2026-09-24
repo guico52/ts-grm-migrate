@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -140,6 +140,28 @@ for (const dialect of ["mssql", "oracle"] as const) {
         );
       };
 
+      it("history failure rolls back transactional DDL and blocks implicit-commit replay", async () => {
+        const history = new ServerMigrationHistoryStore(executor, sql);
+        const files = new FileMigrationStore(dir);
+        const migrationSql = `create table ${sql.table("HISTORY_FAILURE")} (${sql.identifier("ID")} ${dialect === "mssql" ? "int" : "number"})`;
+        await files.write({ id: "failure", sortKey: "failure", sql: migrationSql, checksum: checksumOf(migrationSql) });
+        const migrator = new Migrator({ executor, history, files, introspector, ddl, targetSchema: () => introspector.introspect(), migrationsDir: dir, lockPath: path.join(dir, "lock") });
+        const record = history.recordApplied.bind(history);
+        const fail = vi.spyOn(history, "recordApplied").mockImplementation(async (file, connection) => {
+          if (dialect === "mssql") await record(file, connection);
+          throw new Error("history unavailable");
+        });
+        await expect(migrator.deploy()).rejects.toThrow("history unavailable");
+        fail.mockRestore();
+        expect((await history.listApplied())[0]?.failed).toBe(true);
+        await expect(migrator.deploy()).rejects.toThrow(/失败/);
+        const tables = (await introspector.introspect()).tables.map(t => t.name);
+        expect(tables.includes("HISTORY_FAILURE")).toBe(dialect === "oracle");
+        await migrator.resolve({ migration: "failure", action: dialect === "oracle" ? "applied" : "rolled-back" });
+        await migrator.deploy();
+        expect((await history.listApplied())[0]?.failed).toBe(false);
+      });
+
       it("runtime dev、deploy、status、CLI 与模型闭环无重复差异", async () => {
         const config = {
           dialect,
@@ -151,6 +173,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         };
         const runtime = await createRuntime(config, process.cwd());
         try {
+          expect(await runtime.migrator.status()).toEqual({ applied: [], pending: [] });
           const result = await runtime.migrator.dev({ name: "init" });
           expect(result.applied).toBe(true);
           expect(result.drift).toEqual([]);
@@ -168,13 +191,9 @@ for (const dialect of ["mssql", "oracle"] as const) {
           expect(await deployed.migrator.checkDrift()).toEqual([]);
           const files = new FileMigrationStore(config.migrationsDir);
           const file = (await files.listFiles())[0]!;
-          await files.write({
-            ...file,
-            sql: `${file.sql}\n-- tampered`,
-            checksum: "unused",
-          });
+          await writeFile(path.join(config.migrationsDir, `${file.id}.sql`), `${file.sql}\n-- tampered`);
           await expect(deployed.migrator.deploy()).rejects.toThrow(/checksum/);
-          await files.write(file);
+          await writeFile(path.join(config.migrationsDir, `${file.id}.sql`), file.sql);
         } finally {
           await deployed.close();
         }

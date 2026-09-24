@@ -9,7 +9,6 @@ import type {
   PrimaryKeyConstraint,
   Schema,
   Table as SchemaTable,
-  UniqueConstraint,
 } from "../src/schema/model";
 
 // ---- 构造 helper（与 tests/ddl.test.ts 一致的最小构造） ----------------------
@@ -45,9 +44,7 @@ function fk(columns: Array<string>, referencedTable: string, referencedColumns: 
   };
 }
 
-function uq(columns: Array<string>): UniqueConstraint {
-  return { kind: "UNIQUE", name: undefined, columns, implicit: undefined };
-}
+
 
 function ck(expression: string): CheckConstraint {
   return { kind: "CHECK", name: undefined, expression, values: [], implicit: undefined };

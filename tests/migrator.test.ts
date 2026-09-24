@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { checksumOf, FileMigrationStore } from "../src/store";
@@ -9,7 +9,7 @@ import type {
   MigrationFile,
   MigrationHistoryStore,
 } from "../src/store";
-import type { SqlExecutor } from "../src/executor";
+import type { MigrationCompletion, SqlExecutor } from "../src/executor";
 import type { Dialect, Introspector } from "../src/introspector";
 import type { DdlGenerator } from "../src/ddl";
 import type { Diff } from "../src/diff/types";
@@ -70,6 +70,10 @@ class FakeHistory implements MigrationHistoryStore {
   }
   async markFailed(id: string, error: string, logs?: string): Promise<void> {
     this.failures.push({ id, error, logs });
+    const old = this.applied.findIndex((a) => a.id === id);
+    const record = { id, checksum: "", appliedAt: new Date(), rolledBackAt: undefined, failed: true, error, logs };
+    if (old >= 0) this.applied[old] = record;
+    else this.applied.push(record);
   }
   async markRolledBack(id: string): Promise<boolean> {
     const index = this.applied.findIndex((a) => a.id === id);
@@ -94,12 +98,13 @@ class FakeExecutor implements SqlExecutor {
   async query(): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
     return { rows: [] };
   }
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     const failWhen = this.failWhen;
     if (failWhen != null && statements.some((s) => s.includes(failWhen))) {
       throw new Error("语句执行失败（已回滚）：boom");
     }
     this.executed.push(statements);
+    await complete?.(this);
   }
   async acquireMigrationLock(): Promise<() => Promise<void>> {
     return async () => undefined;
@@ -174,6 +179,56 @@ describe("Migrator", () => {
     });
   }
 
+  it("history failure blocks replay even when failure reporting also fails", async () => {
+    await writeMigration("first", "select 1;");
+    vi.spyOn(history, "recordApplied").mockRejectedValue(new Error("history unavailable"));
+    const mark = history.markFailed.bind(history);
+    vi.spyOn(history, "markFailed").mockImplementationOnce(mark).mockRejectedValue(new Error("connection lost"));
+    await expect(makeMigrator().deploy()).rejects.toThrow(/更新失败历史也失败/);
+    await expect(makeMigrator().deploy()).rejects.toThrow(/失败/);
+    expect(executor.executed).toHaveLength(1);
+  });
+
+  it("does not execute SQL if the durable guard cannot be written", async () => {
+    await writeMigration("first", "select 1;");
+    vi.spyOn(history, "markFailed").mockRejectedValue(new Error("permission denied"));
+    await expect(makeMigrator().deploy()).rejects.toThrow("permission denied");
+    expect(executor.executed).toHaveLength(0);
+  });
+
+  it("rejects executors that omit the completion callback", async () => {
+    await writeMigration("first", "select 1;");
+    vi.spyOn(executor, "executeStatements").mockResolvedValue(undefined);
+    await expect(makeMigrator().deploy()).rejects.toThrow(/未调用迁移完成回调/);
+    expect(history.applied[0]?.failed).toBe(true);
+  });
+
+  it("status propagates database errors", async () => {
+    vi.spyOn(history, "listApplied").mockRejectedValue(new Error("permission denied"));
+    await expect(makeMigrator().status()).rejects.toThrow("permission denied");
+  });
+
+  it("dev allocates increasing IDs under a frozen clock", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-21T12:00:00Z"));
+    try {
+      const first = await makeMigrator(ONE_TABLE).dev({name: "z"});
+      const second = await makeMigrator(ONE_TABLE).dev({name: "a"});
+      expect(second.migrationId! > first.migrationId!).toBe(true);
+      expect(await files.listFiles()).toHaveLength(2);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("uses the same database lock resource across different local directories", async () => {
+    const lock = vi.spyOn(executor, "acquireMigrationLock");
+    await makeMigrator().deploy();
+    const previousDir = dir;
+    dir = path.join(dir, "another-checkout");
+    await mkdir(dir);
+    try { await makeMigrator().deploy(); } finally { dir = previousDir; }
+    expect(lock.mock.calls[0]).toEqual(lock.mock.calls[1]);
+    expect(lock.mock.calls[0]).toEqual(["ts-grm-migrate"]);
+  });
+
   describe("deploy", () => {
     it("按 sortKey 顺序应用未应用的迁移，并记录历史", async () => {
       await writeMigration("20260911T120001_b", "select 2;");
@@ -234,8 +289,8 @@ describe("Migrator", () => {
 
       await expect(makeMigrator().deploy()).rejects.toThrow(/执行失败/);
 
-      expect(history.failures.map((f) => f.id)).toEqual(["20260911T120000_a"]);
-      expect(history.applied).toEqual([]);
+      expect(history.failures.map((f) => f.id)).toEqual(["20260911T120000_a", "20260911T120000_a"]);
+      expect(history.applied[0]?.failed).toBe(true);
     });
 
     it("无迁移文件时是空操作", async () => {
@@ -286,7 +341,7 @@ describe("Migrator", () => {
 
     it("迁移 id 含名字 slug 且以时间戳开头", async () => {
       const result = await makeMigrator(ONE_TABLE).dev({ name: "add user table" });
-      expect(result.migrationId).toMatch(/^\d{14}_add_user_table$/);
+      expect(result.migrationId).toMatch(/^\d{17}_add_user_table$/);
     });
   });
 
@@ -430,13 +485,13 @@ describe("Migrator", () => {
 describe("generateMigrationId", () => {
   it("UTC 时间戳 + 名字 slug", () => {
     expect(generateMigrationId(new Date("2026-09-11T12:34:56Z"), "Add User Table")).toBe(
-      "20260911123456_add_user_table",
+      "20260911123456000_add_user_table",
     );
   });
 
   it("名字为空时只留时间戳", () => {
     expect(generateMigrationId(new Date("2026-09-11T12:34:56Z"), "   ")).toBe(
-      "20260911123456",
+      "20260911123456000",
     );
   });
 });

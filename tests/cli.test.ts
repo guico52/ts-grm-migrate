@@ -129,12 +129,12 @@ describe("CLI 入口结构（防止循环依赖死锁）", () => {
     // 而使用者的配置文件又会 import 库入口 —— 若 cli.js 停在 TLA，
     // 环上两个模块会互相等待而死锁（实测会静默退出）。
     expect(source).not.toMatch(/^await /m);
-    expect(source).toMatch(/main\(\)\.catch/);
+    expect(source).not.toMatch(/isEntryPoint|void main\(\)/);
   });
 });
 
 describe("CLI 可执行入口（需要先 build）", () => {
-  const distCli = path.resolve(HERE, "../dist/cli.js");
+  const distCli = path.resolve(HERE, "../dist/bin.mjs");
   let dir: string;
 
   beforeEach(async () => {

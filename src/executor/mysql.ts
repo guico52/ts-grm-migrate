@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 export interface MysqlConnectionLike {
   query(sql: string, params?: ReadonlyArray<unknown>): Promise<readonly [unknown, unknown]>;
@@ -47,10 +47,14 @@ export class MysqlSqlExecutor implements SqlExecutor {
     });
   }
 
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     await this._withConnection(async (connection) => {
       try {
         for (const sql of statements) await connection.query(sql);
+        await complete?.({ query: async (sql, params) => {
+          const [result] = params?.length ? await connection.execute(sql, params) : await connection.query(sql);
+          return { rows: Array.isArray(result) ? result as Array<Record<string, unknown>> : [] };
+        } });
       } catch (e) {
         throw new Error(`MySQL 语句执行失败：${(e as Error).message}。DDL 会隐式提交，之前成功的语句可能已生效；请检查数据库后使用 resolve 修正状态。`);
       }

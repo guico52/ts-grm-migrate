@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 export interface OracleSession {
   execute(
@@ -33,11 +33,12 @@ export class OracleSqlExecutor implements SqlExecutor {
     );
     return { rows: result.rows ?? [] };
   }
-  async executeStatements(statements: ReadonlyArray<string>): Promise<void> {
+  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
     // Parse the whole input first: unsupported PL/SQL must not leave a half-executed file.
     const parsed = statements.flatMap(splitOracleSql);
     try {
       for (const sql of parsed) await this.query(sql);
+      await complete?.(this);
     } catch (e) {
       throw new Error(
         `Oracle 语句执行失败：${(e as Error).message}。DDL 隐式提交，之前的语句可能已生效；请检查数据库后使用 resolve 修正状态。`,

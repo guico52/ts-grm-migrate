@@ -74,6 +74,14 @@ describe("FileMigrationStore", () => {
     expect(second!.checksum).not.toBe(first!.checksum);
   });
 
+  it("refuses to overwrite an existing migration", async () => {
+    const store = new FileMigrationStore(dir);
+    const file = { id: "m1", sql: "select 1;", checksum: "", sortKey: "m1" };
+    await store.write(file);
+    await expect(store.write({ ...file, sql: "select 2;" })).rejects.toMatchObject({ code: "EEXIST" });
+    expect((await store.listFiles())[0]?.sql).toBe("select 1;");
+  });
+
   it("write 自动建目录并写入 <id>.sql", async () => {
     const nested = path.join(dir, "migrations");
     await new FileMigrationStore(nested).write({
