@@ -2910,8 +2910,8 @@ __metadata:
     pg:
       optional: true
   bin:
-    tgm: ./dist/bin.mjs
-    ts-grm-migrate: ./dist/bin.mjs
+    tgm: dist/bin.mjs
+    ts-grm-migrate: dist/bin.mjs
   languageName: unknown
   linkType: soft
 
