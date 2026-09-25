@@ -15,7 +15,7 @@ TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:postgres-mysql
 TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:servers
 ```
 
-`test:compat` 在临时目录安装指定版本，并运行包含完整模型的类型检查和本地测试；报告写入临时 JSON 文件，也可以用 `COMPAT_REPORT` 指定路径。数据库脚本需要 Podman，或用 `CONTAINER_RUNTIME=docker` 切换到 Docker。CI 同时检查最低与当前 peer 版本。
+`test:compat` 在临时目录安装指定版本，并运行包含完整模型的类型检查和本地测试；报告写入临时 JSON 文件，也可以用 `COMPAT_REPORT` 指定路径。数据库脚本需要 Podman，或用 `CONTAINER_RUNTIME=docker` 切换到 Docker。发布前手动检查最低与当前 peer 版本。
 
 Node 最低版本为 `24.11.0`。`@ts-grm/sql@0.0.13` 的发布产物包含 `using` 声明；已检查的 Node 22.18.0、22.22.3 和 22.23.2 均无法解析该语法。本项目没有改写上游产物，因此不声明 Node 22 支持。以后如上游构建产物或 Node 运行时变化，应在干净环境中重新测试后再调整 `engines`。
 
