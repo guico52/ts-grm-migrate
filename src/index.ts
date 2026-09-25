@@ -92,6 +92,7 @@ export type {
   DialectName,
   LoadedConfig,
   MigrateConfig,
+  OutputLanguage,
 } from "./config.js";
 export { createRuntime, DEFAULT_LOCK_PATH, DEFAULT_MIGRATIONS_DIR } from "./runtime.js";
 export type { Runtime, RuntimeOptions } from "./runtime.js";

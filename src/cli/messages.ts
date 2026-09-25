@@ -1,4 +1,4 @@
-import { CONFIG_FILENAMES } from "../config.js";
+import { CONFIG_FILENAMES, type OutputLanguage } from "../config.js";
 
 const en = {
   usage: `ts-grm-migrate — Database migrations for ts-grm
@@ -18,7 +18,7 @@ Options:
   --config <path>              Configuration file path
   --force                      Skip destructive-change confirmation
   --detail                     Show steps, SQL and lock information
-  --lang <en|zh-CN>            Output language (default: en)
+  --lang <en|zh-CN>            Output language (overrides config)
   -h, --help                   Show help
 
 Configuration files:
@@ -84,7 +84,7 @@ const zhCN = {
   --config <path>              配置文件路径
   --force                      跳过破坏性变更确认
   --detail                     显示执行步骤、SQL 和锁信息
-  --lang <en|zh-CN>            输出语言（默认 en）
+  --lang <en|zh-CN>            输出语言（覆盖配置）
   -h, --help                   显示帮助
 
 配置文件:
@@ -130,9 +130,9 @@ const zhCN = {
   detailSkipped: (count: number) => `跳过 ${count} 个已应用迁移。`,
 } satisfies CliMessages;
 
-const CATALOG = { en, "zh-CN": zhCN } satisfies Record<string, CliMessages>;
+const CATALOG = { en, "zh-CN": zhCN } satisfies Record<OutputLanguage, CliMessages>;
 
-export type CliLanguage = keyof typeof CATALOG;
+export type CliLanguage = OutputLanguage;
 
 export function messages(language: CliLanguage): CliMessages {
   return CATALOG[language];

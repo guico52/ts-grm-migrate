@@ -29,6 +29,25 @@ describe("CLI 端到端（SQLite）", () => {
       errorLog: (m) => errors.push(m),
     });
 
+  const writeConfig = async (language?: "en" | "zh-CN"): Promise<void> => {
+    await writeFile(
+      configPath,
+      `export default ${JSON.stringify(
+        {
+          dialect: "sqlite",
+          ...(language != null ? { language } : {}),
+          database: { file: dbFile },
+          models: ["./tests/model/model.ts"],
+          migrationsDir: path.join(dir, "migrations"),
+          lockPath: path.join(dir, "migrate.lock"),
+        },
+        null,
+        2,
+      )};\n`,
+      "utf8",
+    );
+  };
+
   /** 直连库文件看真实结构（绕过 migrate，独立验证） */
   const tables = (): Array<string> => {
     const db = new Database(dbFile);
@@ -52,21 +71,7 @@ describe("CLI 端到端（SQLite）", () => {
     dir = await mkdtemp(path.join(tmpdir(), "tsgrm-sqlite-e2e-"));
     dbFile = path.join(dir, "app.db");
     configPath = path.join(dir, "ts-grm-migrate.config.ts");
-    await writeFile(
-      configPath,
-      `export default ${JSON.stringify(
-        {
-          dialect: "sqlite",
-          database: { file: dbFile },
-          models: ["./tests/model/model.ts"],
-          migrationsDir: path.join(dir, "migrations"),
-          lockPath: path.join(dir, "migrate.lock"),
-        },
-        null,
-        2,
-      )};\n`,
-      "utf8",
-    );
+    await writeConfig();
   });
 
   afterEach(async () => {
@@ -129,5 +134,23 @@ describe("CLI 端到端（SQLite）", () => {
     expect(logs.join("\n")).toContain("已获取进程锁");
     expect(logs.join("\n")).toContain("已获取数据库锁");
     expect(logs.join("\n")).toContain("已在 sqlite");
+  });
+
+  it("配置语言作为项目默认值，--lang 只覆盖本次命令", async () => {
+    await writeConfig("zh-CN");
+    expect(await runCli(["dev", "--config", configPath])).toBe(0);
+    expect(logs.join("\n")).toContain("已在 sqlite");
+
+    logs.length = 0;
+    expect(await runCli(["status", "--config", configPath])).toBe(0);
+    expect(logs.join("\n")).toContain("已应用：");
+
+    logs.length = 0;
+    expect(await runCli(["status", "--lang", "en", "--config", configPath])).toBe(0);
+    expect(logs.join("\n")).toContain("Applied:");
+
+    logs.length = 0;
+    expect(await runCli(["--help", "--config", configPath])).toBe(0);
+    expect(logs.join("\n")).toContain("Usage:");
   });
 });

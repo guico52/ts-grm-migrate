@@ -89,8 +89,8 @@ export async function run(
   const errorLog = options.errorLog ?? ((message: string) => console.error(message));
   const { command, flags } = parseArgs(argv);
   const lang = flags.get("lang");
-  const language: CliLanguage = lang === "zh-CN" ? "zh-CN" : "en";
-  const m = messages(language);
+  const initialLanguage: CliLanguage = lang === "zh-CN" ? "zh-CN" : "en";
+  let m = messages(initialLanguage);
 
   if (lang != null && lang !== "en" && lang !== "zh-CN") {
     errorLog(m.invalidLanguage(String(lang)));
@@ -117,6 +117,9 @@ export async function run(
     cwd,
     typeof configFlag === "string" ? configFlag : undefined,
   );
+  const language: CliLanguage = lang === "en" || lang === "zh-CN" ? lang : config.language ?? "en";
+  m = messages(language);
+  options.onLanguage?.(language);
 
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
