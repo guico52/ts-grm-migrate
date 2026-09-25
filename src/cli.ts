@@ -9,9 +9,10 @@
  * 配置文件在项目根自动查找（见 `src/config.ts` 的候选名）。
  */
 import { createInterface } from "node:readline/promises";
-import { CONFIG_FILENAMES, loadConfig } from "./config.js";
+import { loadConfig } from "./config.js";
+import { messages, type CliLanguage, type CliMessages } from "./cli/messages.js";
 import { abnormalDrift } from "./drift.js";
-import { MigrationAbortedError } from "./migrator.js";
+import { MigrationAbortedError, type MigrationProgress } from "./migrator.js";
 import { createRuntime } from "./runtime.js";
 import type { DestructiveChange, Diff } from "./diff/types.js";
 import type { SchemaDrift } from "./drift.js";
@@ -21,29 +22,7 @@ import type { Runtime } from "./runtime.js";
 
 export type { ParsedArgs, RunOptions } from "./cli/types.js";
 
-const USAGE = `ts-grm-migrate —— ts-grm 的 schema 迁移工具
-
-用法：
-  ts-grm-migrate <命令> [选项]
-
-命令：
-  dev [--name <名字>]  对比模型与数据库，生成并应用一个迁移（开发用）
-                       不给名字时用纯时间戳命名
-  deploy              应用所有未应用的迁移（部署 / CI 用）
-  push                直接把数据库同步成模型的样子（不写迁移文件、不记历史）
-  status              查看已应用 / 待应用的迁移
-  resolve --applied <id>      把迁移标记为已应用（SQL 已手工执行过）
-  resolve --rolled-back <id>  标记迁移已回滚，它将重新待应用
-
-选项：
-  -n, --name <名字>   迁移名（dev 命令用；可省略，省略时只用时间戳）
-  --config <path>     指定配置文件（默认在项目根自动查找）
-  --force             破坏性变更不询问，直接执行（非交互环境下必需）
-  -h, --help          显示本帮助
-
-配置文件（项目根，任选其一）：
-  ${CONFIG_FILENAMES.join("\n  ")}
-`;
+const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail"]);
 
 /** 解析 argv：`--k v` / `--k=v` / `-h` / 位置参数（第一个位置参数是命令） */
 /**
@@ -67,7 +46,7 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
       }
       const name = arg.slice(2);
       const next = argv[i + 1];
-      if (next != null && !next.startsWith("-")) {
+      if (!BOOLEAN_FLAGS.has(name) && next != null && !next.startsWith("-")) {
         flags.set(name, next);
         i++;
       } else {
@@ -109,12 +88,30 @@ export async function run(
   const log = options.log ?? ((message: string) => console.log(message));
   const errorLog = options.errorLog ?? ((message: string) => console.error(message));
   const { command, flags } = parseArgs(argv);
+  const lang = flags.get("lang");
+  const language: CliLanguage = lang === "zh-CN" ? "zh-CN" : "en";
+  const m = messages(language);
 
-  if (command == null || command === "help" || flags.has("help") || flags.has("h")) {
-    log(USAGE);
-    return 0;
+  if (lang != null && lang !== "en" && lang !== "zh-CN") {
+    errorLog(m.invalidLanguage(String(lang)));
+    return 1;
   }
 
+  if (command == null || command === "help" || flags.has("help") || flags.has("h")) {
+    log(m.usage);
+    return 0;
+  }
+  if (flags.has("detail") && flags.get("detail") !== true) {
+    errorLog(m.invalidOption("detail"));
+    return 1;
+  }
+  if (!["dev", "deploy", "push", "status", "resolve"].includes(command)) {
+    errorLog(m.unknownCommand(command));
+    log(m.usage);
+    return 1;
+  }
+
+  const detail = flags.has("detail");
   const configFlag = flags.get("config");
   const { config, path: configFile } = await loadConfig(
     cwd,
@@ -122,37 +119,50 @@ export async function run(
   );
 
   const runtime = await createRuntime(config, cwd, {
-    confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog),
+    confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
+    driftLanguage: language,
+    ...(detail ? { onProgress: (event: MigrationProgress) => reportProgress(event, log, m) } : {}),
   });
   const dbLabel = describeDatabase(config);
 
   try {
-    log(`配置：${configFile}`);
+    if (detail) {
+      log(m.config(configFile));
+      log(m.target(dbLabel));
+    }
     switch (command) {
       case "dev":
-        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog);
+        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog, m, detail);
       case "deploy":
-        return await runDeploy(runtime, dbLabel, log, errorLog);
+        return await runDeploy(runtime, dbLabel, log, errorLog, m, detail);
       case "push":
-        return await runPush(runtime, dbLabel, log, errorLog);
+        return await runPush(runtime, dbLabel, log, errorLog, m, detail);
       case "status":
-        return await runStatus(runtime, log);
+        return await runStatus(runtime, log, m);
       case "resolve":
-        return await runResolve(runtime, flags, log, errorLog);
+        return await runResolve(runtime, flags, log, errorLog, m);
       default:
-        errorLog(`未知命令 "${command}"。`);
-        log(USAGE);
         return 1;
     }
   } catch (e) {
     if (e instanceof MigrationAbortedError) {
       // 使用者主动取消：不是失败，不让调用方处理
-      log("已取消。");
+      log(m.cancelled);
       return 0;
     }
     throw e;
   } finally {
     await runtime.close();
+  }
+}
+
+function reportProgress(event: MigrationProgress, log: (message: string) => void, m: CliMessages): void {
+  switch (event.kind) {
+    case "process-lock": log(m.detailProcessLock(event.path)); break;
+    case "database-lock": log(m.detailDatabaseLock(event.key)); break;
+    case "sql": log(m.detailSql(event.sql)); break;
+    case "migration-start": log(m.detailMigration(event.id)); break;
+    case "migration-applied": log(m.detailApplied(event.id)); break;
   }
 }
 
@@ -162,16 +172,18 @@ async function runDev(
   dbLabel: string,
   log: (message: string) => void,
   errorLog: (message: string) => void,
+  m: CliMessages,
+  detail: boolean,
 ): Promise<number> {
   // name 可选：不给就用纯时间戳命名（由 migrator 层的 generateMigrationId 负责）
   const migrationName = typeof name === "string" ? name.trim() : "";
   const result = await runtime.migrator.dev({ name: migrationName });
   if (!result.applied) {
-    log("模型与数据库结构一致，无需迁移。");
+    log(m.devNoop(dbLabel));
     return 0;
   }
-  log(`已生成并应用迁移：${result.migrationId}`);
-  reportDrift(result.drift, dbLabel, log, errorLog);
+  log(m.devApplied(result.migrationId!, dbLabel));
+  reportDrift(result.drift, dbLabel, log, errorLog, m, detail);
   return 0;
 }
 
@@ -180,16 +192,17 @@ async function runDeploy(
   dbLabel: string,
   log: (message: string) => void,
   errorLog: (message: string) => void,
+  m: CliMessages,
+  detail: boolean,
 ): Promise<number> {
   const result = await runtime.migrator.deploy();
   if (result.applied.length === 0) {
-    log(`没有待应用的迁移（已应用 ${result.skipped} 个）。`);
+    log(m.deployNoop(dbLabel));
   } else {
-    for (const id of result.applied) {
-      log(`已应用 ${id}`);
-    }
+    log(m.deployApplied(result.applied.length, dbLabel));
   }
-  reportDrift(result.drift, dbLabel, log, errorLog);
+  if (detail && result.skipped > 0) log(m.detailSkipped(result.skipped));
+  reportDrift(result.drift, dbLabel, log, errorLog, m, detail);
   return 0;
 }
 
@@ -198,24 +211,26 @@ async function runPush(
   dbLabel: string,
   log: (message: string) => void,
   errorLog: (message: string) => void,
+  m: CliMessages,
+  detail: boolean,
 ): Promise<number> {
   const result = await runtime.migrator.push();
   if (result.statements.length === 0) {
-    log("模型与数据库结构一致，无需同步。");
+    log(m.pushNoop(dbLabel));
   } else {
-    log(`已同步：应用了 ${result.statements.length} 条语句。`);
+    log(m.pushApplied(result.statements.length, dbLabel));
   }
-  reportDrift(result.drift, dbLabel, log, errorLog);
+  reportDrift(result.drift, dbLabel, log, errorLog, m, detail);
   return 0;
 }
 
 /** 数据库的可读标识（用于对账消息里指认「哪个库」） */
 function describeDatabase(config: MigrateConfig): string {
-  const schema = config.schema ?? "public";
-  const database = config.database.database;
-  return database != null && database !== ""
-    ? `库 ${database}，schema ${schema}`
-    : `schema ${schema}`;
+  const dialect = config.dialect ?? "postgres";
+  if (dialect === "sqlite") return `sqlite ${config.database.file ?? ":memory:"}`;
+  const database = config.database.database ?? (dialect === "oracle" && config.database.connectionString == null ? "FREEPDB1" : undefined);
+  const schema = config.schema ?? (dialect === "mssql" ? "dbo" : dialect === "postgres" ? "public" : dialect === "oracle" ? config.database.user : undefined);
+  return [dialect, database ?? (config.database.connectionString ? "(connection string)" : "(default database)"), schema].filter((part) => part != null && part !== "").join("/");
 }
 
 /**
@@ -226,41 +241,43 @@ function reportDrift(
   dbLabel: string,
   log: (message: string) => void,
   errorLog: (message: string) => void,
+  m: CliMessages,
+  detail: boolean,
 ): void {
   const abnormal = abnormalDrift(drift);
   const knownCount = drift.length - abnormal.length;
 
   if (abnormal.length > 0) {
-    errorLog(`\n⚠ 对账发现数据库与模型不一致（${dbLabel}）：`);
+    errorLog(m.drift(dbLabel));
     for (const item of abnormal) {
-      errorLog(`  - 表 ${item.table}：${item.summary}`);
+      errorLog(m.driftTable(item.table, item.summary));
     }
-    errorLog("这通常意味着迁移未完整生效，或数据库被手工改动过。");
+    errorLog(m.driftHint);
   }
-  if (knownCount > 0) {
-    log(`（另有 ${knownCount} 处因已知限制无法比对（如 CHECK 约束表达式），已忽略）`);
+  if (detail && knownCount > 0) {
+    log(m.knownDrift(knownCount));
   }
 }
 
-async function runStatus(runtime: Runtime, log: (message: string) => void): Promise<number> {
+async function runStatus(runtime: Runtime, log: (message: string) => void, m: CliMessages): Promise<number> {
   const status = await runtime.migrator.status();
   if (status.applied.length === 0 && status.pending.length === 0) {
-    log("没有任何迁移。");
+    log(m.noMigrations);
     return 0;
   }
   if (status.applied.length > 0) {
-    log("已应用：");
+    log(m.appliedHeading);
     for (const applied of status.applied) {
-      log(`  ${applied.id}  ${applied.appliedAt.toISOString()}${applied.failed ? "  [失败]" : ""}`);
+      log(`  ${applied.id}  ${applied.appliedAt.toISOString()}${applied.failed ? `  [${m.failed}]` : ""}`);
     }
   }
   if (status.pending.length > 0) {
-    log("待应用：");
+    log(m.pendingHeading);
     for (const id of status.pending) {
       log(`  ${id}`);
     }
   } else {
-    log("没有待应用的迁移。");
+    log(m.noPending);
   }
   return 0;
 }
@@ -271,25 +288,26 @@ async function runResolve(
   flags: ReadonlyMap<string, string | true>,
   log: (message: string) => void,
   errorLog: (message: string) => void,
+  m: CliMessages,
 ): Promise<number> {
   const applied = flags.get("applied");
   const rolledBack = flags.get("rolled-back");
 
-  if (typeof applied === "string" && typeof rolledBack === "string") {
-    errorLog("--applied 与 --rolled-back 只能选一个。");
+  if (applied != null && rolledBack != null) {
+    errorLog(m.resolveConflict);
     return 1;
   }
   if (typeof applied === "string") {
     await runtime.migrator.resolve({ migration: applied, action: "applied" });
-    log(`已标记为已应用：${applied}`);
+    log(m.resolvedApplied(applied));
     return 0;
   }
   if (typeof rolledBack === "string") {
     await runtime.migrator.resolve({ migration: rolledBack, action: "rolled-back" });
-    log(`已标记回滚（将重新待应用）：${rolledBack}`);
+    log(m.resolvedRolledBack(rolledBack));
     return 0;
   }
-  errorLog("resolve 需要 --applied <迁移 id> 或 --rolled-back <迁移 id>。");
+  errorLog(m.resolveRequired);
   return 1;
 }
 
@@ -297,19 +315,20 @@ async function runResolve(
 function makeConfirm(
   force: boolean,
   errorLog: (message: string) => void,
+  m: CliMessages,
 ): (diff: Diff) => Promise<boolean> {
   return async (diff: Diff): Promise<boolean> => {
     if (force) {
       return true;
     }
-    printDestructive(diff.destructive, errorLog);
+    printDestructive(diff.destructive, errorLog, m);
     if (!process.stdin.isTTY) {
-      errorLog("当前不是交互环境，无法确认；确认后请加 --force 重试。");
+      errorLog(m.nonInteractive);
       return false;
     }
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try {
-      const answer = (await rl.question("是否继续？(y/N) ")).trim().toLowerCase();
+      const answer = (await rl.question(m.confirm)).trim().toLowerCase();
       return answer === "y" || answer === "yes";
     } finally {
       rl.close();
@@ -320,18 +339,19 @@ function makeConfirm(
 function printDestructive(
   changes: ReadonlyArray<DestructiveChange>,
   errorLog: (message: string) => void,
+  m: CliMessages,
 ): void {
-  errorLog("检测到破坏性变更（可能丢失数据）：");
+  errorLog(m.destructive);
   for (const change of changes) {
     switch (change.kind) {
       case "DROP_TABLE":
-        errorLog(`  - 删除表 ${change.table}`);
+        errorLog(m.dropTable(change.table));
         break;
       case "DROP_COLUMN":
-        errorLog(`  - 删除列 ${change.table}.${change.column}`);
+        errorLog(m.dropColumn(change.table, change.column));
         break;
       case "ALTER_COLUMN":
-        errorLog(`  - 修改列类型 ${change.table}.${change.column} → ${change.type}`);
+        errorLog(m.alterColumn(change.table, change.column, change.type));
         break;
     }
   }

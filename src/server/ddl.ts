@@ -42,7 +42,7 @@ export class ServerDdlGenerator implements DdlGenerator {
         .get(name)
         ?.constraints.some((c) => c.kind === "DROP_CONSTRAINT") ?? false;
     const removeConstraint = (name: string, c: Constraint): void => {
-      if (!c.name) throw new Error(`删除 ${name} 的约束需要实际约束名`);
+      if (!c.name) throw new Error(`Cannot drop constraint on ${name} without its physical name`);
       (c.kind === "FOREIGN_KEY" ? dropFk : dropKeys).set(
         `${name}\0${c.name}`,
         `alter table ${table(name)} drop constraint ${q(c.name)}`,
@@ -152,7 +152,7 @@ export class ServerDdlGenerator implements DdlGenerator {
         const old = before?.columns.find((c) => c.name === col.column);
         if (!old)
           throw new Error(
-            `${this.dialect} 修改 ${change.table}.${col.column} 需要 DdlContext 中的原始列定义`,
+            `Altering ${this.dialect} column ${change.table}.${col.column} requires its original definition in DdlContext`,
           );
         if (
           this.dialect === "mssql" &&
@@ -174,7 +174,7 @@ export class ServerDdlGenerator implements DdlGenerator {
           col.autoIncrement !== undefined &&
           col.autoIncrement !== old.autoIncrement
         )
-          throw new Error("修改 identity 策略需要手工迁移");
+          throw new Error("Changing the identity strategy requires a manual migration");
         if (this.dialect === "mssql") {
           if (col.type !== undefined || col.nullable !== undefined)
             body.push(
@@ -244,9 +244,9 @@ export class ServerDdlGenerator implements DdlGenerator {
       case "CHECK":
         return `${prefix} check (${c.expression})`;
       case "FOREIGN_KEY": {
-        if (c.deferrable) throw new Error("当前迁移尚不支持延迟外键约束");
+        if (c.deferrable) throw new Error("Deferrable foreign keys are not supported by this migration dialect");
         if (this.dialect === "oracle" && c.onDelete === "SET_DEFAULT")
-          throw new Error("Oracle 不支持 ON DELETE SET DEFAULT");
+          throw new Error("Oracle does not support ON DELETE SET DEFAULT");
         const action = ["NO_ACTION", "RESTRICT"].includes(c.onDelete)
           ? ""
           : ` on delete ${c.onDelete.replaceAll("_", " ")}`;
@@ -256,13 +256,13 @@ export class ServerDdlGenerator implements DdlGenerator {
   }
   private index(table: string, idx: Index): string {
     if (idx.predicate && this.dialect === "oracle")
-      throw new Error("Oracle 不支持部分索引");
+      throw new Error("Oracle does not support partial indexes");
     return `create ${idx.unique ? "unique " : ""}index ${this.dialect === "mssql" ? this.sql.identifier(idx.name) : this.sql.table(idx.name)} on ${this.sql.table(table)} (${idx.columns.map((c) => this.sql.identifier(c)).join(", ")})${idx.predicate ? ` where ${idx.predicate}` : ""}`;
   }
 }
 
 function collationName(value: string): string {
   if (!/^[A-Za-z0-9_]+$/.test(value))
-    throw new Error("不支持的 SQL Server collation 名称");
+    throw new Error("Unsupported SQL Server collation name");
   return value;
 }

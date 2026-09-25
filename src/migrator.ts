@@ -61,12 +61,21 @@ export interface MigratorOptions {
    * 不传 = 总是允许（程序化调用 / CI）。CLI 在这里做交互确认。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
+  /** Optional progress events for CLI diagnostics. Consumers must not expose SQL by default. */
+  readonly onProgress?: (event: MigrationProgress) => void;
+  readonly driftLanguage?: "en" | "zh-CN";
 }
+
+export type MigrationProgress =
+  | { readonly kind: "process-lock"; readonly path: string }
+  | { readonly kind: "database-lock"; readonly key: string }
+  | { readonly kind: "sql"; readonly sql: string }
+  | { readonly kind: "migration-start" | "migration-applied"; readonly id: string };
 
 /** 使用者在确认破坏性变更时选择中止 */
 export class MigrationAbortedError extends Error {
   constructor() {
-    super("已中止：检测到破坏性变更");
+    super("Aborted: destructive change was not confirmed");
     this.name = "MigrationAbortedError";
   }
 }
@@ -137,9 +146,9 @@ export class Migrator {
         const record = appliedById.get(file.id);
         if (record != null && record.checksum !== file.checksum) {
           throw new Error(
-            `迁移 "${file.id}" 已应用，但文件内容已被修改（checksum 不一致）：` +
-              `历史 ${short(record.checksum)} / 磁盘 ${short(file.checksum)}。` +
-              `已应用的迁移不能改，请新建一个迁移来修正。`,
+            `Migration "${file.id}" was applied but its file has changed (checksum mismatch): ` +
+              `history ${short(record.checksum)} / disk ${short(file.checksum)}. ` +
+              `Restore the applied file and create a new migration for corrections.`,
           );
         }
       }
@@ -149,8 +158,8 @@ export class Migrator {
       const missing = applied.filter((a) => !fileIds.has(a.id));
       if (missing.length > 0) {
         throw new Error(
-          `历史中存在但磁盘缺失的迁移：${missing.map((m) => m.id).join(", ")}。` +
-            `删除迁移文件会使结构不可复现，请恢复它们（或手工修正历史表）。`,
+          `Applied migrations are missing from disk: ${missing.map((m) => m.id).join(", ")}. ` +
+            `Restore the files or correct the migration history manually.`,
         );
       }
 
@@ -213,6 +222,7 @@ export class Migrator {
       await this._confirmIfNeeded(diff);
       const statements = this._options.ddl.statements(diff, { from, to });
       if (statements.length > 0) {
+        for (const sql of statements) this._options.onProgress?.({ kind: "sql", sql });
         await this._options.executor.executeStatements(statements);
       }
       return { diff, statements, drift: await this._describeDrift() };
@@ -249,7 +259,7 @@ export class Migrator {
       const file = files.find((f) => f.id === options.migration);
       if (file == null) {
         throw new Error(
-          `迁移 "${options.migration}" 不在磁盘上（${this._options.migrationsDir}），无法修正状态。`,
+          `Migration "${options.migration}" was not found in ${this._options.migrationsDir}; cannot resolve its state.`,
         );
       }
       if (options.action === "applied") {
@@ -260,7 +270,7 @@ export class Migrator {
       const updated = await this._options.history.markRolledBack(options.migration);
       if (!updated) {
         throw new Error(
-          `迁移 "${options.migration}" 没有历史记录，无法标记回滚（它可能从未被应用过）。`,
+          `Migration "${options.migration}" has no history record and cannot be marked rolled back.`,
         );
       }
     });
@@ -278,7 +288,7 @@ export class Migrator {
 
   /** 再 introspect 一次并与模型对比（空 = 一致） */
   private async _describeDrift(): Promise<ReadonlyArray<SchemaDrift>> {
-    return describeDiff((await this._diffAgainstDatabase()).diff);
+    return describeDiff((await this._diffAgainstDatabase()).diff, this._options.driftLanguage);
   }
 
   /**
@@ -291,8 +301,8 @@ export class Migrator {
       return;
     }
     throw new Error(
-      `以下迁移上次执行失败，需要先处理：${failed.map((f) => f.id).join(", ")}。` +
-        `数据库可能处于半应用状态；检查并手工修正数据库后，使用 resolve --applied 或 resolve --rolled-back 修正状态。`,
+      `Previous migration attempts failed: ${failed.map((f) => f.id).join(", ")}. ` +
+        `The database may be partially changed. Inspect it, then use resolve --applied or resolve --rolled-back.`,
     );
   }
 
@@ -315,9 +325,10 @@ export class Migrator {
     const lock = await acquireProcessLock(this._options.lockPath);
     let releaseDbLock: (() => Promise<void>) | undefined;
     try {
-      releaseDbLock = await this._options.executor.acquireMigrationLock(
-        this._options.lockKey ?? "ts-grm-migrate",
-      );
+      this._options.onProgress?.({ kind: "process-lock", path: this._options.lockPath });
+      const key = this._options.lockKey ?? "ts-grm-migrate";
+      releaseDbLock = await this._options.executor.acquireMigrationLock(key);
+      this._options.onProgress?.({ kind: "database-lock", key });
       if (ensureHistory) await this._options.history.ensureTable();
       return await fn();
     } finally {
@@ -331,23 +342,26 @@ export class Migrator {
   private async _applyOne(file: MigrationFile): Promise<void> {
     // A durable guard survives process death, connection loss and implicit DDL commits.
     // failed also represents an unfinished attempt: only resolve may unblock it.
-    await this._options.history.markFailed(file.id, "迁移已开始但尚未确认完成；请检查数据库后使用 resolve 修正状态。", file.sql);
+    await this._options.history.markFailed(file.id, "Migration started but did not finish; inspect the database and use resolve to recover.", file.sql);
+    this._options.onProgress?.({ kind: "migration-start", id: file.id });
+    this._options.onProgress?.({ kind: "sql", sql: file.sql });
     try {
       let completed = false;
       await this._options.executor.executeStatements([file.sql], async (connection) => {
         await this._options.history.recordApplied(file, connection);
         completed = true;
       });
-      if (!completed) throw new Error("SQL 执行器未调用迁移完成回调，无法确认成功状态");
+      if (!completed) throw new Error("SQL executor did not confirm migration completion");
+      this._options.onProgress?.({ kind: "migration-applied", id: file.id });
     } catch (e) {
       const message = (e as Error).message;
       // 失败要留在历史里：否则下次 deploy 会以为这是全新迁移而重试
       try {
         await this._options.history.markFailed(file.id, message, failureLogs(file, message));
       } catch (historyError) {
-        throw new AggregateError([e, historyError], `迁移 "${file.id}" 执行失败：${message}；更新失败历史也失败，保留未完成状态。`);
+        throw new AggregateError([e, historyError], `Migration "${file.id}" failed: ${message}; recording the failure also failed. The incomplete state remains.`);
       }
-      throw new Error(`迁移 "${file.id}" 执行失败：${message}`);
+      throw new Error(`Migration "${file.id}" failed: ${message}`);
     }
   }
 
@@ -412,9 +426,9 @@ function short(checksum: string): string {
 /** 失败时写进历史的可读日志（`error` 是摘要，`logs` 是详情） */
 function failureLogs(file: MigrationFile, message: string): string {
   return [
-    `迁移 ${file.id} 执行失败`,
-    `时间：${new Date().toISOString()}`,
-    `错误：${message}`,
-    message.includes("已回滚") ? "执行器报告事务已回滚。" : "非事务 DDL 可能已部分生效；请检查数据库后修正迁移状态。",
+    `Migration ${file.id} failed`,
+    `Time: ${new Date().toISOString()}`,
+    `Error: ${message}`,
+    message.includes("rolled back") ? "The executor rolled back the transaction." : "Non-transactional DDL may have partially applied; inspect the database before resolving the migration.",
   ].join("\n");
 }

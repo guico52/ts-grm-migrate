@@ -27,56 +27,57 @@ export interface SchemaDrift {
 }
 
 /** 把一次 diff 渲染成对账报告（空数组 = 数据库与模型一致） */
-export function describeDiff(diff: Diff): ReadonlyArray<SchemaDrift> {
+export function describeDiff(diff: Diff, language: "en" | "zh-CN" = "zh-CN"): ReadonlyArray<SchemaDrift> {
+  const zh = language === "zh-CN";
   const drift: Array<SchemaDrift> = [];
   for (const change of diff.changes) {
     switch (change.kind) {
       case "CREATE_TABLE":
         drift.push({
           table: change.table.name,
-          summary: "数据库中不存在这张表",
+          summary: zh ? "数据库中不存在这张表" : "Table is missing from the database",
           known: false,
         });
         break;
       case "DROP_TABLE":
         drift.push({
           table: change.table,
-          summary: "数据库中多出这张表（模型里已不存在）",
+          summary: zh ? "数据库中多出这张表（模型里已不存在）" : "Table exists in the database but not in the model",
           known: false,
         });
         break;
       case "ALTER_TABLE":
-        drift.push(...describeAlter(change));
+        drift.push(...describeAlter(change, zh));
         break;
     }
   }
   return drift;
 }
 
-function describeAlter(alter: AlterTable): Array<SchemaDrift> {
+function describeAlter(alter: AlterTable, zh: boolean): Array<SchemaDrift> {
   const drift: Array<SchemaDrift> = [];
   const { table } = alter;
 
   for (const column of alter.columns) {
     switch (column.kind) {
       case "ADD_COLUMN":
-        drift.push({ table, summary: `缺少列 ${column.column.name}`, known: false });
+        drift.push({ table, summary: zh ? `缺少列 ${column.column.name}` : `Missing column ${column.column.name}`, known: false });
         break;
       case "DROP_COLUMN":
-        drift.push({ table, summary: `多出列 ${column.column}`, known: false });
+        drift.push({ table, summary: zh ? `多出列 ${column.column}` : `Extra column ${column.column}`, known: false });
         break;
       case "ALTER_COLUMN": {
         const parts: Array<string> = [];
         if (column.type != null) {
-          parts.push(`类型应为 ${column.type}`);
+          parts.push(zh ? `类型应为 ${column.type}` : `type should be ${column.type}`);
         }
         if (column.nullable != null) {
-          parts.push(column.nullable ? "应为可空" : "应为非空");
+          parts.push(zh ? (column.nullable ? "应为可空" : "应为非空") : (column.nullable ? "should be nullable" : "should be non-nullable"));
         }
         if (column.default !== undefined) {
-          parts.push(column.default === "" ? "应无默认值" : `默认值应为 ${column.default}`);
+          parts.push(zh ? (column.default === "" ? "应无默认值" : `默认值应为 ${column.default}`) : (column.default === "" ? "should have no default" : `default should be ${column.default}`));
         }
-        drift.push({ table, summary: `列 ${column.column}：${parts.join("，")}`, known: false });
+        drift.push({ table, summary: zh ? `列 ${column.column}：${parts.join("，")}` : `Column ${column.column}: ${parts.join(", ")}`, known: false });
         break;
       }
     }
@@ -86,7 +87,7 @@ function describeAlter(alter: AlterTable): Array<SchemaDrift> {
     const label = describeConstraint(change.constraint);
     drift.push({
       table,
-      summary: change.kind === "ADD_CONSTRAINT" ? `缺少约束 ${label}` : `多出约束 ${label}`,
+      summary: change.kind === "ADD_CONSTRAINT" ? (zh ? `缺少约束 ${label}` : `Missing constraint ${label}`) : (zh ? `多出约束 ${label}` : `Extra constraint ${label}`),
       // CHECK 的表达式在 PG 里会被 deparse（见文件头注释），永远对不齐
       known: change.constraint.kind === "CHECK",
     });
@@ -97,8 +98,8 @@ function describeAlter(alter: AlterTable): Array<SchemaDrift> {
       table,
       summary:
         change.kind === "ADD_INDEX"
-          ? `缺少索引 ${change.index.name} (${change.index.columns.join(", ")})`
-          : `多出索引 ${change.index.name} (${change.index.columns.join(", ")})`,
+          ? `${zh ? "缺少索引" : "Missing index"} ${change.index.name} (${change.index.columns.join(", ")})`
+          : `${zh ? "多出索引" : "Extra index"} ${change.index.name} (${change.index.columns.join(", ")})`,
       known: false,
     });
   }

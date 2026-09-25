@@ -17,7 +17,7 @@ export class MysqlDdlGenerator implements DdlGenerator {
     const droppedForeignKeys = new Set<string>();
     const addedForeignKeys = new Set<string>();
     const dropFk = (table: string, fk: ForeignKeyConstraint): void => {
-      if (!fk.name) throw new Error(`删除外键 ${table} 时缺少实际约束名`);
+      if (!fk.name) throw new Error(`Cannot drop foreign key on ${table} without its physical constraint name`);
       const key = `${table}\0${fk.name}`;
       if (droppedForeignKeys.has(key)) return;
       droppedForeignKeys.add(key);
@@ -74,7 +74,7 @@ export class MysqlDdlGenerator implements DdlGenerator {
         if (con.kind === "DROP_CONSTRAINT") {
           const c = con.constraint;
           if (c.kind === "FOREIGN_KEY") { dropFk(change.table, c); continue; }
-          if (c.kind !== "PRIMARY_KEY" && !c.name) throw new Error(`删除约束 ${change.table} 时缺少实际约束名`);
+          if (c.kind !== "PRIMARY_KEY" && !c.name) throw new Error(`Cannot drop constraint on ${change.table} without its physical name`);
           dropKeys.push(`alter table ${table} drop ${c.kind === "PRIMARY_KEY" ? "primary key" : c.kind === "UNIQUE" ? `index ${q(c.name!)}` : `check ${q(c.name!)}`}`);
         } else {
           const seq = context?.to.tables.find((t) => t.name === change.table)?.constraints.indexOf(con.constraint) ?? change.constraints.indexOf(con);
@@ -91,7 +91,7 @@ export class MysqlDdlGenerator implements DdlGenerator {
         else if (col.kind === "DROP_COLUMN") body.push(`alter table ${table} drop column ${q(col.column)}`);
         else {
           const previous = before?.columns.find((c) => c.name === col.column);
-          if (!previous) throw new Error(`MySQL 修改 ${change.table}.${col.column} 需要 DdlContext 中的原始列定义`);
+          if (!previous) throw new Error(`Altering MySQL column ${change.table}.${col.column} requires the original column definition in DdlContext`);
           const next: Column = {
             ...previous,
             type: col.type ?? previous.type,
@@ -131,14 +131,14 @@ function constraintSql(table: string, constraint: Constraint, seq: number): stri
     case "UNIQUE": return `${prefix} unique (${constraint.columns.map(q).join(", ")})`;
     case "CHECK": return `${prefix} check (${constraint.expression})`;
     case "FOREIGN_KEY": {
-      if (constraint.deferrable || constraint.onDelete === "SET_DEFAULT") throw new Error("MySQL 不支持 DEFERRABLE 或 ON DELETE SET DEFAULT");
+      if (constraint.deferrable || constraint.onDelete === "SET_DEFAULT") throw new Error("MySQL does not support DEFERRABLE or ON DELETE SET DEFAULT");
       const action = constraint.onDelete.replaceAll("_", " ");
       return `${prefix} foreign key (${constraint.columns.map(q).join(", ")}) references ${q(constraint.referencedTable)} (${constraint.referencedColumns.map(q).join(", ")}) on delete ${action}`;
     }
   }
 }
 function indexSql(index: Index): string {
-  if (index.predicate != null) throw new Error(`MySQL 不支持部分索引 ${index.name}`);
+  if (index.predicate != null) throw new Error(`MySQL does not support partial index ${index.name}`);
   return `${index.unique ? "unique " : ""}index ${q(index.name)}`;
 }
 function createTable(table: Table): string {

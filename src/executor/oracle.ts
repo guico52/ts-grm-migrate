@@ -41,12 +41,12 @@ export class OracleSqlExecutor implements SqlExecutor {
       await complete?.(this);
     } catch (e) {
       throw new Error(
-        `Oracle 语句执行失败：${(e as Error).message}。DDL 隐式提交，之前的语句可能已生效；请检查数据库后使用 resolve 修正状态。`,
+        `Oracle statement failed: ${(e as Error).message}. DDL commits implicitly; earlier statements may have applied. Inspect the database before using resolve.`,
       );
     }
   }
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this.locked) throw new Error("当前 Oracle 执行器已持有迁移锁");
+    if (this.locked) throw new Error("This Oracle executor already holds a migration lock");
     // A deterministic numeric ID avoids ALLOCATE_UNIQUE's implicit commit and extra catalog writes.
     const id =
       createHash("sha256")
@@ -159,7 +159,7 @@ export function splitOracleSql(source: string): string[] {
     else current += c;
   }
   if (quote || alternativeEnd || comment === "block")
-    throw new Error("Oracle SQL 文件含未结束的字符串或注释");
+    throw new Error("Oracle SQL file contains an unterminated string or comment");
   finish();
   return statements;
 }

@@ -45,7 +45,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
       await client.query("commit");
     } catch (e) {
       await client.query("rollback").catch(() => undefined);
-      throw new Error(`语句执行失败（已回滚）：${(e as Error).message}`);
+      throw new Error(`Statement failed (transaction rolled back): ${(e as Error).message}`);
     } finally {
       client.release();
     }
@@ -64,7 +64,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
       await client.query("reset lock_timeout").catch(() => undefined);
       client.release();
       throw new Error(
-        `获取迁移锁失败（等待超过 10s）：${(e as Error).message}`,
+        `Could not acquire migration lock within 10s: ${(e as Error).message}`,
       );
     }
     let released = false;

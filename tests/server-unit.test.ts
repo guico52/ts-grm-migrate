@@ -34,7 +34,7 @@ describe("Oracle SQL 文件边界", () => {
     ).rejects.toThrow(/PL\/SQL/);
     await expect(
       executor.executeStatements(["create table A (ID number); select 'bad"]),
-    ).rejects.toThrow(/未结束/);
+    ).rejects.toThrow(/unterminated/);
     expect(calls).toEqual([]);
   });
   it("Oracle :n 按名称绑定，出现顺序不会错配", async () => {

@@ -33,10 +33,10 @@ try {
   await writeFile(path.join(app, 'ts-grm-migrate.config.ts'), `import { defineConfig } from 'ts-grm-migrate';\nexport default defineConfig({ dialect: 'sqlite', database: { file: './app.db' }, models: ['./model.ts'], migrationsDir: './migrations' });\n`);
   const bin = path.join(app, 'node_modules/.bin/tgm');
   assert.match(run(process.execPath, [bin, '--help'], app), /deploy/);
-  assert.match(run(process.execPath, [bin, 'dev', '-n', 'init'], app), /已生成并应用迁移/);
+  assert.match(run(process.execPath, [bin, 'dev', '-n', 'init'], app), /Generated and applied migration/);
   const status = run(process.execPath, [bin, 'status'], app);
   assert.match(status, /init/);
-  assert(!run(process.execPath, [bin, 'dev'], app).includes('已生成并应用迁移'));
+  assert.match(run(process.execPath, [bin, 'dev'], app), /no migration needed/);
   run(process.execPath, [bin, 'deploy'], app);
   run(process.execPath, ['--input-type=module', '-e', `import { defineConfig } from 'ts-grm-migrate'; if (typeof defineConfig !== 'function') process.exit(1);`], app);
   await writeFile(path.join(app, 'consumer.mts'), `import { defineConfig, type Schema } from 'ts-grm-migrate';\nconst schema: Schema = { tables: [] };\ndefineConfig({dialect:'sqlite',database:{file:':memory:'},models:[]});\nconsole.log(schema);\n`);

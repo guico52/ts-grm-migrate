@@ -29,7 +29,7 @@ it("SQLite rolls back SQL and success history together, retaining the recovery g
     expect(db.prepare("select name from sqlite_master where name='business'").all()).toEqual([]);
     expect((await history.listApplied())[0]?.failed).toBe(true);
     failure.mockRestore();
-    await expect(migrator.deploy()).rejects.toThrow(/失败/);
+    await expect(migrator.deploy()).rejects.toThrow(/attempts failed/);
     await migrator.resolve({ migration: "first", action: "rolled-back" });
     await migrator.deploy();
     expect(db.prepare("select count(*) as n from business").get()).toEqual({ n: 1 });

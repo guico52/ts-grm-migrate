@@ -49,17 +49,17 @@ export class SqlServerSqlExecutor implements SqlExecutor {
           .batch("if @@trancount > 0 rollback transaction");
       } catch {
         throw new Error(
-          `SQL Server 执行失败且无法确认回滚：${(e as Error).message}`,
+          `SQL Server statement failed and rollback could not be confirmed: ${(e as Error).message}`,
         );
       }
       throw new Error(
-        `SQL Server 语句执行失败（事务已回滚）：${(e as Error).message}`,
+        `SQL Server statement failed (transaction rolled back): ${(e as Error).message}`,
       );
     }
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this._lockHeld) throw new Error("当前 SQL Server 执行器已持有迁移锁");
+    if (this._lockHeld) throw new Error("This SQL Server executor already holds a migration lock");
     // App locks are database-scoped. The schema, not a local filesystem path, identifies the resource.
     const name = `ts-grm:${createHash("sha256").update(this._schema).digest("hex")}`;
     const { rows } = await this.query(
@@ -69,7 +69,7 @@ export class SqlServerSqlExecutor implements SqlExecutor {
       [name, this._lockTimeoutMs],
     );
     if (rows[0]?.result == null || Number(rows[0].result) < 0)
-      throw new Error("获取 SQL Server 迁移锁失败");
+      throw new Error("Could not acquire the SQL Server migration lock");
     this._lockHeld = true;
     return async () => {
       if (!this._lockHeld) return;

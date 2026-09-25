@@ -147,7 +147,7 @@ function toConstraint(
     }
     default:
       // 原生联合中的 "INDEX" 类型存在但 ts-grm 从不创建，防御处理
-      throw new Error(`不支持的约束类型: ${String((constraint as { kind?: unknown }).kind)}`);
+      throw new Error(`Unsupported constraint type: ${String((constraint as { kind?: unknown }).kind)}`);
   }
 }
 

@@ -56,25 +56,25 @@ export class MysqlSqlExecutor implements SqlExecutor {
           return { rows: Array.isArray(result) ? result as Array<Record<string, unknown>> : [] };
         } });
       } catch (e) {
-        throw new Error(`MySQL 语句执行失败：${(e as Error).message}。DDL 会隐式提交，之前成功的语句可能已生效；请检查数据库后使用 resolve 修正状态。`);
+        throw new Error(`MySQL statement failed: ${(e as Error).message}. DDL commits implicitly; earlier statements may have applied. Inspect the database before using resolve.`);
       }
     });
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this._locked) throw new Error("当前 MySQL 执行器已持有迁移锁");
+    if (this._locked) throw new Error("This MySQL executor already holds a migration lock");
     const connection = await this._pool.getConnection();
     let name: string;
     try {
       await this._prepare(connection);
       const [result] = await connection.query("select database() as db");
       const db = (result as Array<{ db: string | null }>)[0]?.db;
-      if (!db) throw new Error("MySQL 连接必须指定 database");
+      if (!db) throw new Error("MySQL connection must specify a database");
       // Lock identity is the database, not a machine-local path.
       name = `tgm:${createHash("sha256").update(db).digest("hex").slice(0, 60)}`;
       const [rows] = await connection.query(`select get_lock('${name}', ${this._lockTimeout}) as acquired`);
       if (Number((rows as Array<{ acquired: unknown }>)[0]?.acquired) !== 1) {
-        throw new Error(`获取 MySQL 迁移锁失败（等待 ${this._lockTimeout}s）`);
+        throw new Error(`Could not acquire the MySQL migration lock within ${this._lockTimeout}s`);
       }
       this._locked = connection;
     } catch (e) {
@@ -95,4 +95,3 @@ export class MysqlSqlExecutor implements SqlExecutor {
     };
   }
 }
-

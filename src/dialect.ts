@@ -54,8 +54,8 @@ export function dialectInfo(name: string): DialectInfo {
   const found = DIALECTS.find((d) => d.name === name);
   if (found == null) {
     throw new Error(
-      `未知方言 "${name}"。支持的方言：${DIALECT_NAMES.join(" / ")}（当前已实现：` +
-        `${IMPLEMENTED_DIALECT_NAMES.join(" / ")}）。`,
+      `Unknown dialect "${name}". Known dialects: ${DIALECT_NAMES.join(" / ")} (implemented: ` +
+        `${IMPLEMENTED_DIALECT_NAMES.join(" / ")}).`,
     );
   }
   return found;

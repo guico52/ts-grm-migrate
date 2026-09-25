@@ -40,7 +40,7 @@ import { PostgresSqlExecutor } from "./executor/postgres.js";
 import { SqliteSqlExecutor, type SqliteDatabaseLike } from "./executor/sqlite.js";
 import { PostgresIntrospector } from "./introspector/postgres.js";
 import { SqliteIntrospector } from "./introspector/sqlite.js";
-import { Migrator } from "./migrator.js";
+import { Migrator, type MigrationProgress } from "./migrator.js";
 import { tableDefsToSchema } from "./schema/adapter.js";
 import { DatabaseMigrationHistoryStore, FileMigrationStore } from "./store.js";
 import { quoteIdentifier } from "./ddl.js";
@@ -64,6 +64,9 @@ export interface RuntimeOptions {
    * 不传 = 总是允许（CI / 程序化调用，「我知道在做什么」的默认）。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
+  /** Optional diagnostic events; SQL can contain literal data. */
+  readonly onProgress?: (event: MigrationProgress) => void;
+  readonly driftLanguage?: "en" | "zh-CN";
 }
 
 /** 默认迁移目录 / 锁文件（相对项目根） */
@@ -86,8 +89,8 @@ export async function createRuntime(
   const dialectSupport = dialectInfo(dialect);
   if (!dialectSupport.implemented) {
     throw new Error(
-      `方言 "${dialect}" 尚未实现（ts-grm 侧由 ${dialectSupport.tsGrmDrivers.join(" / ")} 提供）。` +
-        `目前端到端可用的方言：${IMPLEMENTED_DIALECT_NAMES.join(" / ")}。`,
+      `Dialect "${dialect}" is not implemented (ts-grm driver: ${dialectSupport.tsGrmDrivers.join(" / ")}). ` +
+        `Supported dialects: ${IMPLEMENTED_DIALECT_NAMES.join(" / ")}.`,
     );
   }
 
@@ -135,10 +138,10 @@ async function createConnection(
   }
 
   if (dialect === "mysql") {
-    if (config.schema != null) throw new Error('mysql 请使用 database.database 选择数据库，不支持 schema 配置');
+    if (config.schema != null) throw new Error('MySQL uses database.database to select a database; schema is not supported');
     let mysql: typeof import("mysql2/promise");
     try { mysql = await import("mysql2/promise"); }
-    catch { throw new Error("mysql 方言需要 mysql2 依赖，请先安装：yarn add mysql2"); }
+    catch { throw new Error("MySQL requires mysql2. Install it with yarn add mysql2"); }
     const { connectionString, file: _file, ...settings } = config.database;
     const pool = mysql.createPool(connectionString
       ? { uri: connectionString, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS }
@@ -149,10 +152,10 @@ async function createConnection(
       const version = String(rows[0]?.version ?? "");
       const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
       if (/mariadb/i.test(version) || major < 8 || (major === 8 && minor === 0 && patch < 16)) {
-        throw new Error(`mysql 需要 MySQL 8.0.16+（当前 ${version}）；MariaDB 尚未验证`);
+        throw new Error(`MySQL 8.0.16+ is required (current: ${version}); MariaDB has not been verified`);
       }
-      if (!rows[0]?.db) throw new Error("mysql 连接必须指定 database.database 或 connectionString 中的数据库");
-      if (Number(rows[0]?.folding) !== 0) throw new Error("mysql 当前仅支持 lower_case_table_names=0，以保证模型和物理表名一致");
+      if (!rows[0]?.db) throw new Error("MySQL connection must specify a database in database.database or connectionString");
+      if (Number(rows[0]?.folding) !== 0) throw new Error("MySQL requires lower_case_table_names=0 so model and physical table names match");
       return { executor, introspector: new MysqlIntrospector({ query: executor }),
         driver: new MySqlDriver(pool as unknown as ConstructorParameters<typeof MySqlDriver>[0]),
         close: () => pool.end() };
@@ -173,7 +176,7 @@ async function createConnection(
       driver: new OracleDriver(new OraclePool({ user: config.database.user })),
     };
   }
-  if (dialect !== "postgres") throw new Error(`方言 ${dialect} 尚未实现`);
+  if (dialect !== "postgres") throw new Error(`Dialect ${dialect} is not implemented`);
 
   // postgres
   const pool = await createPool(config);
@@ -218,7 +221,7 @@ async function assembleRuntime(
     // SQLite 没有 schema 概念（只有 main / attached）。显式配了别的名字说明
     // 使用者的预期与方言不符，宁可报错也不要静默忽略。
     throw new Error(
-      `方言 "${dialect}" 不支持 schema（配置里给的是 "${schema}"）。请去掉 schema 配置。`,
+      `Dialect "${dialect}" does not support schema "${schema}". Remove the schema setting.`,
     );
   }
 
@@ -251,9 +254,8 @@ async function assembleRuntime(
         tableDefs = await createSchema(sqlClient);
       } catch (e) {
         throw new Error(
-          `加载模型失败：${(e as Error).message}\n` +
-            `提示：migrate 用 Node 原生 import 直接加载你的模型文件，所以它们必须是 ESM —— ` +
-            `给项目加上 "type": "module"，或把 models 指向编译后的 ESM 产物（.js）。`,
+          `Failed to load models: ${(e as Error).message}\n` +
+            `Hint: migrations load model files through Node's native import. Use ESM (set "type": "module") or point models to compiled ESM .js files.`,
         );
       }
       ddlOptions.tableDefs = new Map(tableDefs.map((t) => [t.name, t]));
@@ -263,6 +265,8 @@ async function assembleRuntime(
     migrationsDir,
     lockPath,
     ...(options.confirm != null ? { confirm: options.confirm } : {}),
+    ...(options.onProgress != null ? { onProgress: options.onProgress } : {}),
+    ...(options.driftLanguage != null ? { driftLanguage: options.driftLanguage } : {}),
   });
 
   return {
@@ -295,7 +299,7 @@ async function createPool(config: MigrateConfig): Promise<ManagedPool> {
     Pool = pg.Pool;
   } catch {
     throw new Error(
-      "postgres 方言需要 pg 依赖，请先安装：yarn add pg（或 npm install pg）",
+      "PostgreSQL requires pg. Install it with yarn add pg (or npm install pg)",
     );
   }
 
@@ -333,7 +337,7 @@ async function openSqlite(
     Database = mod.default;
   } catch {
     throw new Error(
-      "sqlite 方言需要 better-sqlite3 依赖，请先安装：yarn add better-sqlite3",
+      "SQLite requires better-sqlite3. Install it with yarn add better-sqlite3",
     );
   }
   // 相对项目根解析（":memory:" 这类特殊值原样传）

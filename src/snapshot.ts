@@ -41,18 +41,18 @@ export function fromSnapshot(json: string): Schema {
   try {
     parsed = JSON.parse(json);
   } catch (e) {
-    throw new Error(`快照不是合法 JSON: ${(e as Error).message}`);
+    throw new Error(`Snapshot is not valid JSON: ${(e as Error).message}`);
   }
   if (!isRecord(parsed) || typeof parsed.formatVersion !== "number") {
-    throw new Error("快照格式不合法：缺少 formatVersion");
+    throw new Error("Invalid snapshot: missing formatVersion");
   }
   if (parsed.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
     throw new Error(
-      `快照格式版本不兼容：文件是 v${parsed.formatVersion}，本引擎支持 v${SNAPSHOT_FORMAT_VERSION}`,
+      `Incompatible snapshot format: file is v${parsed.formatVersion}, engine supports v${SNAPSHOT_FORMAT_VERSION}`,
     );
   }
   if (!isSchema(parsed.schema)) {
-    throw new Error("快照格式不合法：schema 形状不匹配");
+    throw new Error("Invalid snapshot: schema shape mismatch");
   }
   return parsed.schema;
 }

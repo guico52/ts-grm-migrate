@@ -149,23 +149,23 @@ describe("快照序列化", () => {
 
 describe("快照校验（外部输入安全）", () => {
   it("非法 JSON 抛错", () => {
-    expect(() => fromSnapshot("not json{{{")).toThrow(/不是合法 JSON/);
+    expect(() => fromSnapshot("not json{{{")).toThrow(/not valid JSON/);
   });
 
   it("版本不兼容抛错", () => {
     expect(() => fromSnapshot('{"formatVersion": 99, "schema": {}}')).toThrow(
-      /格式版本不兼容/,
+      /Incompatible snapshot format/,
     );
   });
 
   it("形状损坏被拒绝", () => {
     expect(() => fromSnapshot('{"formatVersion": 1, "schema": {"tables": [{"name": 42}]}}')).toThrow(
-      /快照格式不合法/,
+      /Invalid snapshot/,
     );
   });
 
   it("约束 kind 非法被拒绝", () => {
     const bad = '{"formatVersion":1,"schema":{"tables":[{"name":"t","columns":[],"constraints":[{"kind":"INDEX"}],"indexes":[]}]}}';
-    expect(() => fromSnapshot(bad)).toThrow(/快照格式不合法/);
+    expect(() => fromSnapshot(bad)).toThrow(/Invalid snapshot/);
   });
 });

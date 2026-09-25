@@ -111,7 +111,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const code = await runCli(["dev", "--name", "init", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}_init/);
+    expect(logs.join("\n")).toMatch(/Generated and applied migration \d{17}_init/);
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
@@ -120,20 +120,20 @@ describePg("CLI 端到端（真实数据库）", () => {
 
     expect(code).toBe(0);
     // 迁移 id 是纯 14 位时间戳，不带下划线后缀
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}\b/);
+    expect(logs.join("\n")).toMatch(/Generated and applied migration \d{17}\b/);
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
   it("status：无迁移 / 已应用 / 待应用都能正确汇报", async () => {
     await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("没有任何迁移");
+    expect(logs.join("\n")).toContain("No migrations found");
 
     logs.length = 0;
     await runCli(["dev", "--name", "init", "--config", configPath]);
     logs.length = 0;
     await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("已应用：");
-    expect(logs.join("\n")).toContain("没有待应用的迁移");
+    expect(logs.join("\n")).toContain("Applied:");
+    expect(logs.join("\n")).toContain("No pending migrations");
   });
 
   it("dev：模型未变时第二次运行不产生新迁移", async () => {
@@ -143,7 +143,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const code = await runCli(["dev", "--name", "again", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toContain("无需迁移");
+    expect(logs.join("\n")).toContain("no migration needed");
   });
 
   it("deploy：幂等，重复运行不重复应用", async () => {
@@ -153,7 +153,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const code = await runCli(["deploy", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toContain("没有待应用的迁移（已应用 1 个）");
+    expect(logs.join("\n")).toContain("No pending migrations");
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
@@ -166,7 +166,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const refused = await runCli(["push", "--config", configPath]);
 
     expect(refused).toBe(0); // 使用者取消不算失败
-    expect(errors.join("\n")).toContain("删除表 temp_extra");
+    expect(errors.join("\n")).toContain("Drop table temp_extra");
     expect(await tables()).toContain("temp_extra"); // 未被执行
 
     logs.length = 0;
@@ -195,13 +195,13 @@ describePg("CLI 端到端（真实数据库）", () => {
 
     logs.length = 0;
     await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("已应用：");
-    expect(logs.join("\n")).not.toContain("待应用：");
+    expect(logs.join("\n")).toContain("Applied:");
+    expect(logs.join("\n")).not.toContain("Pending:");
 
     logs.length = 0;
     const deployed = await runCli(["deploy", "--config", configPath]);
     expect(deployed).toBe(0);
-    expect(logs.join("\n")).toContain("没有待应用的迁移");
+    expect(logs.join("\n")).toContain("No pending migrations");
   });
 
   it("resolve --rolled-back：失败迁移阻塞 deploy，清除后恢复", async () => {
@@ -217,14 +217,14 @@ describePg("CLI 端到端（真实数据库）", () => {
     );
 
     // 1) 首次 deploy 失败并记入历史
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/执行失败/);
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/failed/);
 
     logs.length = 0;
     await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("[失败]");
+    expect(logs.join("\n")).toContain("[failed]");
 
     // 2) 再 deploy：被失败记录拦下（而不是重复执行）
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/上次执行失败/);
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/attempts failed/);
 
     // 3) resolve --rolled-back 清除失败记录
     logs.length = 0;
@@ -236,7 +236,7 @@ describePg("CLI 端到端（真实数据库）", () => {
       configPath,
     ]);
     expect(resolved).toBe(0);
-    expect(logs.join("\n")).toContain("已标记回滚");
+    expect(logs.join("\n")).toContain("rolled back");
 
     // 4) 修好迁移后 deploy 成功
     await writeFile(badFile, 'create table "TMP_A" (x int);\n', "utf8");
@@ -244,7 +244,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     const deployed = await runCli(["deploy", "--config", configPath]);
 
     expect(deployed).toBe(0);
-    expect(logs.join("\n")).toContain(`已应用 ${badId}`);
+    expect(logs.join("\n")).toContain("Applied 1 migration");
     expect(await tables()).toContain("TMP_A");
   });
 
@@ -259,10 +259,10 @@ describePg("CLI 端到端（真实数据库）", () => {
 
     expect(code).toBe(0);
     const reported = errors.join("\n");
-    expect(reported).toContain("对账发现数据库与模型不一致");
-    expect(reported).toContain(`库 ${PG_CONFIG.database}`); // 指认哪个库
-    expect(reported).toContain("表 author"); // 指认哪张表
-    expect(reported).toContain("多出列 LEGACY"); // 说明发生了什么
+    expect(reported).toContain("differs from the model");
+    expect(reported).toContain(`postgres/${PG_CONFIG.database}`);
+    expect(reported).toContain("Table author");
+    expect(reported).toContain("Extra column LEGACY");
   });
 
   it("对账：结构正常时不产生噪声告警", async () => {
@@ -272,7 +272,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     errors.length = 0;
     await runCli(["deploy", "--config", configPath]);
 
-    expect(errors.join("\n")).not.toContain("对账");
+    expect(errors.join("\n")).not.toContain("differs from the model");
   });
 
   it("历史表：失败留 error 摘要 + logs 详情；回滚写 rolled_back_at 且保留记录", async () => {
@@ -285,7 +285,7 @@ describePg("CLI 端到端（真实数据库）", () => {
       "utf8",
     );
 
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/执行失败/);
+    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/failed/);
 
     const history = `"${schemaName}"."_migrations"`;
     const failed = await pool.query(
@@ -295,7 +295,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     expect(failed.rows[0]!.failed).toBe(true);
     expect(String(failed.rows[0]!.error)).toContain("already exists"); // 摘要
     expect(String(failed.rows[0]!.logs)).toContain(badId); // 详情里有迁移名
-    expect(String(failed.rows[0]!.logs)).toContain("事务已回滚"); // 与详情兼容
+    expect(String(failed.rows[0]!.logs)).toContain("rolled back");
     expect(failed.rows[0]!.rolled_back_at).toBeNull();
 
     await runCli(["resolve", "--rolled-back", badId, "--config", configPath]);
@@ -318,6 +318,6 @@ describePg("CLI 端到端（真实数据库）", () => {
   it("未知命令返回 1", async () => {
     const code = await runCli(["frobnicate", "--config", configPath]);
     expect(code).toBe(1);
-    expect(errors.join("\n")).toContain("未知命令");
+    expect(errors.join("\n")).toContain("Unknown command");
   });
 });

@@ -42,13 +42,13 @@ describe("方言注册表", () => {
   });
 
   it("未知方言报错并列出已知方言", () => {
-    expect(() => dialectInfo("db2")).toThrow(/未知方言 "db2".*postgres \/ mysql/s);
+    expect(() => dialectInfo("db2")).toThrow(/Unknown dialect "db2".*postgres \/ mysql/s);
   });
 });
 
 describe("运行时方言校验", () => {
   it("未知方言由注册表拦下", async () => {
     const config = { database: {}, models: ["./x"], dialect: "db2" } as never;
-    await expect(createRuntime(config, process.cwd())).rejects.toThrow(/未知方言 "db2"/);
+    await expect(createRuntime(config, process.cwd())).rejects.toThrow(/Unknown dialect "db2"/);
   });
 });

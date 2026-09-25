@@ -109,7 +109,7 @@ describe("loadConfig", () => {
 
   it("默认导出不是对象时报错", async () => {
     await writeConfig("ts-grm-migrate.config.mjs", "export default 42;");
-    await expect(loadConfig(dir)).rejects.toThrow(/配置对象/);
+    await expect(loadConfig(dir)).rejects.toThrow(/configuration object/);
   });
 
   it("显式路径优先", async () => {
@@ -156,7 +156,7 @@ describe("CLI 可执行入口（需要先 build）", () => {
     const { stdout } = await execFileAsync(process.execPath, [link, "--help"]);
 
     expect(stdout).toContain("ts-grm-migrate");
-    expect(stdout).toContain("用法");
+    expect(stdout).toContain("Usage");
   });
 });
 
@@ -178,7 +178,7 @@ describe("run（不触库的路径）", () => {
       errorLog: () => undefined,
     });
     expect(code).toBe(0);
-    expect(out.join("\n")).toContain("用法");
+    expect(out.join("\n")).toContain("Usage");
   });
 
   it("配置缺失时抛出可读错误", async () => {
@@ -187,6 +187,22 @@ describe("run（不触库的路径）", () => {
         log: () => undefined,
         errorLog: () => undefined,
       }),
-    ).rejects.toThrow(/未找到配置文件/);
+    ).rejects.toThrow(/Configuration file not found/);
+  });
+
+  it("--lang zh-CN 显示中文帮助，默认显示英文", async () => {
+    const out: Array<string> = [];
+    expect(await run(["--help", "--lang", "zh-CN"], process.cwd(), { log: (m) => out.push(m) })).toBe(0);
+    expect(out.join("\n")).toContain("用法");
+  });
+
+  it("无效语言在加载配置前报错", async () => {
+    const errors: Array<string> = [];
+    expect(await run(["deploy", "--lang", "de"], process.cwd(), { errorLog: (m) => errors.push(m) })).toBe(1);
+    expect(errors.join("\n")).toContain("Unsupported language");
+  });
+
+  it("--detail 不吞掉后面的命令", () => {
+    expect(parseArgs(["--detail", "deploy"]).command).toBe("deploy");
   });
 });
