@@ -1,10 +1,12 @@
-# 兼容性
+# Compatibility
 
-安装要求和数据库支持表见 [README](../README.md)。这里解释 `@ts-grm/core` / `@ts-grm/sql` peer 范围的依据，以及如何重新验证它。
+English | [简体中文](zh-CN/compatibility.md)
 
-两个 ts-grm 包必须同版。当前支持 `>=0.0.9 <0.0.14`；`0.0.9` 是完整模型类型检查和本地测试通过的最低版本。`0.0.1`–`0.0.8` 缺少测试模型所需的 API，不列入支持范围。不要仅凭本地 checkout 的版本号扩大范围：验证应安装 npm 上的发布产物。
+See the [README](../README.md) for installation requirements and database support. This page explains the `@ts-grm/core` / `@ts-grm/sql` peer range and how to revalidate it.
 
-`0.0.9` 和 `0.0.13` 已进行独立安装包测试，并在 PostgreSQL 17、MySQL 8.4、SQL Server 2022、Oracle Free 23 上验证。中间版本通过类型检查和本地测试，但没有逐一跑完所有真实数据库组合。每次扩大 peer 范围，都应重新验证最低和最高目标版本。
+The two ts-grm packages must use the same version. The supported range is `>=0.0.9 <0.0.14`; `0.0.9` is the minimum version that passed full model type checking and local tests. Versions `0.0.1`–`0.0.8` lack APIs required by the test models and are excluded. Do not expand the range based only on a local checkout: install the artifacts published to npm for verification.
+
+Versions `0.0.9` and `0.0.13` passed isolated package tests and were verified against PostgreSQL 17, MySQL 8.4, SQL Server 2022, and Oracle Free 23. Intermediate versions passed type checking and local tests but have not each been tested against every real database combination. Revalidate both the minimum and maximum target versions when expanding the peer range.
 
 ```sh
 corepack yarn install --immutable
@@ -15,8 +17,8 @@ TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:postgres-mysql
 TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:servers
 ```
 
-`test:compat` 在临时目录安装指定版本，并运行包含完整模型的类型检查和本地测试；报告写入临时 JSON 文件，也可以用 `COMPAT_REPORT` 指定路径。数据库脚本需要 Podman，或用 `CONTAINER_RUNTIME=docker` 切换到 Docker。发布前手动检查最低与当前 peer 版本。
+`test:compat` installs specified versions in temporary directories and runs type checking with full models and local tests. It writes a temporary JSON report, or to the path specified by `COMPAT_REPORT`. The database scripts require Podman; set `CONTAINER_RUNTIME=docker` to use Docker. Check the minimum and current peer versions manually before release.
 
-Node 最低版本为 `24.11.0`。`@ts-grm/sql@0.0.13` 的发布产物包含 `using` 声明；已检查的 Node 22.18.0、22.22.3 和 22.23.2 均无法解析该语法。本项目没有改写上游产物，因此不声明 Node 22 支持。以后如上游构建产物或 Node 运行时变化，应在干净环境中重新测试后再调整 `engines`。
+The minimum Node version is `24.11.0`. The published `@ts-grm/sql@0.0.13` artifact contains `using` declarations; the checked Node versions 22.18.0, 22.22.3, and 22.23.2 could not parse that syntax. This project does not transform the upstream artifact, so it does not claim Node 22 support. If upstream build output or Node changes, retest in a clean environment before adjusting `engines`.
 
-迁移器读取 ts-grm 返回对象中的内部 `tableDefs`。这不是上游公开类型承诺的一部分；版本变化时应先检查 `src/vendor/ts-grm.ts`，再运行上述矩阵。
+The migrator reads the internal `tableDefs` of objects returned by ts-grm. These fields are not part of an upstream public type guarantee. Inspect `src/vendor/ts-grm.ts` and run the compatibility matrix when changing versions.

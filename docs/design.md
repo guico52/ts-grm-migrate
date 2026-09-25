@@ -1,10 +1,12 @@
-# 设计
+# Design
 
-使用方法和数据库限制见 [README](../README.md)。这里记录代码的主要边界，便于修改迁移行为时找到对应模块。
+English | [简体中文](zh-CN/design.md)
 
-## 从模型到 SQL
+See the [README](../README.md) for usage and database limitations. This page describes the main code boundaries when changing migration behavior.
 
-`src/runtime.ts` 同时组装 CLI 和程序化入口。它加载 `models`，创建 ts-grm 的 `SqlClient`，再将模型转换成迁移器使用的 `Schema`：
+## From models to SQL
+
+`src/runtime.ts` assembles both CLI and programmatic entry points. It loads `models`, creates a ts-grm `SqlClient`, and converts the models to the migrator's `Schema`:
 
 ```text
 ts-grm models → src/vendor/ts-grm.ts → src/schema/adapter.ts → Schema
@@ -14,28 +16,28 @@ database → introspector → Schema → differ → DDL generator → executor
                                               migration files / history
 ```
 
-`src/vendor/ts-grm.ts` 是唯一读取上游内部 `tableDefs` 的位置。上游公开的 `Schema` 类型没有结构化表定义，因此这个适配点需要随 peer 版本验证。`src/dialect.ts` 集中维护方言名称和支持状态；具体的读取、DDL 与执行逻辑分别放在 `src/introspector/`、`src/ddl/` 和 `src/executor/`。
+`src/vendor/ts-grm.ts` is the only place that reads upstream's internal `tableDefs`. The upstream public `Schema` type has no structured table definitions, so this adapter must be verified across supported peer versions. `src/dialect.ts` defines dialect names and support status; reading, DDL, and execution are implemented in `src/introspector/`, `src/ddl/`, and `src/executor/`.
 
-ts-grm 的模型注册表是进程级单例。CLI 在独立进程中加载模型，程序化使用时应避免在同一进程中混用互不相关的模型集合。
+The ts-grm model registry is a process-level singleton. The CLI loads models in a separate process; programmatic callers should avoid mixing unrelated model sets in one process.
 
-## 差分规则
+## Diff rules
 
-数据库现状和模型目标都转成 `Schema` 后，由 `src/differ.ts` 比较。列按名字匹配；约束和索引按内容匹配，因为数据库或 ts-grm 生成的名字不一定稳定；列顺序不参与比较。
+`src/differ.ts` compares database and target models after both are converted to `Schema`. Columns match by name; constraints and indexes match by content because generated names may be unstable; column order is ignored.
 
-模型没有提供的列默认值和注释不由迁移器删除。模型无法表达的自增策略目前也不参与差分；约束和索引则以目标态为准。模型的多态字段在适配时转换成普通列和数据库约束，之后不再保留 ts-grm 的模型语义。
+The migrator does not remove column defaults or comments that are absent from the model. Auto-increment strategies the model cannot express are excluded from diffing, while target constraints and indexes remain authoritative. Polymorphic model fields become ordinary columns and database constraints during adaptation and no longer retain their ts-grm semantics.
 
-SQLite 读取不到约束名，因此按内容比较尤其必要。部分 CHECK 表达式在数据库中会被重新格式化；等价表达式仍可能被判定为变更。需要扩大归一化范围时，应先补对应方言的真实数据库测试。
+SQLite cannot read constraint names, making content-based comparison essential. Some CHECK expressions are reformatted by the database, so equivalent expressions may still appear changed. Add real database tests before widening expression normalization.
 
-## 迁移与恢复
+## Migrations and recovery
 
-`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
+`src/migrator.ts` manages `dev`, `deploy`, `push`, and `resolve`. Migration files are created exclusively, and checksums detect edits to applied files. An unfinished record is written before execution. After an interruption or history-recording failure, subsequent deployment will not replay automatically; inspect the database and use `resolve`.
 
-同一项目的本地并发由 `src/lock.ts` 的进程锁限制，跨机器并发由数据库锁限制。PostgreSQL、SQLite 和 SQL Server 把迁移 SQL 与成功记录放在同一事务中。MySQL 和 Oracle 的 DDL 可能隐式提交，失败后必须根据实际数据库状态决定如何恢复。
+`src/lock.ts` limits local concurrency within a project, and database locks limit concurrency across machines. PostgreSQL, SQLite, and SQL Server record migration SQL and success in one transaction. MySQL and Oracle DDL may commit implicitly; after failure, recovery must follow the actual database state.
 
-`src/drift.ts` 在迁移后再次读取数据库，并比较它与当前模型。它不重放全部迁移文件，因此不能证明历史文件与数据库从未发生偏离；已应用文件的 checksum 检查覆盖的是文件修改。
+`src/drift.ts` rereads the database after migration and compares it with the current model. It does not replay every migration file, so it cannot prove that history and database have never diverged. Applied-file checksum checks detect file modification.
 
-SQLite 需要重建表的变更目前明确报错。安全重建还需要处理外部外键、索引及数据搬迁，不能仅靠把旧表改名解决。其他方言的结构限制见 [README](../README.md#数据库支持与配置)。
+SQLite changes that require table rebuilding currently fail explicitly. A safe rebuild also needs to handle external foreign keys, indexes, and data migration; simply renaming the old table is insufficient. See the [README](../README.md#databases-and-configuration) for other dialect limitations.
 
-## 验证修改
+## Verifying changes
 
-运行 `corepack yarn check` 做静态检查、构建和本地测试。数据库测试使用 `corepack yarn test:postgres-mysql` 和 `corepack yarn test:servers`；没有相应数据库环境时，普通测试会跳过这些用例。版本范围的验证步骤见 [兼容性](compatibility.md)。
+Run `corepack yarn check` for static checks, build, and local tests. Database tests use `corepack yarn test:postgres-mysql` and `corepack yarn test:servers`; ordinary tests skip those cases when the database environment is absent. See [compatibility](compatibility.md) for version-range validation.

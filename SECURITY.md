@@ -1,11 +1,9 @@
-# 安全与支持
+# Security and support
 
-项目目前处于 Alpha 阶段，只维护当前开发分支；尚未承诺生产支持周期。
-数据库迁移涉及结构和数据变化，发布前应审查生成 SQL 并在可恢复的环境验证。
+English | [简体中文](docs/zh-CN/SECURITY.md)
 
-发现漏洞时，请使用项目 GitHub Security 页面中的私密报告入口（启用后可用），
-不要在公开 issue 中提交凭据、业务数据或可直接利用的细节。
-尚无私密入口时，仅提交不含敏感细节的联系请求，让维护者建立私密渠道。
+This project is in alpha. Only the current development branch is maintained, and no production support lifecycle is promised. Database migrations change schema and data; review generated SQL and verify it in a recoverable environment before release.
 
-维护者应在 GitHub 仓库启用 Private vulnerability reporting；分支保护由维护者按实际协作方式配置。
-本仓库中的文件不能代替 GitHub 账户侧配置；目前未承诺响应时限。
+To report a vulnerability, use the repository's private GitHub Security reporting option once it is enabled. Do not post credentials, application data, or directly exploitable details in a public issue. Until a private channel is available, file only a non-sensitive request to contact the maintainers so they can establish one.
+
+Maintainers should enable Private vulnerability reporting on GitHub and configure branch protection according to their collaboration model. Repository files cannot replace GitHub account settings. No response time is currently promised.

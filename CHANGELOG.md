@@ -1,16 +1,19 @@
 # Changelog
 
+English | [简体中文](docs/zh-CN/CHANGELOG.md)
+
 ## 0.1.0-alpha.1 (pending publication)
 
-- CLI 默认使用简洁英语输出，提供 `--detail` 诊断信息和 `--lang zh-CN` 中文提示。
-- 调整测试输出，避免默认打印完整快照；保留失败原因和迁移后异常对账信息。
-- 移除自动运行的 GitHub Actions workflow，改由维护者执行发布前验证和发包。
+- Make CLI output concise and English by default, with `--detail` diagnostics, `--lang zh-CN` Chinese messages, and a configuration setting for the default language.
+- Reduce default test output while retaining failure reasons and post-migration drift warnings.
+- Remove the automatic GitHub Actions workflow; maintainers now run pre-release verification and publishing manually.
+- Make English the primary documentation language and provide corresponding Simplified Chinese documents.
 
 ## 0.1.0-alpha.0
 
-- 实现 PostgreSQL、SQLite 基础迁移以及 MySQL、SQL Server、Oracle 方言。
-- 增加持久化未完成状态、事务内成功记账、防覆盖迁移文件和稳定数据库锁。
-- 添加历史 ts-grm 兼容验证、独立安装包测试及容器数据库测试脚本。
-- 对齐 ts-grm 开发工具链，使用 MIT 许可；保留第三方适配声明。
+- Add basic PostgreSQL and SQLite migrations and MySQL, SQL Server, and Oracle dialects.
+- Add durable unfinished-migration state, transactional success recording, exclusive migration-file creation, and stable database locks.
+- Add historical ts-grm compatibility checks, isolated package tests, and container database test scripts.
+- Align the development toolchain with ts-grm, use MIT for original code, and retain third-party adaptation notices.
 
-当前尚未发布正式版本。各数据库支持边界见 README；后续发行版在此记录破坏性变更与恢复步骤。
+No stable version has been released. See the [README](README.md) for database support boundaries. Future releases will record breaking changes and recovery steps here.

@@ -1,13 +1,12 @@
-# 参与开发
+# Contributing
 
-本项目处于 Alpha 阶段。提交 issue 时请给出最小模型、数据库/驱动/Node/core/sql 版本，
-并移除连接口令与业务数据。
+English | [简体中文](docs/zh-CN/CONTRIBUTING.md)
 
-## 环境与验证
+This project is in alpha. When filing an issue, include a minimal model and the database, driver, Node, `@ts-grm/core`, and `@ts-grm/sql` versions. Remove credentials and application data.
 
-开发工具与 ts-grm 对齐：Yarn 4.1.0、TypeScript 7、tsdown、Biome、Vitest 4。
-Node 要求为 `>=24.11.0`，由上游发布产物的 `using` 语法及当前 tsdown 的运行要求共同决定；发布前应在 Node 24.11 和当前 24 上验证。
-不照搬上游根 package.json 的 Node ≥18 声明，因为它不满足当前构建工具和 SQLite 驱动要求。
+## Development and verification
+
+The development toolchain follows ts-grm: Yarn 4.1.0, TypeScript 7, tsdown, Biome, and Vitest 4. Node `>=24.11.0` is required by the published upstream `using` syntax and the current tsdown runtime. Verify releases on Node 24.11 and the current Node 24 release. The upstream repository's Node >=18 declaration does not satisfy this project's build tools and SQLite driver.
 
 ```sh
 corepack enable
@@ -20,24 +19,20 @@ corepack yarn test:postgres-mysql
 corepack yarn test:servers
 ```
 
-`check` 包含 lint、类型检查、构建、本地测试。本地测试没有数据库环境变量时会跳过服务器测试，
-不能将其当作完整数据库验证。两个容器脚本默认使用 Podman，可设置 `CONTAINER_RUNTIME=docker`。
-脚本创建临时容器与随机端口，只清理自身资源；请预留镜像空间，不使用业务数据库测试。
+`check` runs lint, type checking, the build, and local tests. Server tests are skipped when their database environment variables are absent, so this is not a complete database verification. The two container scripts use Podman by default; set `CONTAINER_RUNTIME=docker` to use Docker. They create temporary containers on random ports and clean up only their own resources. Allow space for the images and do not test against an application database.
 
-`TS_GRM_TEST_VERSION=0.0.9 yarn test:servers` 在隔离目录安装指定历史版本再执行真实数据库测试。
-兼容测试不改变仓库的依赖或 lockfile。支持范围和复现方法见 [兼容性](docs/compatibility.md)。
+`TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:servers` installs that historical version in an isolated directory before running real database tests. Compatibility checks do not alter repository dependencies or the lockfile. See [compatibility](docs/compatibility.md) for the supported range and reproduction steps.
 
-## 修改约定
+## Changes
 
-- 新方言须覆盖模型适配、introspection、DDL、执行器、历史、锁和文档。
-- 验证 schema → SQL → introspection → diff 的闭环，并测试数据保留、失败恢复和并发。
-- 不支持的数据库结构应明确拒绝，不能静默丢弃。
-- ts-grm 内部字段访问集中在 `src/vendor/ts-grm.ts`；改变 peer 范围前验证候选版本。
-- 发布包保持 ESM，避免宿主模型注册表被重复加载。不要把 ts-grm 打进 bundle。
-- 外部实现参考使用 `@see` 标注来源；引入代码需保留其适用的许可证和作者声明。
-- Biome 使用上游的格式偏好；`yarn check` 执行正确性 lint，避免仅为格式批量改写历史代码。
+- A new dialect must cover model adaptation, introspection, DDL, execution, history, locking, and documentation.
+- Verify the schema → SQL → introspection → diff cycle, including data preservation, failure recovery, and concurrency.
+- Reject unsupported database structures explicitly instead of silently dropping them.
+- Keep access to ts-grm internals in `src/vendor/ts-grm.ts`; verify candidate versions before changing the peer range.
+- Keep the published package ESM and ts-grm external to the bundle so the host model registry is shared.
+- Mark external implementation references with `@see` and retain applicable licenses and attribution for adopted code.
+- Biome follows upstream formatting preferences. `yarn check` runs correctness lint without wholesale formatting of historical code.
 
-本项目原创贡献使用 MIT；第三方适配声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Original contributions use MIT. See [third-party notices](THIRD_PARTY_NOTICES.md) for adapted code.
 
-`yarn test:coverage` 使用 V8 生成源码覆盖率与 LCOV，不将测试夹具计入覆盖范围。
-仅本地测试的覆盖率不代表所有方言覆盖率；当前没有凭单次数字设置全局覆盖率门槛。
+`yarn test:coverage` uses V8 to generate source coverage and LCOV, excluding test fixtures. Coverage from local tests alone does not represent coverage of every dialect; there is currently no global threshold based on a single coverage figure.
