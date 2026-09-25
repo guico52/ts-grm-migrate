@@ -6,7 +6,7 @@
 ## 环境与验证
 
 开发工具与 ts-grm 对齐：Yarn 4.1.0、TypeScript 7、tsdown、Biome、Vitest 4。
-Node 要求为 `>=24.11.0`，由上游发布产物的 `using` 语法及当前 tsdown 的运行要求共同决定；CI 验证 Node 24.11 和 24。
+Node 要求为 `>=24.11.0`，由上游发布产物的 `using` 语法及当前 tsdown 的运行要求共同决定；发布前应在 Node 24.11 和当前 24 上验证。
 不照搬上游根 package.json 的 Node ≥18 声明，因为它不满足当前构建工具和 SQLite 驱动要求。
 
 ```sh
@@ -35,7 +35,7 @@ corepack yarn test:servers
 - ts-grm 内部字段访问集中在 `src/vendor/ts-grm.ts`；改变 peer 范围前验证候选版本。
 - 发布包保持 ESM，避免宿主模型注册表被重复加载。不要把 ts-grm 打进 bundle。
 - 外部实现参考使用 `@see` 标注来源；引入代码需保留其适用的许可证和作者声明。
-- Biome 使用上游的格式偏好；CI 先执行正确性 lint，避免仅为格式批量改写历史代码。
+- Biome 使用上游的格式偏好；`yarn check` 执行正确性 lint，避免仅为格式批量改写历史代码。
 
 本项目原创贡献使用 MIT；第三方适配声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

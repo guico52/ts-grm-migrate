@@ -7,5 +7,5 @@
 不要在公开 issue 中提交凭据、业务数据或可直接利用的细节。
 尚无私密入口时，仅提交不含敏感细节的联系请求，让维护者建立私密渠道。
 
-维护者在首次公开仓库前应启用 Private vulnerability reporting，并配置分支保护与 CI 必需检查。
+维护者应在 GitHub 仓库启用 Private vulnerability reporting；分支保护由维护者按实际协作方式配置。
 本仓库中的文件不能代替 GitHub 账户侧配置；目前未承诺响应时限。

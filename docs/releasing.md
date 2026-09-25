@@ -1,11 +1,12 @@
 # 发布
 
-仓库可以先在 GitHub 公开；`package.json` 中的 `private: true` 只阻止误发 npm 包。以下步骤用于首次 npm 发布，开发和试用本地 tarball 的方法见 [README](../README.md#状态与安装)。
+`ts-grm-migrate` 已发布到 npm，当前采用 Alpha 版本。发布由维护者手动执行，仓库不配置自动运行或自动发布的 GitHub Actions workflow。
 
-1. 确定 GitHub 仓库地址，在 `package.json` 中填写 `repository`、`bugs` 和 `homepage`。检查 Git 历史及打包内容，不带入凭据或本地配置。
-2. 确认 GitHub CI 通过，尤其是最低 peer 版本的安装包测试和真实数据库测试。更新 [兼容性说明](compatibility.md)与 `CHANGELOG.md`。
-3. 选定 Alpha 版本号，移除 `private: true`；不要扩大未经验证的 peer 范围。
-4. 运行 `corepack yarn install --immutable`、`corepack yarn check`、`corepack yarn test:package 0.0.9` 和 `corepack yarn test:package 0.0.13`。
-5. 运行 `corepack yarn pack --out /tmp/ts-grm-migrate.tgz`，核对入口、类型声明、许可证和第三方声明都在包内，再由维护者确认 npm 包名、权限和发布版本。
+每次发布前：
 
-当前 CI 只执行验证，不自动发布 npm 包。
+1. 更新 `package.json` 版本和 `CHANGELOG.md`；一个版本号不能重复发布。扩大 peer 范围前按[兼容性说明](compatibility.md)重新验证。
+2. 在 Node 24.11 和当前 24 上运行 `corepack yarn install --immutable`、`corepack yarn check`、`corepack yarn test:package 0.0.9`、`corepack yarn test:package 0.0.13`。涉及数据库迁移行为时，还要运行 `corepack yarn test:postgres-mysql` 和 `corepack yarn test:servers`。
+3. 运行 `npm publish --dry-run --tag next`，核对入口、类型声明、许可证、第三方声明和 README。确认工作区状态及要发布的版本。
+4. 由维护者登录 npm，运行 `npm publish --tag next`，再查询 npm registry 确认版本与 dist-tag。
+
+首次公开 GitHub 仓库时，在 `package.json` 中填写真实的 `repository`、`bugs` 和 `homepage` 地址。发布前检查 Git 历史和打包清单，不携带凭据或本地配置。
