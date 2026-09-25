@@ -15,6 +15,9 @@
   "files": [
     "dist",
     "docs",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSES"
   ],

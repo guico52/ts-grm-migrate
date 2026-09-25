@@ -1,43 +1,40 @@
 # ts-grm-migrate
 
-[ts-grm](https://github.com/babyfish-ct/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
-但**模型就是你写的 ts-grm 代码**，不需要额外的 schema 文件，也没有代码生成步骤。
+English | [简体中文](docs/zh-CN/README.md)
 
-## 功能清单
+Database schema migrations for [ts-grm](https://github.com/babyfish-ct/ts-grm). Manage database versions with SQL migration files while keeping your ts-grm models as the source of truth. No separate schema file or code generation is required.
 
-- **增量迁移**：对比你的模型与数据库现状，生成可读的 SQL 迁移文件，并记录应用历史
-- **按序部署**：把所有未应用的迁移依次应用到目标库（部署 / CI 场景）
-- **快速同步**：快速执行迁移SQL，将数据库同步为model定义的形状
-- **迁移后对账**：应用完再核对数据库与模型，不一致就指出「哪个库、哪张表、差在哪」
-- **失败可恢复**：迁移中途失败会记入历史并阻止后续部署，用 `resolve` 修正状态后继续
+## Features
 
-## 状态与安装
+- **Incremental migrations:** compare models with the database, generate readable SQL files, and record applied history.
+- **Ordered deployment:** apply pending migration files in order, including in deployment pipelines.
+- **Direct synchronization:** bring a database in line with the models without writing migration history.
+- **Post-migration checks:** report schema differences that remain after applying changes.
+- **Failure recovery:** record failed or interrupted attempts and require an explicit `resolve` before retrying.
 
-**Alpha，已发布到 [npm](https://www.npmjs.com/package/ts-grm-migrate)。** 首版为 `0.1.0-alpha.0`；
-仅承诺下表列出的验证范围，不保证任意数据库结构或历史版本兼容。
-运行环境与当前 ts-grm 工具链一致：Node `>=24.11.0`、ESM。
-开发使用 Yarn 4.1.0、TypeScript 7、tsdown、Biome 与 Vitest 4。
+## Status and installation
 
-在使用者项目中安装。以下命令对应下方的 PostgreSQL 快速开始示例：
+**Alpha, published on [npm](https://www.npmjs.com/package/ts-grm-migrate).** The first release was `0.1.0-alpha.0`. Support is limited to the verified combinations and features below; arbitrary existing schemas and historical versions are not guaranteed to work.
+
+Runtime requirements are Node `>=24.11.0` and ESM. Development uses Yarn 4.1.0, TypeScript 7, tsdown, Biome, and Vitest 4.
+
+Install the migration CLI in your application. These commands match the PostgreSQL example below:
 
 ```sh
 npm install @ts-grm/core@0.0.13 @ts-grm/sql@0.0.13 pg
 npm install -D ts-grm-migrate@next
 ```
 
-- core/sql 是 peerDependencies，请使用**相同版本**；当前支持 `>=0.0.9 <0.0.14`。
-  这是已验证范围，不自动承诺未来版本；验证方法见 [兼容性](docs/compatibility.md)。
-- 数据库驱动按需安装，完整列表见下方支持表。
-- `@next` 跟随预发布版本；需要固定版本时请写明版本号，例如 `ts-grm-migrate@0.1.0-alpha.0`。
-- 安装后使用 `npx tgm`，或通过包管理器运行 `tgm` / `ts-grm-migrate`。
+- `@ts-grm/core` and `@ts-grm/sql` are peer dependencies and must use the **same version**. The verified range is `>=0.0.9 <0.0.14`; see [compatibility](docs/compatibility.md) before changing it.
+- Install only the database driver you need; the supported drivers are listed below.
+- `@next` follows prereleases. Pin an exact version when reproducibility matters, for example `ts-grm-migrate@0.1.0-alpha.0`.
+- Run the installed CLI with `npx tgm`, or use `tgm` / `ts-grm-migrate` through your package manager.
 
-## 快速开始
+## Quick start
 
-> **前置：项目需是 ESM** —— 给 `package.json` 加上 `"type": "module"`。
-> ts-grm 的模型注册表是**模块级单例**，migrate 必须与你的模型共用同一份 **ESM** 实例；
-> 若模型是 CommonJS，它会把模型注册到另一份实例上，migrate 看不到任何模型。
+> **Your project must use ESM.** Set `"type": "module"` in `package.json`. The ts-grm model registry is a module-level singleton; the migration tool and your models must share the same ESM instance. CommonJS models may register with a separate instance and be invisible to the migration tool.
 
-在项目根建一个配置文件：
+Create a configuration file in your project root:
 
 ```ts
 // ts-grm-migrate.config.ts
@@ -46,52 +43,49 @@ import { defineConfig } from "ts-grm-migrate";
 export default defineConfig({
   dialect: "postgres",
   database: { host: "localhost", database: "app", user: "postgres" },
-  models: ["./src/models"], // 交给 ts-grm 加载你的模型（.ts 或编译后的 .js）
-  // language: "zh-CN",    // 可选：项目中的 CLI 命令默认使用中文
+  models: ["./src/models"], // ts-grm loads these .ts files or compiled .js files
+  // language: "zh-CN",    // Optional: use Chinese for this project's CLI output
 });
 ```
 
-然后：
+Then run:
 
 ```sh
-npx tgm dev -n init      # 对比模型与数据库，生成并应用第一个迁移
-npx tgm dev              # 不写名字也行：迁移只用时间戳命名
-npx tgm status           # 看看应用了哪些、还剩哪些
+npx tgm dev -n init      # Generate and apply the first migration
+npx tgm dev              # Omit the name to use only a timestamp
+npx tgm status           # Inspect applied and pending migrations
 ```
 
-### 配置项
+### Configuration
 
-- **`dialect`**：数据库方言，可选 `postgres`、`sqlite`、`mysql`、`mssql`、`oracle`，默认 `postgres`。
-  它决定使用哪个数据库驱动，以及结构读取、SQL 生成和迁移执行的具体实现；各方言的驱动依赖与支持范围见下表。
-- **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
-- **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
-  **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
-- `language`：项目的 CLI 默认语言，可选 `en` 或 `zh-CN`，默认 `en`；命令行 `--lang` 可临时覆盖
-- `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
-- `schema`：目标 schema，PostgreSQL 默认 `public`，SQL Server 默认 `dbo`，Oracle 默认登录用户
-- `lockPath`：进程锁文件，默认 `./.ts-grm-migrate.lock`
+- **`dialect`:** `postgres`, `sqlite`, `mysql`, `mssql`, or `oracle`; defaults to `postgres`. It selects the driver, schema introspection, SQL generation, and execution. See the support table below.
+- **`database` (required):** connection settings; fields depend on the dialect.
+- **`models` (required):** model files or directories relative to the project root, starting with `./` or `../`. They must be ESM: declare `"type": "module"` or point to compiled ESM `.js` files.
+- `language`: project default for CLI output, `en` or `zh-CN`; defaults to `en`. `--lang` overrides it for one command.
+- `migrationsDir`: migration file directory; defaults to `./src/ts-grm`.
+- `schema`: target schema; defaults to `public` on PostgreSQL, `dbo` on SQL Server, and the login user's schema on Oracle.
+- `lockPath`: process lock file; defaults to `./.ts-grm-migrate.lock`.
 
-配置文件在项目根自动查找（`.ts` / `.mts` / `.mjs` / `.js`），也可以用 `--config <path>` 指定。
-`.ts` 的模块类型跟随项目：CommonJS 项目请用 `.mts`，或给 `package.json` 加 `"type": "module"`。
+The CLI searches the project root for a `.ts`, `.mts`, `.mjs`, or `.js` configuration file. Use `--config <path>` to choose one explicitly. A `.ts` file follows the project's module type; in a CommonJS project, use `.mts` or set `"type": "module"`.
 
-## 数据库支持与配置
+## Databases and configuration
 
-| `dialect` | 驱动依赖 | 支持范围 |
+| `dialect` | Driver dependency | Supported scope |
 | --- | --- | --- |
-| `postgres`（默认） | `pg` | PostgreSQL，schema 默认 `public` |
-| `sqlite` | `better-sqlite3` | 基础迁移；需要重建表的变更尚未实现 |
-| `mysql` | `mysql2` | MySQL 8.0.16+ / InnoDB，`lower_case_table_names=0` |
-| `mssql` | `mssql` | SQL Server 2016+，schema 默认 `dbo`；已验证 SQL Server 2022 |
-| `oracle` | `oracledb` | Oracle 19c+，schema 默认登录用户；已验证 Oracle Free 23 |
+| `postgres` (default) | `pg` | PostgreSQL; default schema `public` |
+| `sqlite` | `better-sqlite3` | Basic migrations; table rebuilds are not implemented |
+| `mysql` | `mysql2` | MySQL 8.0.16+, InnoDB, `lower_case_table_names=0` |
+| `mssql` | `mssql` | SQL Server 2016+; default schema `dbo`; tested on SQL Server 2022 |
+| `oracle` | `oracledb` | Oracle 19c+; default schema is the login user; tested on Oracle Free 23 |
 
-SQL Server 示例：
+SQL Server example:
 
 ```ts
 export default defineConfig({
   dialect: "mssql",
   database: {
     host: "localhost", port: 1433, database: "app", user: "app", password: process.env.DB_PASSWORD,
-    // 本地自签名测试证书可启用；生产环境默认校验证书。
+    // Use only for local tests with self-signed certificates; production validates certificates by default.
     trustServerCertificate: true,
   },
   schema: "dbo",
@@ -99,7 +93,7 @@ export default defineConfig({
 });
 ```
 
-Oracle 示例（Thin mode，无需安装 Oracle Client）：
+Oracle example (Thin mode; no Oracle Client installation needed):
 
 ```ts
 export default defineConfig({
@@ -112,82 +106,60 @@ export default defineConfig({
 });
 ```
 
-Oracle `database.database` 表示 service name，也可用 `host` / `port` / `database` 代替
-`connectionString`。Oracle schema 必须已存在；SQL Server 会创建尚不存在的目标 schema。
-SQL Server 和 Oracle 的自动生成 DDL 与历史表均限定目标 schema，避免读写落在不同命名空间。
+For Oracle, `database.database` is the service name. You can provide `host`, `port`, and `database` instead of `connectionString`. The Oracle schema must already exist; SQL Server creates a missing target schema. Generated DDL and migration history on both dialects are scoped to that schema.
 
-Oracle 用户需要 `CREATE SESSION`、`CREATE TABLE`、表空间配额；创建 identity 列还需要
-`CREATE SEQUENCE`。数据库锁使用 `DBMS_LOCK`，需由 DBA 授权：
+The Oracle user needs `CREATE SESSION`, `CREATE TABLE`, and a tablespace quota. Identity columns also require `CREATE SEQUENCE`. A DBA must grant access to `DBMS_LOCK` for database locking:
 
 ```sql
 GRANT EXECUTE ON SYS.DBMS_LOCK TO APP;
 ```
 
-MySQL / Oracle 的 DDL 会隐式提交，失败可能留下部分改动。`resolve --rolled-back` 仅修改历史状态，
-**不会撤销 SQL**；应先手工恢复数据库再重试，或补完 SQL 后 `resolve --applied`。
-PostgreSQL、SQLite、SQL Server 在同一事务内执行迁移 SQL 并记录成功，记账失败也会回滚。
-所有方言都会在执行前持久化未完成记录；进程中断、连接丢失或记账失败后会阻止自动重放，
-需检查数据库实际状态，再使用 `resolve`。未完成记录在 `status` 中显示为 failed。
-`status` 仅将确认不存在的历史表视为空历史，连接和权限错误会向上传递；Oracle 跨 schema
-的 ORA-00942 无法区分缺表与无权限，因此保留错误。
+MySQL and Oracle DDL commits implicitly and may leave partial changes after failure. `resolve --rolled-back` changes **history only**; it does not undo SQL. Restore the database manually before retrying, or complete the SQL and use `resolve --applied`.
 
-新迁移 ID 使用毫秒时间戳，并在本地锁内保证晚于已有生成时间戳；文件使用独占创建，
-遇到已有同名文件会报错，不覆盖历史 SQL。PostgreSQL 数据库锁按数据库和当前 schema
-限定固定资源名，不依赖 checkout 的本地路径。
+PostgreSQL, SQLite, and SQL Server execute migration SQL and record success in one transaction, so a failure to record success rolls back the SQL. Every dialect persists an unfinished attempt before execution. A crash, lost connection, or history-write failure blocks automatic replay until you inspect the database and use `resolve`. `status` shows unfinished attempts as failed. It treats only a confirmed missing history table as empty history; connection and permission errors propagate. Oracle's ORA-00942 cannot reliably distinguish a missing table from lack of access across schemas, so that error is preserved.
 
-当前边界：
+New migration IDs use millisecond timestamps and advance past existing IDs while holding the local lock. Files are created exclusively; an existing filename causes an error instead of overwriting historical SQL. PostgreSQL uses a fixed database lock resource scoped to the database and current schema, independent of the checkout path.
 
-- SQL Server / Oracle 支持普通表、列、主键、唯一约束、外键、CHECK 和普通索引；
-  修改 identity 策略、自动重命名及复杂表重建不支持。
-- SQL Server 的计算/隐藏/稀疏列、temporal/memory-optimized 表、自定义聚集约束布局、
-  降序/INCLUDE/特殊索引会明确拒绝。
-- Oracle 的虚拟/隐藏列、IOT/嵌套/临时表、特殊/表达式/降序索引、延迟约束会明确拒绝。
-- 两者目前不支持跨 schema 外键及未启用/未验证的约束。CHECK 只做保守的格式归一化，
-  不承诺任意两种等价表达式都能匹配。
-- Oracle 迁移文件支持以分号分隔的 SQL，正确保留字符串、标识符、注释中的分号；
-  PL/SQL、SQL*Plus 指令暂不支持，会在执行文件前拒绝。SQL Server 文件使用 SQL 批次，
-  不支持客户端的 `GO` 分隔符。
-- MySQL 暂不支持 MariaDB、生成列、隐藏列及特殊索引。
+Current limits:
 
-### 容器集成测试
+- SQL Server and Oracle support ordinary tables, columns, primary keys, unique constraints, foreign keys, CHECK constraints, and ordinary indexes. Identity strategy changes, automatic renames, and complex table rebuilds are unsupported.
+- SQL Server explicitly rejects computed, hidden, and sparse columns; temporal and memory-optimized tables; custom clustered constraint layouts; and descending, INCLUDE, or special indexes.
+- Oracle explicitly rejects virtual and hidden columns; index-organized, nested, and temporary tables; special, expression, and descending indexes; and deferred constraints.
+- Both reject cross-schema foreign keys and disabled or unvalidated constraints. CHECK expressions receive conservative normalization; equivalent expressions are not guaranteed to compare as equal.
+- Oracle migration files may contain semicolon-separated SQL, including semicolons inside strings, identifiers, and comments. PL/SQL and SQL*Plus directives are rejected before execution. SQL Server files use SQL batches; the client-side `GO` separator is unsupported.
+- MySQL support does not include MariaDB, generated or hidden columns, or special indexes.
+
+### Container integration tests
 
 ```sh
 corepack yarn install
 corepack yarn test:servers
 ```
 
-脚本默认用 Podman 启动 SQL Server Developer 与 Oracle Free（`CONTAINER_RUNTIME=docker` 可切换 Docker），随机分配仅监听 `127.0.0.1` 的端口，
-在独立 schema/用户中验证迁移、数据保留、锁、失败恢复与 CLI，完成后清理本次容器和数据卷。
-MySQL 集成测试始终创建随机专属数据库并清理，不使用 `MYSQL_DATABASE`；测试账号需要建库权限。
-可通过 `MSSQL_TEST_IMAGE` / `ORACLE_TEST_IMAGE` 指定镜像。首次拉取镜像需要网络及足够磁盘空间。
-SQL Server Developer 的测试用途受其许可条款约束，脚本用 `ACCEPT_EULA=Y` 启动。
+By default, the script starts SQL Server Developer and Oracle Free with Podman (`CONTAINER_RUNTIME=docker` selects Docker). It binds random ports to `127.0.0.1`, tests migrations, data preservation, locks, recovery, and the CLI in isolated schemas or users, then removes its containers and volumes. MySQL integration tests create and remove their own randomly named database rather than using `MYSQL_DATABASE`; the test account needs database-creation permission.
 
-也可对专用测试实例设置 `MSSQL_HOST/PORT/USER/PASSWORD/DATABASE` 或
-`ORACLE_HOST/PORT/PASSWORD/DATABASE`，运行 `tests/server-integration.test.ts`。
-Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK` 的转授权权限；
-这些权限仅供测试环境使用。未设置对应 `*_HOST` 时，集成测试会跳过。
+Set `MSSQL_TEST_IMAGE` or `ORACLE_TEST_IMAGE` to select images. The first run needs network access and enough disk space. SQL Server Developer testing is subject to its license terms; the script starts it with `ACCEPT_EULA=Y`.
 
-## 命令
+You can also run `tests/server-integration.test.ts` against dedicated instances by setting `MSSQL_HOST/PORT/USER/PASSWORD/DATABASE` or `ORACLE_HOST/PORT/PASSWORD/DATABASE`. Oracle tests use SYSTEM to create temporary users, so SYSTEM needs permission to grant `DBMS_LOCK` to them. Those privileges are for test environments only. Integration tests skip when the corresponding `*_HOST` is unset.
 
-| 命令 | 用途 |
+## Commands
+
+| Command | Purpose |
 | --- | --- |
-| `tgm dev [-n <名字>]` | 对比模型与数据库，生成并应用一个迁移（开发用；名字可省略，省略时只用时间戳命名） |
-| `tgm deploy` | 应用所有未应用的迁移（部署 / CI 用，无交互） |
-| `tgm push [--force]` | 直接同步成模型的样子，不写文件、不记历史 |
-| `tgm status` | 查看已应用 / 待应用的迁移 |
-| `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
-| `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
+| `tgm dev [-n <name>]` | Compare models with the database, then generate and apply a migration (the name is optional) |
+| `tgm deploy` | Apply pending migrations in order without interaction |
+| `tgm push [--force]` | Sync the database to the models without a file or history record |
+| `tgm status` | Show applied and pending migrations |
+| `tgm resolve --applied <id>` | Mark SQL already executed manually as applied |
+| `tgm resolve --rolled-back <id>` | Mark an attempt as rolled back so it becomes pending again |
 
-选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
+Options: `--config <path>` selects a configuration file; `-n` / `--name <name>` names a migration; `--force` skips destructive-change confirmation; `--detail` shows execution steps, SQL, and locks; `--lang <en|zh-CN>` selects the language for this command; `-h` shows help.
 
-普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
-例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`。
-详细模式中的 SQL 可能包含业务数据值，请谨慎保存或分享终端日志；密码等连接凭据不会由诊断事件输出。
+Normal commands report the target, migration count or ID, and result. `status` intentionally lists migrations because it is an inspection command. For example, `tgm deploy` may print `Applied 2 migrations to postgres/app/public.` The SQL shown with `--detail` may contain business data: take care when saving or sharing logs. Diagnostic events do not print connection passwords.
 
-### 输出语言
+### Output language
 
-CLI 默认使用英语；不会根据系统的 `LANG` 自动切换。希望项目中的命令默认显示中文，可在 `defineConfig({...})` 中加入 `language: "zh-CN"`。
-只想让本次命令使用中文，则指定 `--lang zh-CN`：
+The CLI defaults to English and does not switch based on the system's `LANG`. Set `language: "zh-CN"` in `defineConfig({...})` to make Chinese the project default. To use Chinese for a single command:
 
 ```sh
 npx tgm --help --lang zh-CN
@@ -195,31 +167,33 @@ npx tgm deploy --lang zh-CN
 npx tgm status --lang zh-CN --detail
 ```
 
-优先级为 **`--lang` > 配置文件的 `language` > `en`**；例如项目配置中文时，`tgm deploy --lang en` 只让这次部署使用英语。
-`--help` 和无效命令不会加载项目配置，以便配置文件出错时仍可查看帮助；这两种情况若需中文，请显式添加 `--lang zh-CN`。
-`--detail` 与语言选项可以一起使用。底层诊断与数据库驱动返回的原始错误保留英文或原文，便于检索和排查。
+The precedence is **`--lang` > configuration `language` > `en`**. For example, `tgm deploy --lang en` uses English once in a project configured for Chinese. `--help` and unknown commands do not load the project configuration, so add `--lang zh-CN` explicitly for Chinese help or errors in those paths. `--detail` works with either language. Low-level diagnostics and database-driver errors remain in English or their original language.
 
-## 行为约定
+## Behavior
 
-- **迁移文件是人可读的 SQL**：`<migrationsDir>/<时间戳>_<名字>.sql`，可以手工编辑。
-  但**已应用的迁移不能再改** —— 内容一旦变动，后续 `deploy` 会因 checksum 不匹配而拒绝继续
-- **破坏性变更会先问**：删表 / 删列 / 改列类型默认交互确认；非交互环境（CI）需显式加 `--force`
-- **迁移后自动对账**：`dev` / `deploy` / `push` 完成后会再读一次数据库与模型比对，
-  仍有差异就报出具体位置，例如：
+- **Migration files are readable SQL:** `<migrationsDir>/<timestamp>_<name>.sql` can be edited before application. **Do not edit an applied migration.** `deploy` rejects a changed checksum; make a new migration instead.
+- **Destructive changes require confirmation:** dropping tables or columns and changing column types prompts by default. Non-interactive environments require `--force`.
+- **Post-migration checks:** `dev`, `deploy`, and `push` reread the schema and report remaining differences, for example:
 
-  ```
+  ```text
   Warning: postgres/app/public differs from the model:
     - Table AUTHOR: Extra column LEGACY
   Check for a partial migration or manual database changes.
   ```
 
-- **并发防护**：同一项目上的多个 migrate 实例由进程锁文件挡住；多机部署时再由数据库的
-  advisory lock 兜底
-- **`schema` 是全局生效的**：同时作用于结构读取与 DDL 执行（PostgreSQL `search_path`，SQL Server / Oracle 限定表名），
-  避免出现schema读取和写入不一致的情况
+- **Concurrency protection:** a process lock prevents parallel migrations in one project; a database lock protects deployments across machines.
+- **Target schema applies to reads and writes:** PostgreSQL uses `search_path`, while SQL Server and Oracle qualify target tables. This prevents introspection and DDL from targeting different schemas.
 
+## License
 
-## 许可证
+Original code uses [MIT](LICENSE). ts-grm uses Apache-2.0; adapted upstream structure types retain their license and attribution. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-原创代码采用 [MIT](LICENSE)。ts-grm 使用 Apache-2.0；本项目改写的上游结构类型保留其许可与署名，
-见[第三方声明](THIRD_PARTY_NOTICES.md)。
+## More documentation
+
+- [Compatibility and supported ts-grm versions](docs/compatibility.md)
+- [Design and migration internals](docs/design.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security and support](SECURITY.md)
+- [Release process](docs/releasing.md)
+- [Changelog](CHANGELOG.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
