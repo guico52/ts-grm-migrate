@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import { parseArgs, run } from "./cli.js";
-import { messages } from "./cli/messages.js";
+import { messages, type CliLanguage } from "./cli/messages.js";
 import { MigrationAbortedError } from "./migrator.js";
 
 async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  let language: CliLanguage = parseArgs(argv).flags.get("lang") === "zh-CN" ? "zh-CN" : "en";
   try {
-    process.exitCode = await run(process.argv.slice(2), process.cwd());
+    process.exitCode = await run(argv, process.cwd(), { onLanguage: (selected) => { language = selected; } });
   } catch (e) {
-    const m = messages(parseArgs(process.argv.slice(2)).flags.get("lang") === "zh-CN" ? "zh-CN" : "en");
+    const m = messages(language);
     if (e instanceof MigrationAbortedError) {
       console.log(m.cancelled);
       process.exitCode = 0;

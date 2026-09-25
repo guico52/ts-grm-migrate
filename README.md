@@ -47,6 +47,7 @@ export default defineConfig({
   dialect: "postgres",
   database: { host: "localhost", database: "app", user: "postgres" },
   models: ["./src/models"], // 交给 ts-grm 加载你的模型（.ts 或编译后的 .js）
+  // language: "zh-CN",    // 可选：项目中的 CLI 命令默认使用中文
 });
 ```
 
@@ -65,6 +66,7 @@ npx tgm status           # 看看应用了哪些、还剩哪些
 - **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
 - **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
   **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
+- `language`：项目的 CLI 默认语言，可选 `en` 或 `zh-CN`，默认 `en`；命令行 `--lang` 可临时覆盖
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
 - `schema`：目标 schema，PostgreSQL 默认 `public`，SQL Server 默认 `dbo`，Oracle 默认登录用户
 - `lockPath`：进程锁文件，默认 `./.ts-grm-migrate.lock`
@@ -176,13 +178,26 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 指定 CLI 语言（默认英语）、`-h` 显示帮助。
+选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
 
 普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
-例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`；
-`tgm deploy --detail --lang zh-CN` 会显示中文提示及逐项执行细节。
+例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`。
 详细模式中的 SQL 可能包含业务数据值，请谨慎保存或分享终端日志；密码等连接凭据不会由诊断事件输出。
-`zh-CN` 翻译帮助、进度、结果和交互提示；底层诊断与数据库驱动返回的原始错误保留英文或原文，便于检索和排查。
+
+### 输出语言
+
+CLI 默认使用英语；不会根据系统的 `LANG` 自动切换。希望项目中的命令默认显示中文，可在 `defineConfig({...})` 中加入 `language: "zh-CN"`。
+只想让本次命令使用中文，则指定 `--lang zh-CN`：
+
+```sh
+npx tgm --help --lang zh-CN
+npx tgm deploy --lang zh-CN
+npx tgm status --lang zh-CN --detail
+```
+
+优先级为 **`--lang` > 配置文件的 `language` > `en`**；例如项目配置中文时，`tgm deploy --lang en` 只让这次部署使用英语。
+`--help` 和无效命令不会加载项目配置，以便配置文件出错时仍可查看帮助；这两种情况若需中文，请显式添加 `--lang zh-CN`。
+`--detail` 与语言选项可以一起使用。底层诊断与数据库驱动返回的原始错误保留英文或原文，便于检索和排查。
 
 ## 行为约定
 

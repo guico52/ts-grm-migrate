@@ -120,6 +120,14 @@ describe("loadConfig", () => {
     const loaded = await loadConfig(dir, "custom.config.mjs");
     expect(loaded.config.models).toEqual(["./x"]);
   });
+
+  it("拒绝配置文件中未知的输出语言", async () => {
+    await writeConfig(
+      "ts-grm-migrate.config.mjs",
+      "export default { database: {}, models: ['./m'], language: 'fr' };",
+    );
+    await expect(loadConfig(dir)).rejects.toThrow(/unsupported language "fr"/);
+  });
 });
 
 describe("CLI 入口结构（防止循环依赖死锁）", () => {
@@ -157,6 +165,20 @@ describe("CLI 可执行入口（需要先 build）", () => {
 
     expect(stdout).toContain("ts-grm-migrate");
     expect(stdout).toContain("Usage");
+  });
+
+  it("配置的语言也用于可执行入口的错误前缀", async () => {
+    if (!existsSync(distCli)) return;
+    const configFile = path.join(dir, "config.mjs");
+    await writeFile(configFile, `export default {
+      dialect: "sqlite",
+      language: "zh-CN",
+      database: { file: ":memory:" },
+      models: ["./missing.mjs"],
+      schema: "unsupported"
+    };`);
+    await expect(execFileAsync(process.execPath, [distCli, "dev", "--config", configFile], { cwd: dir }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("错误:") });
   });
 });
 

@@ -20,6 +20,9 @@ import { dialectInfo } from "./dialect.js";
 // 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
 export type { DialectName } from "./dialect.js";
 
+/** CLI output language; the command-line --lang flag may override it. */
+export type OutputLanguage = "en" | "zh-CN";
+
 /**
  * 数据库连接。
  *
@@ -50,6 +53,8 @@ export interface MigrateConfig {
    * 且**不能**配 `schema`（SQLite 没有 schema 概念，配了会报错）。
    */
   readonly dialect?: import("./dialect.js").DialectName;
+  /** CLI output language for this project. Defaults to English. */
+  readonly language?: OutputLanguage;
   /** 数据库连接 */
   readonly database: DatabaseConfig;
   /**
@@ -152,6 +157,9 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
     throw new Error(
       `Configuration file "${file}" is missing models (at least one model file or directory).`,
     );
+  }
+  if (config.language != null && config.language !== "en" && config.language !== "zh-CN") {
+    throw new Error(`Configuration file "${file}" has unsupported language "${String(config.language)}". Use en or zh-CN.`);
   }
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
   // （那里的提示能带上 ts-grm 驱动名与实现进度）
