@@ -102,7 +102,7 @@ export class FileMigrationStore implements MigrationFileStore {
         // 目录尚不存在 = 还没有迁移
         return [];
       }
-      throw new Error(`读取迁移目录失败 "${this._dir}"：${(e as Error).message}`);
+      throw new Error(`Failed to read migration directory "${this._dir}": ${(e as Error).message}`);
     }
 
     const files: Array<MigrationFile> = [];
@@ -153,7 +153,7 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
     this.tableName = _options.table ?? DEFAULT_HISTORY_TABLE;
     this._dialect = _options.dialect ?? "postgres";
     if (this._dialect === "mssql" || this._dialect === "oracle") {
-      if (this._dialect === "oracle" && !_options.schema) throw new Error("Oracle 历史表需要 schema");
+      if (this._dialect === "oracle" && !_options.schema) throw new Error("Oracle migration history requires a schema");
       this._server = new ServerMigrationHistoryStore(_options.executor, new ServerSql(this._dialect, _options.schema ?? "dbo"), this.tableName);
     }
     this._table = this._dialect === "mysql" ? quoteMysqlIdentifier(this.tableName) : quoteIdentifier(this.tableName);

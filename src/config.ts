@@ -93,7 +93,7 @@ export async function loadConfig(
     explicitPath != null ? path.resolve(cwd, explicitPath) : await findConfig(cwd);
   if (file == null) {
     throw new Error(
-      `未找到配置文件。请在项目根创建下列之一：\n  ${CONFIG_FILENAMES.join("\n  ")}`,
+      `Configuration file not found. Create one of these files in the project root:\n  ${CONFIG_FILENAMES.join("\n  ")}`,
     );
   }
   const exported = await importConfigModule(file);
@@ -118,7 +118,7 @@ async function importConfigModule(file: string): Promise<unknown> {
   try {
     mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
   } catch (e) {
-    throw new Error(`加载配置文件失败 "${file}"：${(e as Error).message}${configLoadHint(file, e)}`);
+    throw new Error(`Failed to load configuration file "${file}": ${(e as Error).message}${configLoadHint(file, e)}`);
   }
   return mod.default;
 }
@@ -128,13 +128,12 @@ function configLoadHint(file: string, error: unknown): string {
   const message = (error as Error).message ?? "";
   if (message.includes("outside a module")) {
     return (
-      "\n提示：`.ts` 配置文件的模块类型由最近的 package.json 决定。" +
-      "若你的项目是 CommonJS，请把配置改名为 `.mts`（强制 ESM），" +
-      "或给 package.json 加上 \"type\": \"module\"。"
+      "\nHint: The nearest package.json determines the module type of a `.ts` configuration file. " +
+      "For CommonJS projects, rename the file to `.mts` or set \"type\": \"module\" in package.json."
     );
   }
   if (message.includes("Cannot find module")) {
-    return `\n提示：配置文件里 import 的包在该项目下解析不到（请确认已安装，路径：${file}）。`;
+    return `\nHint: An import in the configuration file cannot be resolved. Check installed packages and paths in ${file}.`;
   }
   return "";
 }
@@ -142,16 +141,16 @@ function configLoadHint(file: string, error: unknown): string {
 function validateConfig(value: unknown, file: string): MigrateConfig {
   if (typeof value !== "object" || value === null) {
     throw new Error(
-      `配置文件 "${file}" 必须默认导出一个配置对象（建议用 defineConfig(...) 包裹）。`,
+      `Configuration file "${file}" must default-export a configuration object (consider defineConfig(...)).`,
     );
   }
   const config = value as Partial<MigrateConfig>;
   if (typeof config.database !== "object" || config.database === null) {
-    throw new Error(`配置文件 "${file}" 缺少 database（数据库连接信息）。`);
+    throw new Error(`Configuration file "${file}" is missing database connection settings.`);
   }
   if (!Array.isArray(config.models) || config.models.length === 0) {
     throw new Error(
-      `配置文件 "${file}" 缺少 models（模型文件或目录，至少一项）。`,
+      `Configuration file "${file}" is missing models (at least one model file or directory).`,
     );
   }
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime

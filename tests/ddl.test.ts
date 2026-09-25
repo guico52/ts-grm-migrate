@@ -287,7 +287,7 @@ describe("SqliteDdlGenerator", () => {
       constraints: [],
       indexes: [],
     }]);
-    expect(() => gen.statements(d)).toThrow(/需要重建，但重建路径尚未实现/);
+    expect(() => gen.statements(d)).toThrow(/table rebuild is not implemented/);
   });
 
   it("ALTER_COLUMN 同样触发重建表的显式报错", () => {
@@ -306,7 +306,7 @@ describe("SqliteDdlGenerator", () => {
       constraints: [],
       indexes: [],
     }]);
-    expect(() => gen.statements(d)).toThrow(/需要重建，但重建路径尚未实现/);
+    expect(() => gen.statements(d)).toThrow(/table rebuild is not implemented/);
   });
 
   it("索引变更独立执行，不触发重建", () => {

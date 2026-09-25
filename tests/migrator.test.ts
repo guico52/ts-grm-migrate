@@ -184,8 +184,8 @@ describe("Migrator", () => {
     vi.spyOn(history, "recordApplied").mockRejectedValue(new Error("history unavailable"));
     const mark = history.markFailed.bind(history);
     vi.spyOn(history, "markFailed").mockImplementationOnce(mark).mockRejectedValue(new Error("connection lost"));
-    await expect(makeMigrator().deploy()).rejects.toThrow(/更新失败历史也失败/);
-    await expect(makeMigrator().deploy()).rejects.toThrow(/失败/);
+    await expect(makeMigrator().deploy()).rejects.toThrow(/recording the failure also failed/);
+    await expect(makeMigrator().deploy()).rejects.toThrow(/attempts failed/);
     expect(executor.executed).toHaveLength(1);
   });
 
@@ -199,7 +199,7 @@ describe("Migrator", () => {
   it("rejects executors that omit the completion callback", async () => {
     await writeMigration("first", "select 1;");
     vi.spyOn(executor, "executeStatements").mockResolvedValue(undefined);
-    await expect(makeMigrator().deploy()).rejects.toThrow(/未调用迁移完成回调/);
+    await expect(makeMigrator().deploy()).rejects.toThrow(/did not confirm migration completion/);
     expect(history.applied[0]?.failed).toBe(true);
   });
 
@@ -279,7 +279,7 @@ describe("Migrator", () => {
         logs: undefined,
       });
 
-      await expect(makeMigrator().deploy()).rejects.toThrow(/缺失/);
+      await expect(makeMigrator().deploy()).rejects.toThrow(/missing from disk/);
     });
 
     it("迁移执行失败 → 记入历史、抛出，且后续迁移不再执行", async () => {
@@ -287,7 +287,7 @@ describe("Migrator", () => {
       await writeMigration("20260911T120001_b", "select 2;");
       executor.failWhen = "select 1;";
 
-      await expect(makeMigrator().deploy()).rejects.toThrow(/执行失败/);
+      await expect(makeMigrator().deploy()).rejects.toThrow(/failed/);
 
       expect(history.failures.map((f) => f.id)).toEqual(["20260911T120000_a", "20260911T120000_a"]);
       expect(history.applied[0]?.failed).toBe(true);
@@ -388,13 +388,13 @@ describe("Migrator", () => {
 
       await expect(
         makeMigrator().resolve({ migration: "20260911T120000_a", action: "rolled-back" }),
-      ).rejects.toThrow(/没有历史记录/);
+      ).rejects.toThrow(/no history record/);
     });
 
     it("迁移不在磁盘上时拒绝", async () => {
       await expect(
         makeMigrator().resolve({ migration: "20260911T000000_nope", action: "applied" }),
-      ).rejects.toThrow(/不在磁盘上/);
+      ).rejects.toThrow(/was not found/);
     });
 
     it("闭环：失败迁移阻塞 deploy，resolve 后恢复可用", async () => {
@@ -402,7 +402,7 @@ describe("Migrator", () => {
       await markFailedRecord("20260911T120000_a");
 
       // 未处理前：deploy 被拒绝
-      await expect(makeMigrator().deploy()).rejects.toThrow(/上次执行失败/);
+      await expect(makeMigrator().deploy()).rejects.toThrow(/attempts failed/);
 
       // 清除失败记录后：重新变成待应用，deploy 正常
       await makeMigrator().resolve({

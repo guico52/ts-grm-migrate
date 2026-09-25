@@ -176,7 +176,13 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`-h` 显示帮助。
+选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 指定 CLI 语言（默认英语）、`-h` 显示帮助。
+
+普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
+例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`；
+`tgm deploy --detail --lang zh-CN` 会显示中文提示及逐项执行细节。
+详细模式中的 SQL 可能包含业务数据值，请谨慎保存或分享终端日志；密码等连接凭据不会由诊断事件输出。
+`zh-CN` 翻译帮助、进度、结果和交互提示；底层诊断与数据库驱动返回的原始错误保留英文或原文，便于检索和排查。
 
 ## 行为约定
 
@@ -187,9 +193,9 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
   仍有差异就报出具体位置，例如：
 
   ```
-  ⚠ 对账发现数据库与模型不一致（库 app，schema public）：
-    - 表 AUTHOR：多出列 LEGACY
-  这通常意味着迁移未完整生效，或数据库被手工改动过。
+  Warning: postgres/app/public differs from the model:
+    - Table AUTHOR: Extra column LEGACY
+  Check for a partial migration or manual database changes.
   ```
 
 - **并发防护**：同一项目上的多个 migrate 实例由进程锁文件挡住；多机部署时再由数据库的

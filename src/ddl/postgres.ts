@@ -128,7 +128,7 @@ export class PostgresDdlGenerator implements DdlGenerator {
         // 现状约束有名字（introspection 填写）；缺失时按目标态规则生成（可能不匹配，注释警告）
         const name = con.constraint.name ?? constraintName(tableName, con.constraint, seq);
         const sql = `alter table ${table} drop constraint ${q(name)}`;
-        return con.constraint.name == null ? [`-- WARN: 约束名缺失，按生成规则推断，请核对\n${sql}`] : [sql];
+        return con.constraint.name == null ? [`-- WARN: Constraint name missing; inferred from naming rules. Verify before applying.\n${sql}`] : [sql];
       }
     }
   }

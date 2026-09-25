@@ -45,8 +45,8 @@ export async function acquireProcessLock(lockPath: string): Promise<ProcessLock>
     const holder = await readLockInfo(lockPath);
     if (holder != null && isProcessAlive(holder.pid)) {
       throw new Error(
-        `另一个 migrate 进程正在操作本项目：锁文件 ${lockPath} 由 pid ${holder.pid} 持有` +
-          `（获取于 ${holder.acquiredAt}）。若确认该进程已不存在，请删除该文件后重试。`,
+        `Another migration process holds ${lockPath} (pid ${holder.pid}, since ${holder.acquiredAt}). ` +
+          `If that process no longer exists, remove the lock file and retry.`,
       );
     }
 
@@ -55,7 +55,7 @@ export async function acquireProcessLock(lockPath: string): Promise<ProcessLock>
   }
 
   throw new Error(
-    `无法获取迁移锁 ${lockPath}：${MAX_ATTEMPTS} 次抢占均失败，可能有多个进程在竞争`,
+    `Could not acquire migration lock ${lockPath} after ${MAX_ATTEMPTS} attempts; other processes may be competing`,
   );
 }
 
@@ -113,7 +113,7 @@ async function readLockInfo(lockPath: string): Promise<LockInfo | null> {
       const info = parsed as { pid: number; acquiredAt?: unknown };
       return {
         pid: info.pid,
-        acquiredAt: typeof info.acquiredAt === "string" ? info.acquiredAt : "(未知)",
+        acquiredAt: typeof info.acquiredAt === "string" ? info.acquiredAt : "(unknown)",
       };
     }
   } catch {

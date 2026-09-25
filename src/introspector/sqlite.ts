@@ -57,7 +57,7 @@ export class SqliteIntrospector implements Introspector {
       }
       return { tables };
     } catch (e) {
-      throw new Error(`读取 SQLite 结构失败：${(e as Error).message}`);
+      throw new Error(`Failed to introspect SQLite schema: ${(e as Error).message}`);
     }
   }
 

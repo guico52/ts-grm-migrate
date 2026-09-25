@@ -61,7 +61,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
     if (tableDef != null) {
       if (this._options.driver == null) {
         throw new Error(
-          `生成 ${table.name} 建表 SQL 需要方言 driver（原生 toCreationStatements），请传入 DdlGeneratorOptions.driver`,
+          `Creating table ${table.name} requires a dialect driver in DdlGeneratorOptions.driver`,
         );
       }
       return tableDef.toCreationStatements(this._options.driver);
@@ -95,7 +95,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
       ? [sql]
       : [
           sql,
-          "-- 提示: SQLite 的 add column 不能是 not null（除非带默认值），如执行失败请改走重建表",
+          "-- Note: SQLite cannot add a NOT NULL column without a default; rebuild the table if this fails",
         ];
   }
 
@@ -113,9 +113,9 @@ export class SqliteDdlGenerator implements DdlGenerator {
    */
   private _rebuildTable(tableName: string): ReadonlyArray<string> {
     throw new Error(
-      `SQLite 无法原地修改列或约束，表 "${tableName}" 需要重建，但重建路径尚未实现` +
-        `（涉及外部外键重定向、索引重建与数据搬迁，贸然执行会丢数据）。` +
-        `可行的替代：手工完成重建后，用 tgm resolve --applied <id> 把对应迁移标记为已应用。`,
+      `SQLite cannot alter the columns or constraints of table "${tableName}" in place; table rebuild is not implemented. ` +
+        `A safe rebuild must preserve external foreign keys, indexes and data. ` +
+        `Rebuild manually, then use tgm resolve --applied <id> to record the migration.`,
     );
   }
 

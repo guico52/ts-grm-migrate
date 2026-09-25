@@ -77,7 +77,9 @@ describe("CLI 端到端（SQLite）", () => {
     const code = await runCli(["dev", "-n", "init", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/已生成并应用迁移：\d{17}_init/);
+    expect(logs.join("\n")).toMatch(/Generated and applied migration \d{17}_init/);
+    expect(logs).toHaveLength(1);
+    expect(logs.join("\n")).not.toContain("Executing SQL");
     expect(tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
   });
 
@@ -88,7 +90,7 @@ describe("CLI 端到端（SQLite）", () => {
     const code = await runCli(["dev", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toContain("模型与数据库结构一致，无需迁移。");
+    expect(logs.join("\n")).toContain("is up to date; no migration needed.");
   });
 
   it("status：汇报已应用与待应用", async () => {
@@ -98,7 +100,7 @@ describe("CLI 端到端（SQLite）", () => {
     const code = await runCli(["status", "--config", configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/已应用/);
+    expect(logs.join("\n")).toMatch(/Applied:/);
   });
 
   it("deploy：从空库按序应用迁移", async () => {
@@ -118,5 +120,14 @@ describe("CLI 端到端（SQLite）", () => {
 
     expect(code).toBe(0);
     expect(tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
+  });
+
+  it("--detail 显示 SQL 和锁信息，--lang zh-CN 显示中文结果", async () => {
+    const code = await runCli(["dev", "--detail", "--lang", "zh-CN", "--config", configPath]);
+    expect(code).toBe(0);
+    expect(logs.join("\n")).toContain("执行 SQL:");
+    expect(logs.join("\n")).toContain("已获取进程锁");
+    expect(logs.join("\n")).toContain("已获取数据库锁");
+    expect(logs.join("\n")).toContain("已在 sqlite");
   });
 });

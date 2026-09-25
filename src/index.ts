@@ -79,6 +79,7 @@ export type {
   DevResult,
   MigrationStatus,
   MigratorOptions,
+  MigrationProgress,
   PushResult,
   ResolveAction,
   ResolveOptions,

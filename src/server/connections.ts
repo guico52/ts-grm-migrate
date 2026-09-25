@@ -14,7 +14,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string) {
   try {
     runtime = await import("mssql");
   } catch {
-    throw new Error("mssql 方言需要 mssql 依赖，请安装：yarn add mssql");
+    throw new Error("SQL Server requires mssql. Install it with yarn add mssql");
   }
   const pool = new runtime.ConnectionPool(
     database.connectionString ?? {
@@ -71,7 +71,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string) {
       "select cast(serverproperty('ProductMajorVersion') as int) as version",
     );
     if (Number(version.rows[0]?.version) < 13)
-      throw new Error("mssql 方言需要 SQL Server 2016+");
+      throw new Error("SQL Server 2016+ is required");
     const { rows } = await executor.query("select schema_id(@p1) as id", [
       schema,
     ]);
@@ -105,7 +105,7 @@ export async function openOracle(
   try {
     runtime = (await import("oracledb")).default;
   } catch {
-    throw new Error("oracle 方言需要 oracledb 依赖，请安装：yarn add oracledb");
+    throw new Error("Oracle requires oracledb. Install it with yarn add oracledb");
   }
   const connectString =
     database.connectionString ??
@@ -121,14 +121,14 @@ export async function openOracle(
   };
   try {
     if (Number(connection.oracleServerVersionString.split(".")[0]) < 19)
-      throw new Error("oracle 方言需要 Oracle 19c+");
+      throw new Error("Oracle 19c+ is required");
     const who = await connection.execute<{ NAME: string }>(
       "select sys_context('USERENV', 'CURRENT_SCHEMA') as name from dual",
       [],
       { outFormat: runtime.OUT_FORMAT_OBJECT },
     );
     const schema = requestedSchema ?? who.rows?.[0]?.NAME;
-    if (!schema) throw new Error("无法确定 Oracle schema");
+    if (!schema) throw new Error("Could not determine the Oracle schema");
     const sql = new ServerSql("oracle", schema);
     await connection.execute(
       `alter session set current_schema=${sql.identifier(schema)}`,

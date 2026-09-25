@@ -74,7 +74,7 @@ export class SqlServerIntrospector implements Introspector {
           const name = s(t.name);
           if (Number(t.temporal_type) !== 0 || t.is_memory_optimized)
             throw new Error(
-              `表 ${name} 为 temporal 或 memory-optimized，尚不支持`,
+              `Table ${name} is temporal or memory-optimized, which is not supported`,
             );
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.table_name === name);
@@ -82,7 +82,7 @@ export class SqlServerIntrospector implements Introspector {
           for (const [name, rows] of groupRows(forTable(keys), "name")) {
             const primary = rows[0]!.type === "PK";
             if (Number(rows[0]!.index_type) !== (primary ? 1 : 2))
-              throw new Error(`约束 ${name} 使用自定义聚集布局，尚不支持`);
+              throw new Error(`Constraint ${name} uses a custom clustered layout, which is not supported`);
             constraints.push({
               kind: primary ? "PRIMARY_KEY" : "UNIQUE",
               name,
@@ -99,7 +99,7 @@ export class SqlServerIntrospector implements Introspector {
               first.is_not_trusted
             )
               throw new Error(
-                `外键 ${name} 跨 schema、含 ON UPDATE 动作或未启用/验证，尚不支持`,
+                `Foreign key ${name} crosses schemas, has an ON UPDATE action, or is disabled/untrusted; migration is not supported`,
               );
             const onDelete = s(first.delete_rule) as OnDelete;
             constraints.push({
@@ -121,7 +121,7 @@ export class SqlServerIntrospector implements Introspector {
           }
           for (const c of forTable(checks)) {
             if (c.is_disabled || c.is_not_trusted)
-              throw new Error(`CHECK ${s(c.name)} 未启用或未验证`);
+              throw new Error(`CHECK ${s(c.name)} is disabled or untrusted`);
             constraints.push({
               kind: "CHECK",
               name: s(c.name),
@@ -146,7 +146,7 @@ export class SqlServerIntrospector implements Introspector {
               )
             )
               throw new Error(
-                `索引 ${indexName} 使用不支持的聚集、降序、INCLUDE 或禁用属性`,
+                `Index ${indexName} uses unsupported clustering, descending order, INCLUDE or disabled attributes`,
               );
             tableIndexes.push({
               name: indexName,
@@ -167,7 +167,7 @@ export class SqlServerIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw new Error(`读取 SQL Server 结构失败：${(e as Error).message}`);
+      throw new Error(`Failed to introspect SQL Server schema: ${(e as Error).message}`);
     }
   }
 }
@@ -180,7 +180,7 @@ function column(row: Row): Column {
     row.is_user_defined
   )
     throw new Error(
-      `列 ${s(row.name)} 使用不支持的生成列、稀疏列、隐藏列或用户类型`,
+      `Column ${s(row.name)} uses an unsupported generated, sparse, hidden or user-defined type`,
     );
   let type = s(row.type_name);
   if (
@@ -195,7 +195,7 @@ function column(row: Row): Column {
   else if (["datetime2", "datetimeoffset", "time"].includes(type))
     type += `(${s(row.scale)})`;
   if (["timestamp", "rowversion"].includes(type))
-    throw new Error(`列 ${s(row.name)} 为 rowversion，尚不支持`);
+    throw new Error(`Column ${s(row.name)} uses rowversion, which is not supported`);
   return {
     name: s(row.name),
     type: normalizeServerType(type, "mssql"),

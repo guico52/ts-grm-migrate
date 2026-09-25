@@ -45,7 +45,7 @@ export class OracleIntrospector implements Introspector {
             table.IOT_TYPE != null
           )
             throw new Error(
-              `Oracle 表 ${name} 使用临时、嵌套或组织索引结构，尚不支持`,
+              `Oracle table ${name} uses a temporary, nested or index-organized structure, which is not supported`,
             );
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.TABLE_NAME === name);
@@ -63,7 +63,7 @@ export class OracleIntrospector implements Introspector {
               c.DEFERRABLE !== "NOT DEFERRABLE"
             )
               throw new Error(
-                `约束 ${constraintName} 未验证/启用或使用延迟检查，尚不支持`,
+                `Constraint ${constraintName} is disabled, unvalidated or deferred, which is not supported`,
               );
             const names = rows.map((r) => s(r.COLUMN_NAME));
             switch (c.CONSTRAINT_TYPE) {
@@ -79,7 +79,7 @@ export class OracleIntrospector implements Introspector {
                 break;
               case "R": {
                 if (c.REF_OWNER !== this.options.schema)
-                  throw new Error(`外键 ${constraintName} 跨 schema，尚不支持`);
+                  throw new Error(`Foreign key ${constraintName} references another schema, which is not supported`);
                 const onDelete =
                   c.DELETE_RULE === "CASCADE"
                     ? "CASCADE"
@@ -117,7 +117,7 @@ export class OracleIntrospector implements Introspector {
                   break;
                 if (expression.length >= 4000)
                   throw new Error(
-                    `CHECK ${constraintName} 超出 catalog 表达式长度，不能安全读取`,
+                    `CHECK ${constraintName} exceeds the catalog expression length and cannot be read safely`,
                   );
                 tableConstraints.push({
                   kind: "CHECK",
@@ -131,7 +131,7 @@ export class OracleIntrospector implements Introspector {
               }
               default:
                 throw new Error(
-                  `不支持的 Oracle 约束类型 ${s(c.CONSTRAINT_TYPE)}`,
+                  `Unsupported Oracle constraint type ${s(c.CONSTRAINT_TYPE)}`,
                 );
             }
           }
@@ -152,7 +152,7 @@ export class OracleIntrospector implements Introspector {
               )
             )
               throw new Error(
-                `索引 ${indexName} 使用表达式、降序或特殊结构，尚不支持`,
+                `Index ${indexName} uses an expression, descending order or a special structure, which is not supported`,
               );
             tableIndexes.push({
               name: indexName,
@@ -170,13 +170,13 @@ export class OracleIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw new Error(`读取 Oracle 结构失败：${(e as Error).message}`);
+      throw new Error(`Failed to introspect Oracle schema: ${(e as Error).message}`);
     }
   }
 }
 function column(row: Row): Column {
   if (row.VIRTUAL_COLUMN === "YES" || row.HIDDEN_COLUMN === "YES")
-    throw new Error(`列 ${s(row.COLUMN_NAME)} 为虚拟/隐藏列，尚不支持`);
+    throw new Error(`Virtual or hidden column ${s(row.COLUMN_NAME)} is not supported`);
   let type = s(row.DATA_TYPE).toLowerCase();
   if (["varchar2", "char"].includes(type))
     type +=

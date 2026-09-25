@@ -157,7 +157,7 @@ describe("SqliteSqlExecutor", () => {
           `insert into T (id) values (1)`,
           `this is not sql`,
         ]),
-      ).rejects.toThrow(/语句执行失败（已回滚）/);
+      ).rejects.toThrow(/Statement failed \(transaction rolled back\)/);
 
       const { rows } = await executor.query(`select count(*) as n from T`);
       expect(Number(rows[0]!["n"])).toBe(0);
@@ -245,6 +245,6 @@ describe("SqliteDdlGenerator 的行为边界", () => {
           },
         ]),
       ),
-    ).toThrow(/需要重建，但重建路径尚未实现/);
+    ).toThrow(/table rebuild is not implemented/);
   });
 });

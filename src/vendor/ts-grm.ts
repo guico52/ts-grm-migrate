@@ -142,8 +142,8 @@ export async function createSchema(
   ).tableDefs;
   if (tableDefs == null) {
     throw new Error(
-      "ts-grm 的 createSchema() 未返回结构化表定义（内部字段 tableDefs 缺失）。" +
-        "上游可能变更了 schema 定义实现，请检查 src/vendor/ts-grm.ts 的适配点。",
+      "ts-grm createSchema() did not return structured table definitions (tableDefs is missing). " +
+        "The upstream schema implementation may have changed; check src/vendor/ts-grm.ts.",
     );
   }
   return tableDefs;

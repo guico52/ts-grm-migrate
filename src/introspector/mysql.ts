@@ -33,7 +33,7 @@ export class MysqlIntrospector implements Introspector {
       const db = str((await query("select database() as name"))[0]?.name);
       return { tables: tables.map((table) => {
         const name = str(table.name);
-        if (table.engine !== "InnoDB") throw new Error(`表 ${name} 的引擎 ${str(table.engine)} 尚不支持，仅支持 InnoDB`);
+        if (table.engine !== "InnoDB") throw new Error(`Table ${name} uses ${str(table.engine)}; only InnoDB is supported`);
         const constraints = this._constraints(keys.filter((r) => r.TABLE_NAME === name), db);
         return {
           name,
@@ -43,14 +43,14 @@ export class MysqlIntrospector implements Introspector {
         };
       }) };
     } catch (e) {
-      throw new Error(`读取 MySQL 结构失败：${(e as Error).message}`);
+      throw new Error(`Failed to introspect MySQL schema: ${(e as Error).message}`);
     }
   }
 
   private _column(row: Row): Column {
     const extra = str(row.EXTRA);
     if (str(row.GENERATION_EXPRESSION) || /invisible/i.test(extra)) {
-      throw new Error(`列 ${str(row.TABLE_NAME)}.${str(row.COLUMN_NAME)} 为生成列或隐藏列，尚不支持迁移`);
+      throw new Error(`Generated or hidden column ${str(row.TABLE_NAME)}.${str(row.COLUMN_NAME)} is not supported`);
     }
     const rawDefault = row.COLUMN_DEFAULT;
     let defaultValue: string | undefined;
@@ -84,11 +84,11 @@ export class MysqlIntrospector implements Introspector {
         case "PRIMARY KEY": return { kind: "PRIMARY_KEY", name, columns, implicit: undefined };
         case "UNIQUE": return { kind: "UNIQUE", name, columns, implicit: undefined };
         case "CHECK":
-          if (row.ENFORCED === "NO") throw new Error(`CHECK ${name} 未启用，尚不支持迁移`);
+          if (row.ENFORCED === "NO") throw new Error(`CHECK ${name} is not enforced and cannot be migrated`);
           return { kind: "CHECK", name, expression: str(row.CHECK_CLAUSE), comparisonExpression: normalizeMysqlCheck(str(row.CHECK_CLAUSE)), values: [], implicit: undefined };
         case "FOREIGN KEY": {
-          if (row.REFERENCED_TABLE_SCHEMA !== database) throw new Error(`外键 ${name} 跨数据库引用，尚不支持迁移`);
-          if (!["NO ACTION", "RESTRICT"].includes(str(row.UPDATE_RULE))) throw new Error(`外键 ${name} 的 ON UPDATE ${str(row.UPDATE_RULE)} 尚不支持迁移`);
+          if (row.REFERENCED_TABLE_SCHEMA !== database) throw new Error(`Foreign key ${name} references another database, which is not supported`);
+          if (!["NO ACTION", "RESTRICT"].includes(str(row.UPDATE_RULE))) throw new Error(`Foreign key ${name} uses unsupported ON UPDATE ${str(row.UPDATE_RULE)}`);
           const onDelete = deleteAction(str(row.DELETE_RULE));
           return {
             kind: "FOREIGN_KEY", name, columns, referencedTable: str(row.REFERENCED_TABLE_NAME),
@@ -97,7 +97,7 @@ export class MysqlIntrospector implements Introspector {
             deferrable: false, implicit: undefined,
           };
         }
-        default: throw new Error(`不支持的 MySQL 约束 ${str(row.CONSTRAINT_TYPE)}`);
+        default: throw new Error(`Unsupported MySQL constraint ${str(row.CONSTRAINT_TYPE)}`);
       }
     });
   }
@@ -107,7 +107,7 @@ export class MysqlIntrospector implements Introspector {
     const result: Array<Index> = [];
     for (const [name, entries] of group(rows, "INDEX_NAME")) {
       if (entries.some((r) => r.SUB_PART != null || r.EXPRESSION != null || r.COLLATION === "D" || r.INDEX_TYPE !== "BTREE" || r.IS_VISIBLE === "NO")) {
-        throw new Error(`索引 ${name} 使用前缀、表达式、降序、隐藏或非 BTREE 定义，尚不支持迁移`);
+        throw new Error(`Index ${name} uses a prefix, expression, descending, hidden or non-BTREE definition; migration is not supported`);
       }
       if (name === "PRIMARY" || Number(entries[0]!.NON_UNIQUE) === 0) continue;
       const columns = entries.map((r) => str(r.COLUMN_NAME));
@@ -136,6 +136,6 @@ function deleteAction(value: string): OnDelete {
     case "SET NULL": return "SET_NULL";
     case "RESTRICT":
     case "NO ACTION": return "NO_ACTION";
-    default: throw new Error(`不支持的 ON DELETE ${value}`);
+    default: throw new Error(`Unsupported ON DELETE ${value}`);
   }
 }

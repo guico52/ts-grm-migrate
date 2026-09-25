@@ -63,7 +63,7 @@ export class SqliteSqlExecutor implements SqlExecutor {
       } catch {
         // 回滚失败不掩盖主流程真正的错误
       }
-      throw new Error(`语句执行失败（已回滚）：${(e as Error).message}`);
+      throw new Error(`Statement failed (transaction rolled back): ${(e as Error).message}`);
     }
   }
 

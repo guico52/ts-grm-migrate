@@ -78,7 +78,7 @@ run.sequential("MySQL 端到端迁移", () => {
     const failure = vi.spyOn(history, "recordApplied").mockRejectedValue(new Error("history unavailable"));
     await expect(migrator.deploy()).rejects.toThrow("history unavailable");
     failure.mockRestore();
-    await expect(migrator.deploy()).rejects.toThrow(/失败/);
+    await expect(migrator.deploy()).rejects.toThrow(/failed/);
     expect((await executor.query("select value from counter")).rows[0]?.value).toBe(1);
     await migrator.resolve({ migration: "one", action: "applied" });
     expect((await migrator.deploy()).applied).toEqual([]);

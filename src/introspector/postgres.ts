@@ -71,7 +71,7 @@ export class PostgresIntrospector implements Introspector {
       );
     } catch (e) {
       throw new Error(
-        `Postgres 结构读取失败（schema "${schemaName}"）：${(e as Error).message}`,
+        `Failed to introspect PostgreSQL schema "${schemaName}": ${(e as Error).message}`,
       );
     }
   }

@@ -306,7 +306,7 @@ describe("PostgresIntrospector：错误处理", () => {
     };
     const introspector = new PostgresIntrospector({ query: failing, schema: "app" });
     await expect(introspector.introspect()).rejects.toThrow(
-      /Postgres 结构读取失败（schema "app"）：connection refused/,
+      /Failed to introspect PostgreSQL schema "app": connection refused/,
     );
   });
 

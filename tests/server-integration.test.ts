@@ -154,7 +154,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         await expect(migrator.deploy()).rejects.toThrow("history unavailable");
         fail.mockRestore();
         expect((await history.listApplied())[0]?.failed).toBe(true);
-        await expect(migrator.deploy()).rejects.toThrow(/失败/);
+        await expect(migrator.deploy()).rejects.toThrow(/failed/);
         const tables = (await introspector.introspect()).tables.map(t => t.name);
         expect(tables.includes("HISTORY_FAILURE")).toBe(dialect === "oracle");
         await migrator.resolve({ migration: "failure", action: dialect === "oracle" ? "applied" : "rolled-back" });
@@ -400,7 +400,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         try {
           await expect(
             other.executor.acquireMigrationLock("/another/project"),
-          ).rejects.toThrow(/lock|迁移锁/i);
+          ).rejects.toThrow(/lock/i);
           await release();
           const unlock =
             await other.executor.acquireMigrationLock("/another/project");
@@ -432,25 +432,25 @@ for (const dialect of ["mssql", "oracle"] as const) {
           sql: content,
           checksum: checksumOf(content),
         });
-        await expect(migrator.deploy()).rejects.toThrow(/执行失败/);
+        await expect(migrator.deploy()).rejects.toThrow(/failed/);
         const applied = await history.listApplied();
         expect(applied[0]?.failed).toBe(true);
         expect(applied[0]?.logs).toContain(
-          dialect === "mssql" ? "事务已回滚" : "隐式提交",
+          dialect === "mssql" ? "rolled back" : "Non-transactional DDL",
         );
         expect(
           (await introspector.introspect()).tables.some(
             (t) => t.name === "PARTIAL",
           ),
         ).toBe(dialect === "oracle");
-        await expect(migrator.deploy()).rejects.toThrow(/上次执行失败/);
+        await expect(migrator.deploy()).rejects.toThrow(/attempts failed/);
         await migrator.resolve({
           migration: "001_broken",
           action: "rolled-back",
         });
         expect((await migrator.status()).pending).toEqual(["001_broken"]);
-        await expect(migrator.deploy()).rejects.toThrow(/执行失败/);
-        await expect(migrator.deploy()).rejects.toThrow(/上次执行失败/);
+        await expect(migrator.deploy()).rejects.toThrow(/failed/);
+        await expect(migrator.deploy()).rejects.toThrow(/attempts failed/);
         await migrator.resolve({ migration: "001_broken", action: "applied" });
         expect((await history.listApplied())[0]?.failed).toBe(false);
       });
