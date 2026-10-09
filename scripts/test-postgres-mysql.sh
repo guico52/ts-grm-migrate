@@ -41,5 +41,5 @@ export MYSQL_PORT="$("$runtime" port "$mysql_name" 3306/tcp | sed 's/.*://')"
 if [[ -n "${TS_GRM_TEST_VERSION:-}" ]]; then
   COMPAT_DATABASES=1 node scripts/test-compatibility.mjs "$TS_GRM_TEST_VERSION"
 else
-  corepack yarn vitest run tests/cli-postgres.test.ts tests/ddl-postgres.test.ts tests/introspector-postgres.test.ts tests/migrator-postgres.test.ts tests/mysql.test.ts
+  corepack yarn vitest run tests/cli-postgres.test.ts tests/ddl-postgres.test.ts tests/introspector-postgres.test.ts tests/migrator-postgres.test.ts tests/patches-postgres.test.ts tests/patches-mysql.test.ts tests/mysql.test.ts
 fi

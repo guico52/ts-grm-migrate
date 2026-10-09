@@ -77,6 +77,13 @@ function describeAlter(alter: AlterTable, zh: boolean): Array<SchemaDrift> {
         if (column.default !== undefined) {
           parts.push(zh ? (column.default === "" ? "应无默认值" : `默认值应为 ${column.default}`) : (column.default === "" ? "should have no default" : `default should be ${column.default}`));
         }
+        if (column.autoIncrement != null) {
+          parts.push(
+            zh
+              ? column.autoIncrement ? "应为自增" : "应取消自增"
+              : column.autoIncrement ? "should be auto-increment" : "should not be auto-increment",
+          );
+        }
         drift.push({ table, summary: zh ? `列 ${column.column}：${parts.join("，")}` : `Column ${column.column}: ${parts.join(", ")}`, known: false });
         break;
       }

@@ -66,6 +66,12 @@ export interface Column extends Omit<
   readonly default: string | undefined;
   /** 是否自增（identity / serial）——方言差异：PG 靠 default 或 attidentity，MySQL 靠 extra */
   readonly autoIncrement: boolean;
+  /**
+   * 模型侧声明了自增（`ts-grm-patches` 已安装，见 src/schema/patches.ts）→
+   * 该字段参与 diff。未安装补丁时为 undefined：autoIncrement 恒 false 只表示
+   * 「模型不管理自增」，不能当成「目标态非自增」去生成 drop identity。
+   */
+  readonly autoIncrementManaged?: boolean;
   /** 列在表中的序号（从 1 开始），方言重建表时需要，diff 时忽略 */
   readonly ordinal: number;
   readonly comment: string | undefined;

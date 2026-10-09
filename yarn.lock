@@ -2887,6 +2887,7 @@ __metadata:
     mysql2: "npm:^3.23.2"
     oracledb: "npm:^7"
     pg: "npm:^8.23.0"
+    ts-grm-patches: "npm:0.1.0"
     tsdown: "npm:^0.22.14"
     typescript: "npm:^7.0.2"
     vitest: "npm:4.0.16"
@@ -2914,6 +2915,16 @@ __metadata:
     ts-grm-migrate: dist/bin.mjs
   languageName: unknown
   linkType: soft
+
+"ts-grm-patches@npm:0.1.0":
+  version: 0.1.0
+  resolution: "ts-grm-patches@npm:0.1.0"
+  peerDependencies:
+    "@ts-grm/core": ">=0.0.13 <0.0.14"
+    "@ts-grm/sql": ">=0.0.13 <0.0.14"
+  checksum: 10c0/446915e12f771ccdff643452f9336fae30778e3d16721aca03c8d24c55c6c751b20f8dce9d695ea773b1ba8821ecd14af962e10a0e65f8e96204f497de37b41f
+  languageName: node
+  linkType: hard
 
 "tsdown@npm:^0.22.14":
   version: 0.22.14

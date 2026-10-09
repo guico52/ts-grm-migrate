@@ -111,7 +111,8 @@ function isColumn(value: unknown): boolean {
     isOptionalString(comment) &&
     isOptionalString(value.defaultConstraint) &&
     isOptionalString(value.collation) &&
-    (value.mysql === undefined || (isRecord(value.mysql) && isOptionalString(value.mysql.charset) && isOptionalString(value.mysql.collation) && isOptionalString(value.mysql.onUpdate)))
+    (value.mysql === undefined || (isRecord(value.mysql) && isOptionalString(value.mysql.charset) && isOptionalString(value.mysql.collation) && isOptionalString(value.mysql.onUpdate))) &&
+    (value.autoIncrementManaged === undefined || isBoolean(value.autoIncrementManaged))
   );
 }
 

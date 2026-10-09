@@ -57,6 +57,12 @@ export class SqliteDdlGenerator implements DdlGenerator {
   }
 
   private _createTable(table: SchemaTable): ReadonlyArray<string> {
+    // 模型侧声明了 default / autoIncrement（`ts-grm-patches`，见 src/schema/patches.ts）时
+    // 不能复用 ts-grm 原生建表：原生 toCreationStatements 不表达这两个能力，会静默丢掉它们。
+    // 自建路径的 SQLite 细节（AUTOINCREMENT 必须内联在主键上）见 src/ddl.ts。
+    if (this._requiresSelfBuiltTable(table)) {
+      return [createTableSql(table, "sqlite")];
+    }
     const tableDef = this._options.tableDefs?.get(table.name);
     if (tableDef != null) {
       if (this._options.driver == null) {
@@ -66,7 +72,14 @@ export class SqliteDdlGenerator implements DdlGenerator {
       }
       return tableDef.toCreationStatements(this._options.driver);
     }
-    return [createTableSql(table)];
+    return [createTableSql(table, "sqlite")];
+  }
+
+  /** 表里是否有模型侧声明、而原生建表表达不了的列属性 */
+  private _requiresSelfBuiltTable(table: SchemaTable): boolean {
+    return table.columns.some(
+      (c) => c.autoIncrement || (c.default !== undefined && c.default !== ""),
+    );
   }
 
   private _alterTable(change: AlterTable): ReadonlyArray<string> {
@@ -90,7 +103,13 @@ export class SqliteDdlGenerator implements DdlGenerator {
   /** 纯 ADD_COLUMN 原地执行（SQLite 对 not null / unique 有额外限制，注释提示） */
   private _addColumn(table: string, col: Extract<ColumnChange, { readonly kind: "ADD_COLUMN" }>): ReadonlyArray<string> {
     const column = col.column;
-    const sql = `alter table ${table} add column ${columnSql(column)}`;
+    if (column.autoIncrement) {
+      throw new Error(
+        `SQLite cannot add an AUTOINCREMENT column (${table}.${column.name}) to an existing table; ` +
+          `AUTOINCREMENT is only allowed in CREATE TABLE as INTEGER PRIMARY KEY.`,
+      );
+    }
+    const sql = `alter table ${table} add column ${columnSql(column, "sqlite")}`;
     return column.nullable
       ? [sql]
       : [

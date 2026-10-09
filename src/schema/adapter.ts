@@ -7,8 +7,11 @@
  *   映射现状，否则 diff 会永远不相等）；
  * - 模型语义字段（entity/prop/when）丢弃——多态列归一化为普通 nullable 列
  *   （docs/design.md 已定：多态语义的丢失由模型侧适配器负责）；
- * - migrate 特有字段（default/autoIncrement/comment/索引）模型侧无来源 → 空值，
- *   后续由补充声明机制填充；
+ * - 列 default / autoIncrement：来源是可选的 `ts-grm-patches`（或上游原生实现），
+ *   经 `src/schema/patches.ts` 结构化读取。**补丁未安装时不管理这两个字段**
+ *   （default 为 undefined、autoIncrement 恒 false），保持旧行为——绝不因为
+ *   模型没声明就删除数据库里已有的默认值；
+ * - comment / 索引：模型侧无来源 → 空值，由 introspection 提供现状；
  * - 约束名不填充（ts-grm 自动名 {table}_constraint_{n} 不可靠，diff 按内容匹配）。
  */
 import type {ColumnDef, ConstraintDef, SchemaDriver, TableDef,} from "../vendor/ts-grm.js";
@@ -16,6 +19,7 @@ import type {CheckConstraint, Column, Constraint, ForeignKeyConstraint, OnDelete
 import { normalizeServerType } from "../server/sql.js";
 import { normalizeServerExpression } from "../server/catalog.js";
 import { normalizeMysqlType, normalizeMysqlCheck } from "../mysql/sql.js";
+import { readColumnPatch, renderColumnDefault } from "./patches.js";
 import type { DialectName } from "../dialect.js";
 
 /**
@@ -82,15 +86,33 @@ function toColumn(
   ordinal: number,
   driver: SchemaDriver,
   dialect: DialectName,
+  tableName: string,
 ): Column {
+  const name = toPhysicalName(columnDef.name, dialect);
+  const patch = readColumnPatch(columnDef.prop);
+  const autoIncrement = patch.autoIncrementManaged && patch.autoIncrement;
+  if (autoIncrement && patch.default !== undefined) {
+    throw new Error(
+      `Column ${tableName}.${name} declares both autoIncrement() and default(...); ` +
+        `a database-generated column cannot carry an explicit default. Remove one of them.`,
+    );
+  }
   return {
-    name: toPhysicalName(columnDef.name, dialect),
+    name,
     type: dialect === "mysql" ? normalizeMysqlType(driver.typeName(columnDef))
       : dialect === "mssql" || dialect === "oracle" ? normalizeServerType(driver.typeName(columnDef), dialect) : driver.typeName(columnDef),
     nullable: columnDef.nullable,
     length: columnDef.length,
-    default: undefined,
-    autoIncrement: false,
+    // 自增列由数据库生成：不表达默认值。补丁管理时未声明 default = 目标态无默认值
+    // （"" 是 differ 的「删除默认值」约定，见 src/differ.ts）。
+    default: autoIncrement || !patch.defaultManaged
+      ? undefined
+      : patch.default === undefined
+        ? ""
+        : renderColumnDefault(patch.default, { table: tableName, column: name, dialect }),
+    autoIncrement,
+    // 补丁已安装时 autoIncrement 参与 diff；否则不管理（false 只表示「未声明」）
+    ...(patch.autoIncrementManaged ? { autoIncrementManaged: true } : {}),
     ordinal,
     comment: undefined,
   };
@@ -152,9 +174,10 @@ function toConstraint(
 }
 
 function toTable(tableDef: TableDef, driver: SchemaDriver, dialect: DialectName): Table {
+  const name = toPhysicalName(tableDef.name, dialect);
   return {
-    name: toPhysicalName(tableDef.name, dialect),
-    columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver, dialect)),
+    name,
+    columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver, dialect, name)),
     constraints: tableDef.constraints.map((c) => toConstraint(c, driver, dialect)),
     // ts-grm 模型无索引概念，migrate 侧补充声明 / introspection 另行填充
     indexes: [],

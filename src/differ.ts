@@ -14,8 +14,10 @@
  *
  * 「不管理」语义（模型侧缺失字段）：
  * - 列 default / comment：目标态为 undefined = 不参与 diff（现状保留）；
- * - 列 autoIncrement：模型侧无来源（恒 false），当前版本忽略该字段的差异，
- *   需要管理自增时由 migrate 侧补充声明机制提供目标值（未来）；
+ * - 列 autoIncrement：**仅当模型侧声明了自增**（`ts-grm-patches` 已安装，
+ *   见 `src/schema/patches.ts` 的 `autoIncrementManaged`）才参与比较；
+ *   未安装补丁时目标态恒 false 表示「不管理」，不能当成「目标态非自增」
+ *   去生成 drop identity；
  * - 约束/索引是结构性的，目标态缺失 = 删除（目标态是权威描述）。
  *
  * 破坏性标注（data-loss 评估）：
@@ -122,6 +124,13 @@ export class SchemaDiffer implements Differ {
     from: Column,
     to: Column,
   ): Extract<ColumnChange, { readonly kind: "ALTER_COLUMN" }> | null {
+    // 模型侧未声明自增（未装补丁）→ 不管理：恒 false 不能当成「目标非自增」
+    const autoIncrementChanged =
+      to.autoIncrementManaged === true && from.autoIncrement !== to.autoIncrement;
+    // 两侧都自增：identity 与 serial（PostgreSQL）是同一种能力的两种数据库写法，
+    // 默认值文本差异属于表达差异，不应生成 set/drop default
+    const sameAutoIncrement =
+      to.autoIncrementManaged === true && to.autoIncrement && from.autoIncrement;
     const change: Extract<ColumnChange, { readonly kind: "ALTER_COLUMN" }> = {
       kind: "ALTER_COLUMN",
       column: to.name,
@@ -129,12 +138,19 @@ export class SchemaDiffer implements Differ {
       nullable: from.nullable !== to.nullable ? to.nullable : undefined,
       // default：目标 undefined = 不管理；"" = 删除；其他 = 设置（仅当与现状不同）
       default:
-        to.default !== undefined && (to.default === "" ? from.default !== undefined : !sameDefault(to.default, from.default)) ? to.default : undefined,
-      // autoIncrement：模型侧无来源（不管理），当前版本忽略
-      autoIncrement: undefined,
+        autoIncrementChanged || sameAutoIncrement
+          ? undefined
+          : to.default !== undefined &&
+              (to.default === "" ? from.default !== undefined : !sameDefault(to.default, from.default))
+            ? to.default
+            : undefined,
+      autoIncrement: autoIncrementChanged ? to.autoIncrement : undefined,
     };
     const changed =
-      change.type != null || change.nullable != null || change.default != null;
+      change.type != null ||
+      change.nullable != null ||
+      change.default != null ||
+      change.autoIncrement != null;
     return changed ? change : null;
   }
 
@@ -221,16 +237,84 @@ function indexKey(index: Index): string {
   }`;
 }
 
-/** Catalogs often wrap DEFAULT expressions in parentheses. Preserve quoted data verbatim. */
+/**
+ * 默认值的等价判定。
+ *
+ * 目标态由模型侧渲染，现状来自 catalog，同一语义常有不同写法：
+ * - catalog 常常把整个表达式包一层括号（SQL Server、MySQL）；
+ * - PostgreSQL 会补出类型 cast（`'active'::character varying`）；
+ * - SQL Server 的字符串字面量带 `N` 前缀；
+ * - 数值的写法可能不同（`0` / `0.00`，MySQL 把数值默认值也加引号）。
+ *
+ * 因此先分词（引号/标识符/数字/符号，不拆散引号内容），再：去外层括号、
+ * 去 `N` 前缀、去 `::<type>` cast，把非引号 token 折叠为小写（SQL 关键字与函数名
+ * 大小写不敏感，MySQL 会把 `CURRENT_TIMESTAMP` 存成小写），最后数值按数值比较。
+ *
+ * 只做**等价写法**归一，不改变语义：字符串字面量与双引号标识符保留原文，
+ * 也不会把 `'0'` 当成文本 `0` 以外的含义。
+ */
 function sameDefault(left: string, right: string | undefined): boolean {
-  const canonical = (value: string): string => {
-    const tokens = value.match(/'(?:''|[^'])*'|"(?:""|[^"])*"|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|[^\s]/g) ?? [];
-    while (tokens[0] === "(" && tokens.at(-1) === ")") {
-      let depth = 0;
-      if (!tokens.every((t, i) => { if (t === "(") depth++; if (t === ")") depth--; return depth > 0 || i === tokens.length - 1; })) break;
-      tokens.shift(); tokens.pop();
+  if (right === undefined) return false;
+  const a = canonicalDefault(left);
+  const b = canonicalDefault(right);
+  if (a === b) return true;
+  const na = numericOf(a);
+  const nb = numericOf(b);
+  return na !== undefined && nb !== undefined && na === nb;
+}
+
+const DEFAULT_TOKEN = /'(?:''|[^'])*'|"(?:""|[^"])*"|::|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|[^\s]/g;
+
+function canonicalDefault(value: string): string {
+  const tokens = value.match(DEFAULT_TOKEN) ?? [];
+  // 外层括号（catalog 常把整个表达式包一层；可能嵌套）
+  while (tokens[0] === "(" && tokens.at(-1) === ")") {
+    let depth = 0;
+    if (
+      !tokens.every((t, i) => {
+        if (t === "(") depth++;
+        if (t === ")") depth--;
+        return depth > 0 || i === tokens.length - 1;
+      })
+    ) {
+      break;
     }
-    return tokens.join(" ");
-  };
-  return right !== undefined && canonical(left) === canonical(right);
+    tokens.shift();
+    tokens.pop();
+  }
+  const result: Array<string> = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    // SQL Server 的 unicode 字符串前缀 N'...'：前缀不参与语义
+    if (/^[Nn]$/.test(token) && tokens[i + 1]?.startsWith("'")) {
+      continue;
+    }
+    // `::<type>` cast：类型名可能多词、带括号参数（character varying / numeric(10, 2)）
+    if (token === "::") {
+      i++;
+      while (i + 1 < tokens.length && isCastToken(tokens[i + 1]!)) {
+        i++;
+      }
+      continue;
+    }
+    result.push(token.startsWith("'") || token.startsWith('"') ? token : token.toLowerCase());
+  }
+  return result.join(" ");
+}
+
+function isCastToken(token: string): boolean {
+  return (
+    /^[A-Za-z_$][\w$]*$/.test(token) ||
+    /^\d+$/.test(token) ||
+    token === "(" ||
+    token === ")" ||
+    token === ","
+  );
+}
+
+/** 纯数值（可带引号）→ 数值；否则 undefined */
+function numericOf(value: string): number | undefined {
+  const match = /^-?\d+(?:\.\d+)?$/.exec(value) ?? /^'(-?\d+(?:\.\d+)?)'$/.exec(value);
+  if (match == null) return undefined;
+  return Number(match[1] ?? match[0]);
 }
