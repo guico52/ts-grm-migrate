@@ -227,7 +227,17 @@ npx tgm deploy --lang zh-CN
 npx tgm status --lang zh-CN --detail
 ```
 
-The precedence is **`--lang` > configuration `language` > `en`**. For example, `tgm deploy --lang en` uses English once in a project configured for Chinese. `--help` and unknown commands do not load the project configuration, so add `--lang zh-CN` explicitly for Chinese help or errors in those paths. `--detail` works with either language. Low-level diagnostics and database-driver errors remain in English or their original language.
+The precedence is **`--lang` > configuration `language` > `en`**. For example, `tgm deploy --lang en` uses English once in a project configured for Chinese. `--help` and unknown commands do not load the project configuration, so add `--lang zh-CN` explicitly for Chinese help or errors in those paths. `--detail` works with either language. All tool-authored explanations follow the selected language, including configuration validation, history checks, DDL limitations, locks, transaction failures and drift descriptions. SQL, identifiers, paths, commands and error codes retain their original spelling. Known upstream model errors and common driver error codes receive localized explanations. Unrecognized external errors receive a localized summary; use `--detail` to include the original diagnostic text for troubleshooting.
+
+Model names use PascalCase, for example `model("SysUser", ...)`; a table-style name such as `sys_user` is not a valid model name. Upstream 0.0.13 accidentally prints the lowercase property-name regex in this error, although model validation requires an uppercase first letter. Model validation errors do not receive an ESM hint; only module-format failures do. Missing files or dependencies receive a path/install hint instead.
+
+To retain the database table name `sys_user`, configure it in the fourth argument:
+
+```ts
+export const SYS_USER = model("SysUser", "id", class {
+  id = prop.i64();
+}, (ctx) => ctx.table("sys_user"));
+```
 
 ## Behavior
 

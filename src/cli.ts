@@ -101,16 +101,6 @@ export async function run(
     log(m.usage);
     return 0;
   }
-  for (const flag of ["detail", "create-only"]) {
-    if (flags.has(flag) && flags.get(flag) !== true) {
-      errorLog(m.invalidOption(flag));
-      return 1;
-    }
-  }
-  if (flags.has("create-only") && command !== "dev") {
-    errorLog(m.createOnlyDev);
-    return 1;
-  }
   if (!["dev", "deploy", "push", "status", "resolve", "check"].includes(command)) {
     errorLog(m.unknownCommand(command));
     log(m.usage);
@@ -122,10 +112,26 @@ export async function run(
   const { config, path: configFile } = await loadConfig(
     cwd,
     typeof configFlag === "string" ? configFlag : undefined,
+    (configuredLanguage) => {
+      const selected = lang === "en" || lang === "zh-CN" ? lang : configuredLanguage;
+      m = messages(selected);
+      options.onLanguage?.(selected);
+    },
   );
   const language: CliLanguage = lang === "en" || lang === "zh-CN" ? lang : config.language ?? "en";
   m = messages(language);
   options.onLanguage?.(language);
+
+  for (const flag of ["detail", "create-only"]) {
+    if (flags.has(flag) && flags.get(flag) !== true) {
+      errorLog(m.invalidOption(flag));
+      return 1;
+    }
+  }
+  if (flags.has("create-only") && command !== "dev") {
+    errorLog(m.createOnlyDev);
+    return 1;
+  }
 
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
@@ -133,7 +139,7 @@ export async function run(
     readOnly: command === "check",
     ...(detail ? { onProgress: (event: MigrationProgress) => reportProgress(event, log, m) } : {}),
   });
-  const dbLabel = describeDatabase(config);
+  const dbLabel = describeDatabase(config, m);
 
   try {
     if (detail) {
@@ -247,12 +253,12 @@ async function runPush(
 }
 
 /** 数据库的可读标识（用于对账消息里指认「哪个库」） */
-function describeDatabase(config: MigrateConfig): string {
+function describeDatabase(config: MigrateConfig, m: CliMessages): string {
   const dialect = config.dialect ?? "postgres";
   if (dialect === "sqlite") return `sqlite ${config.database.file ?? ":memory:"}`;
   const database = config.database.database ?? (dialect === "oracle" && config.database.connectionString == null ? "FREEPDB1" : undefined);
   const schema = config.schema ?? (dialect === "mssql" ? "dbo" : dialect === "postgres" ? "public" : dialect === "oracle" ? config.database.user : undefined);
-  return [dialect, database ?? (config.database.connectionString ? "(connection string)" : "(default database)"), schema].filter((part) => part != null && part !== "").join("/");
+  return [dialect, database ?? (config.database.connectionString ? m.connectionStringLabel : m.defaultDatabaseLabel), schema].filter((part) => part != null && part !== "").join("/");
 }
 
 /**

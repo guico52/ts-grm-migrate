@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * SQLite 版 Introspector。
  *
@@ -62,7 +63,7 @@ export class SqliteIntrospector implements Introspector {
       }
       return { tables };
     } catch (e) {
-      throw new Error(`Failed to introspect SQLite schema: ${(e as Error).message}`);
+      throw diagnostic("introspector_sqlite_1", asError(e));
     }
   }
 

@@ -133,7 +133,7 @@ describe("describeDiff（对账报告）", () => {
         },
       ]),
     );
-    expect(drift[0]!.summary).toBe("缺少约束 foreign key (AUTHOR_ID) → AUTHOR");
+    expect(drift[0]!.summary).toBe("缺少约束 外键 (AUTHOR_ID) → AUTHOR");
     expect(drift[0]!.known).toBe(false);
   });
 
@@ -183,7 +183,7 @@ describe("describeDiff（对账报告）", () => {
     );
     expect(drift).toHaveLength(1);
     expect(drift[0]!.known).toBe(false);
-    expect(drift[0]!.summary).toContain("check (");
+    expect(drift[0]!.summary).toContain("检查约束 (");
     expect(abnormalDrift(drift)).toEqual(drift);
   });
 

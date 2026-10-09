@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import type { Introspector, SqlQueryable } from "../introspector.js";
 import type {
   Column,
@@ -73,16 +74,14 @@ export class SqlServerIntrospector implements Introspector {
         tables: tables.map((t) => {
           const name = s(t.name);
           if (Number(t.temporal_type) !== 0 || t.is_memory_optimized)
-            throw new Error(
-              `Table ${name} is temporal or memory-optimized, which is not supported`,
-            );
+            throw diagnostic("introspector_sqlserver_1", name);
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.table_name === name);
           const constraints: Constraint[] = [];
           for (const [name, rows] of groupRows(forTable(keys), "name")) {
             const primary = rows[0]!.type === "PK";
             if (Number(rows[0]!.index_type) !== (primary ? 1 : 2))
-              throw new Error(`Constraint ${name} uses a custom clustered layout, which is not supported`);
+              throw diagnostic("introspector_sqlserver_2", name);
             constraints.push({
               kind: primary ? "PRIMARY_KEY" : "UNIQUE",
               name,
@@ -98,9 +97,7 @@ export class SqlServerIntrospector implements Introspector {
               first.is_disabled ||
               first.is_not_trusted
             )
-              throw new Error(
-                `Foreign key ${name} crosses schemas, has an ON UPDATE action, or is disabled/untrusted; migration is not supported`,
-              );
+              throw diagnostic("introspector_sqlserver_3", name);
             const onDelete = s(first.delete_rule) as OnDelete;
             constraints.push({
               kind: "FOREIGN_KEY",
@@ -121,7 +118,7 @@ export class SqlServerIntrospector implements Introspector {
           }
           for (const c of forTable(checks)) {
             if (c.is_disabled || c.is_not_trusted)
-              throw new Error(`CHECK ${s(c.name)} is disabled or untrusted`);
+              throw diagnostic("introspector_sqlserver_4", s(c.name));
             constraints.push({
               kind: "CHECK",
               name: s(c.name),
@@ -145,9 +142,7 @@ export class SqlServerIntrospector implements Introspector {
                   r.is_included_column,
               )
             )
-              throw new Error(
-                `Index ${indexName} uses unsupported clustering, descending order, INCLUDE or disabled attributes`,
-              );
+              throw diagnostic("introspector_sqlserver_5", indexName);
             tableIndexes.push({
               name: indexName,
               columns: rows.map((r) => s(r.column_name)),
@@ -167,7 +162,7 @@ export class SqlServerIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw new Error(`Failed to introspect SQL Server schema: ${(e as Error).message}`);
+      throw diagnostic("introspector_sqlserver_6", asError(e));
     }
   }
 }
@@ -179,9 +174,7 @@ function column(row: Row): Column {
     Number(row.generated_always_type) !== 0 ||
     row.is_user_defined
   )
-    throw new Error(
-      `Column ${s(row.name)} uses an unsupported generated, sparse, hidden or user-defined type`,
-    );
+    throw diagnostic("introspector_sqlserver_7", s(row.name));
   let type = s(row.type_name);
   if (
     ["nvarchar", "varchar", "varbinary", "char", "nchar", "binary"].includes(
@@ -195,7 +188,7 @@ function column(row: Row): Column {
   else if (["datetime2", "datetimeoffset", "time"].includes(type))
     type += `(${s(row.scale)})`;
   if (["timestamp", "rowversion"].includes(type))
-    throw new Error(`Column ${s(row.name)} uses rowversion, which is not supported`);
+    throw diagnostic("introspector_sqlserver_8", s(row.name));
   return {
     name: s(row.name),
     type: normalizeServerType(type, "mssql"),

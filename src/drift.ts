@@ -87,7 +87,7 @@ function describeAlter(alter: AlterTable, zh: boolean): Array<SchemaDrift> {
   }
 
   for (const change of alter.constraints) {
-    const label = describeConstraint(change.constraint);
+    const label = describeConstraint(change.constraint, zh);
     drift.push({
       table,
       summary: change.kind === "ADD_CONSTRAINT" ? (zh ? `缺少约束 ${label}` : `Missing constraint ${label}`) : (zh ? `多出约束 ${label}` : `Extra constraint ${label}`),
@@ -110,16 +110,16 @@ function describeAlter(alter: AlterTable, zh: boolean): Array<SchemaDrift> {
   return drift;
 }
 
-function describeConstraint(constraint: Constraint): string {
+function describeConstraint(constraint: Constraint, zh: boolean): string {
   switch (constraint.kind) {
     case "PRIMARY_KEY":
-      return `primary key (${constraint.columns.join(", ")})`;
+      return `${zh ? "主键" : "primary key"} (${constraint.columns.join(", ")})`;
     case "UNIQUE":
-      return `unique (${constraint.columns.join(", ")})`;
+      return `${zh ? "唯一约束" : "unique"} (${constraint.columns.join(", ")})`;
     case "FOREIGN_KEY":
-      return `foreign key (${constraint.columns.join(", ")}) → ${constraint.referencedTable}`;
+      return `${zh ? "外键" : "foreign key"} (${constraint.columns.join(", ")}) → ${constraint.referencedTable}`;
     case "CHECK":
-      return `check (${truncate(constraint.expression, 60)})`;
+      return `${zh ? "检查约束" : "check"} (${truncate(constraint.expression, 60)})`;
   }
 }
 

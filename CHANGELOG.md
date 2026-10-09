@@ -2,6 +2,11 @@
 
 English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
+## 0.1.0-alpha.4 (pending publication)
+
+- Localize configuration, history, locking, DDL, transaction and drift explanations throughout the CLI; preserve technical identifiers and expose original external diagnostics with `--detail`.
+- Explain model naming errors in the selected language and restrict ESM troubleshooting hints to module-format failures.
+
 ## 0.1.0-alpha.1 (pending publication)
 
 - Add `dev --create-only` and read-only `check`, validate history before development generation, preserve unmanaged indexes, order PostgreSQL dependencies, and handle MySQL identity/default changes together.

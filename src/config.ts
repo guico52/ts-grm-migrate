@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "./diagnostics/error.js";
 /**
  * CLI 配置 —— 在项目根放一个 `ts-grm-migrate.config.ts`（或 `.mts` / `.mjs` / `.js`）。
  *
@@ -93,15 +94,18 @@ export interface LoadedConfig {
 export async function loadConfig(
   cwd: string,
   explicitPath?: string,
+  onLanguage?: (language: OutputLanguage) => void,
 ): Promise<LoadedConfig> {
   const file =
     explicitPath != null ? path.resolve(cwd, explicitPath) : await findConfig(cwd);
   if (file == null) {
-    throw new Error(
-      `Configuration file not found. Create one of these files in the project root:\n  ${CONFIG_FILENAMES.join("\n  ")}`,
-    );
+    throw diagnostic("config_1", CONFIG_FILENAMES.join("\n  "));
   }
   const exported = await importConfigModule(file);
+  if (exported != null && typeof exported === "object" && "language" in exported) {
+    const language = exported.language;
+    if (language === "en" || language === "zh-CN") onLanguage?.(language);
+  }
   return { config: validateConfig(exported, file), path: file };
 }
 
@@ -123,43 +127,36 @@ async function importConfigModule(file: string): Promise<unknown> {
   try {
     mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
   } catch (e) {
-    throw new Error(`Failed to load configuration file "${file}": ${(e as Error).message}${configLoadHint(file, e)}`);
+    throw diagnostic("config_2", file, asError(e), configLoadHint(file, e));
   }
   return mod.default;
 }
 
 /** 针对常见失败给出可操作的提示，而不是把 Node 的原始报错直接丢给使用者 */
-function configLoadHint(file: string, error: unknown): string {
-  const message = (error as Error).message ?? "";
+function configLoadHint(file: string, error: unknown): Error | string {
+  const message = asError(error).message;
   if (message.includes("outside a module")) {
-    return (
-      "\nHint: The nearest package.json determines the module type of a `.ts` configuration file. " +
-      "For CommonJS projects, rename the file to `.mts` or set \"type\": \"module\" in package.json."
-    );
+    return diagnostic("config_hint_module");
   }
-  if (message.includes("Cannot find module")) {
-    return `\nHint: An import in the configuration file cannot be resolved. Check installed packages and paths in ${file}.`;
+  if (/Cannot find (?:module|package)/.test(message)) {
+    return diagnostic("config_hint_missing", file);
   }
   return "";
 }
 
 function validateConfig(value: unknown, file: string): MigrateConfig {
   if (typeof value !== "object" || value === null) {
-    throw new Error(
-      `Configuration file "${file}" must default-export a configuration object (consider defineConfig(...)).`,
-    );
+    throw diagnostic("config_3", file);
   }
   const config = value as Partial<MigrateConfig>;
   if (typeof config.database !== "object" || config.database === null) {
-    throw new Error(`Configuration file "${file}" is missing database connection settings.`);
+    throw diagnostic("config_4", file);
   }
   if (!Array.isArray(config.models) || config.models.length === 0) {
-    throw new Error(
-      `Configuration file "${file}" is missing models (at least one model file or directory).`,
-    );
+    throw diagnostic("config_5", file);
   }
   if (config.language != null && config.language !== "en" && config.language !== "zh-CN") {
-    throw new Error(`Configuration file "${file}" has unsupported language "${String(config.language)}". Use en or zh-CN.`);
+    throw diagnostic("config_6", file, String(config.language));
   }
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
   // （那里的提示能带上 ts-grm 驱动名与实现进度）

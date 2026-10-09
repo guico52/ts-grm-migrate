@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "./diagnostics/error.js";
 /**
  * 迁移存储 —— 磁盘上的迁移文件 + 数据库中的应用历史。
  *
@@ -102,7 +103,7 @@ export class FileMigrationStore implements MigrationFileStore {
         // 目录尚不存在 = 还没有迁移
         return [];
       }
-      throw new Error(`Failed to read migration directory "${this._dir}": ${(e as Error).message}`);
+      throw diagnostic("store_1", this._dir, asError(e));
     }
 
     const files: Array<MigrationFile> = [];
@@ -153,7 +154,7 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
     this.tableName = _options.table ?? DEFAULT_HISTORY_TABLE;
     this._dialect = _options.dialect ?? "postgres";
     if (this._dialect === "mssql" || this._dialect === "oracle") {
-      if (this._dialect === "oracle" && !_options.schema) throw new Error("Oracle migration history requires a schema");
+      if (this._dialect === "oracle" && !_options.schema) throw diagnostic("store_2");
       this._server = new ServerMigrationHistoryStore(_options.executor, new ServerSql(this._dialect, _options.schema ?? "dbo"), this.tableName);
     }
     this._table = this._dialect === "mysql" ? quoteMysqlIdentifier(this.tableName) : quoteIdentifier(this.tableName);

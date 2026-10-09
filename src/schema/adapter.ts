@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * 目标态适配器：ts-grm 原生 TableDef[] → migrate 统一形状 Schema。
  *
@@ -93,14 +94,11 @@ function toColumn(
   try {
     patch = readColumnPatch(columnDef.prop);
   } catch (error) {
-    throw new Error(`Invalid patch metadata for column ${tableName}.${name}: ${(error as Error).message}`, { cause: error });
+    throw diagnostic("schema_adapter_1", tableName, name, asError(error));
   }
   const autoIncrement = patch.autoIncrementManaged && patch.autoIncrement;
   if (autoIncrement && patch.default !== undefined) {
-    throw new Error(
-      `Column ${tableName}.${name} declares both autoIncrement() and default(...); ` +
-        `a database-generated column cannot carry an explicit default. Remove one of them.`,
-    );
+    throw diagnostic("schema_adapter_2", tableName, name);
   }
   return {
     name,
@@ -174,7 +172,7 @@ function toConstraint(
     }
     default:
       // 原生联合中的 "INDEX" 类型存在但 ts-grm 从不创建，防御处理
-      throw new Error(`Unsupported constraint type: ${String((constraint as { kind?: unknown }).kind)}`);
+      throw diagnostic("schema_adapter_3", String((constraint as { kind?: unknown }).kind));
   }
 }
 

@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/error.js";
 /**
  * 运行时组装 —— 从 `MigrateConfig` 造出一个可用的 `Migrator`。
  *
@@ -51,6 +52,7 @@ import type { Introspector } from "./introspector.js";
 import type { PgPoolLike } from "./executor/postgres.js";
 import type { DialectName, MigrateConfig } from "./config.js";
 import { dialectInfo, IMPLEMENTED_DIALECT_NAMES } from "./dialect.js";
+import { modelLoadError } from "./model-load-error.js";
 
 export interface Runtime {
   readonly migrator: Migrator;
@@ -90,10 +92,7 @@ export async function createRuntime(
   const dialect = config.dialect ?? "postgres";
   const dialectSupport = dialectInfo(dialect);
   if (!dialectSupport.implemented) {
-    throw new Error(
-      `Dialect "${dialect}" is not implemented (ts-grm driver: ${dialectSupport.tsGrmDrivers.join(" / ")}). ` +
-        `Supported dialects: ${IMPLEMENTED_DIALECT_NAMES.join(" / ")}.`,
-    );
+    throw diagnostic("runtime_1", dialect, dialectSupport.tsGrmDrivers.join(" / "), IMPLEMENTED_DIALECT_NAMES.join(" / "));
   }
 
   const connection = await createConnection(dialect, config, cwd, options.readOnly ?? false);
@@ -141,10 +140,10 @@ async function createConnection(
   }
 
   if (dialect === "mysql") {
-    if (config.schema != null) throw new Error('MySQL uses database.database to select a database; schema is not supported');
+    if (config.schema != null) throw diagnostic("runtime_2");
     let mysql: typeof import("mysql2/promise");
     try { mysql = await import("mysql2/promise"); }
-    catch { throw new Error("MySQL requires mysql2. Install it with yarn add mysql2"); }
+    catch { throw diagnostic("runtime_3"); }
     const { connectionString, file: _file, ...settings } = config.database;
     const pool = mysql.createPool(connectionString
       ? { uri: connectionString, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS }
@@ -155,10 +154,10 @@ async function createConnection(
       const version = String(rows[0]?.version ?? "");
       const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
       if (/mariadb/i.test(version) || major < 8 || (major === 8 && minor === 0 && patch < 16)) {
-        throw new Error(`MySQL 8.0.16+ is required (current: ${version}); MariaDB has not been verified`);
+        throw diagnostic("runtime_4", version);
       }
-      if (!rows[0]?.db) throw new Error("MySQL connection must specify a database in database.database or connectionString");
-      if (Number(rows[0]?.folding) !== 0) throw new Error("MySQL requires lower_case_table_names=0 so model and physical table names match");
+      if (!rows[0]?.db) throw diagnostic("runtime_5");
+      if (Number(rows[0]?.folding) !== 0) throw diagnostic("runtime_6");
       return { executor, introspector: new MysqlIntrospector({ query: executor }),
         driver: new MySqlDriver(pool as unknown as ConstructorParameters<typeof MySqlDriver>[0]),
         close: () => pool.end() };
@@ -179,7 +178,7 @@ async function createConnection(
       driver: new OracleDriver(new OraclePool({ user: config.database.user })),
     };
   }
-  if (dialect !== "postgres") throw new Error(`Dialect ${dialect} is not implemented`);
+  if (dialect !== "postgres") throw diagnostic("runtime_7", dialect);
 
   // postgres
   const pool = await createPool(config);
@@ -223,9 +222,7 @@ async function assembleRuntime(
   } else if (dialect !== "mssql" && dialect !== "oracle" && schema !== "public") {
     // SQLite 没有 schema 概念（只有 main / attached）。显式配了别的名字说明
     // 使用者的预期与方言不符，宁可报错也不要静默忽略。
-    throw new Error(
-      `Dialect "${dialect}" does not support schema "${schema}". Remove the schema setting.`,
-    );
+    throw diagnostic("runtime_8", dialect, schema);
   }
 
   // EntityManager.of 要求至少一个路径（AtLeastOne），配置校验已保证非空
@@ -256,10 +253,7 @@ async function assembleRuntime(
       try {
         tableDefs = await createSchema(sqlClient);
       } catch (e) {
-        throw new Error(
-          `Failed to load models: ${(e as Error).message}\n` +
-            `Hint: migrations load model files through Node's native import. Use ESM (set "type": "module") or point models to compiled ESM .js files.`,
-        );
+        throw modelLoadError(e);
       }
       ddlOptions.tableDefs = new Map(tableDefs.map((t) => [t.name, t]));
       ddlOptions.driver = sqlClient.driver;
@@ -301,9 +295,7 @@ async function createPool(config: MigrateConfig): Promise<ManagedPool> {
     };
     Pool = pg.Pool;
   } catch {
-    throw new Error(
-      "PostgreSQL requires pg. Install it with yarn add pg (or npm install pg)",
-    );
+    throw diagnostic("runtime_9");
   }
 
   const poolConfig: Record<string, unknown> = {
@@ -340,9 +332,7 @@ async function openSqlite(
     };
     Database = mod.default;
   } catch {
-    throw new Error(
-      "SQLite requires better-sqlite3. Install it with yarn add better-sqlite3",
-    );
+    throw diagnostic("runtime_10");
   }
   // 相对项目根解析（":memory:" 这类特殊值原样传）
   const file = config.database.file ?? ":memory:";

@@ -1,3 +1,4 @@
+import { diagnostic, DiagnosticAggregateError, asError, formatError } from "./diagnostics/error.js";
 /**
  * Migrator —— 迁移应用器：文件扫描 → 与历史比对 → 按序执行 → 记录。
  *
@@ -161,7 +162,7 @@ export class Migrator {
     return await this._withLocks(!options.createOnly, async () => {
       const { files: existing, pending } = await this._validatedHistory();
       if (pending.length > 0) {
-        throw new Error(`Pending migrations must be applied before generating a new migration: ${pending.map(f => f.id).join(", ")}. Run tgm deploy first.`);
+        throw diagnostic("migrator_1", pending.map(f => f.id).join(", "));
       }
       const { diff, from, to } = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
@@ -236,9 +237,7 @@ export class Migrator {
       const files = await this._options.files.listFiles();
       const file = files.find((f) => f.id === options.migration);
       if (file == null) {
-        throw new Error(
-          `Migration "${options.migration}" was not found in ${this._options.migrationsDir}; cannot resolve its state.`,
-        );
+        throw diagnostic("migrator_2", options.migration, this._options.migrationsDir);
       }
       if (options.action === "applied") {
         await this._options.history.recordApplied(file);
@@ -247,9 +246,7 @@ export class Migrator {
 
       const updated = await this._options.history.markRolledBack(options.migration);
       if (!updated) {
-        throw new Error(
-          `Migration "${options.migration}" has no history record and cannot be marked rolled back.`,
-        );
+        throw diagnostic("migrator_3", options.migration);
       }
     });
   }
@@ -274,11 +271,7 @@ export class Migrator {
     for (const file of files) {
       const record = appliedById.get(file.id);
       if (record != null && record.checksum !== file.checksum) {
-        throw new Error(
-          `Migration "${file.id}" was applied but its file has changed (checksum mismatch): ` +
-            `history ${short(record.checksum)} / disk ${short(file.checksum)}. ` +
-            `Restore the applied file and create a new migration for corrections.`,
-        );
+        throw diagnostic("migrator_4", file.id, short(record.checksum), short(file.checksum));
       }
     }
 
@@ -286,10 +279,7 @@ export class Migrator {
     const fileIds = new Set(files.map((f) => f.id));
     const missing = applied.filter((a) => !fileIds.has(a.id));
     if (missing.length > 0) {
-      throw new Error(
-        `Applied migrations are missing from disk: ${missing.map((m) => m.id).join(", ")}. ` +
-          `Restore the files or correct the migration history manually.`,
-      );
+      throw diagnostic("migrator_5", missing.map((m) => m.id).join(", "));
     }
 
     const pending = files.filter((f) => !appliedById.has(f.id));
@@ -310,10 +300,7 @@ export class Migrator {
     if (failed.length === 0) {
       return;
     }
-    throw new Error(
-      `Previous migration attempts failed: ${failed.map((f) => f.id).join(", ")}. ` +
-        `The database may be partially changed. Inspect it, then use resolve --applied or resolve --rolled-back.`,
-    );
+    throw diagnostic("migrator_6", failed.map((f) => f.id).join(", "));
   }
 
   /** 有破坏性变更时询问；使用者拒绝则中止 */
@@ -352,7 +339,8 @@ export class Migrator {
   private async _applyOne(file: MigrationFile): Promise<void> {
     // A durable guard survives process death, connection loss and implicit DDL commits.
     // failed also represents an unfinished attempt: only resolve may unblock it.
-    await this._options.history.markFailed(file.id, "Migration started but did not finish; inspect the database and use resolve to recover.", file.sql);
+    const language = this._options.driftLanguage ?? "en";
+    await this._options.history.markFailed(file.id, formatError(diagnostic("migrator_started"), language), file.sql);
     this._options.onProgress?.({ kind: "migration-start", id: file.id });
     this._options.onProgress?.({ kind: "sql", sql: file.sql });
     try {
@@ -361,17 +349,18 @@ export class Migrator {
         await this._options.history.recordApplied(file, connection);
         completed = true;
       });
-      if (!completed) throw new Error("SQL executor did not confirm migration completion");
+      if (!completed) throw diagnostic("migrator_7");
       this._options.onProgress?.({ kind: "migration-applied", id: file.id });
     } catch (e) {
-      const message = (e as Error).message;
+      const error = asError(e);
+      const message = formatError(error, language);
       // 失败要留在历史里：否则下次 deploy 会以为这是全新迁移而重试
       try {
-        await this._options.history.markFailed(file.id, message, failureLogs(file, message));
+        await this._options.history.markFailed(file.id, message, failureLogs(file, formatError(error, language, true), language, error.message.includes("rolled back")));
       } catch (historyError) {
-        throw new AggregateError([e, historyError], `Migration "${file.id}" failed: ${message}; recording the failure also failed. The incomplete state remains.`);
+        throw new DiagnosticAggregateError([e, historyError], "migrator_record_failure", [file.id, error, asError(historyError)]);
       }
-      throw new Error(`Migration "${file.id}" failed: ${message}`);
+      throw diagnostic("migrator_8", file.id, error);
     }
   }
 
@@ -434,11 +423,19 @@ function short(checksum: string): string {
 }
 
 /** 失败时写进历史的可读日志（`error` 是摘要，`logs` 是详情） */
-function failureLogs(file: MigrationFile, message: string): string {
+function failureLogs(file: MigrationFile, message: string, language: "en" | "zh-CN", rolledBack: boolean): string {
+  if (language === "zh-CN") {
+    return [
+      `迁移 ${file.id} 执行失败`,
+      `时间：${new Date().toISOString()}`,
+      `错误：${message}`,
+      rolledBack ? "执行器已回滚事务。" : "非事务型 DDL 可能已部分生效；修正迁移状态前请检查数据库。",
+    ].join("\n");
+  }
   return [
     `Migration ${file.id} failed`,
     `Time: ${new Date().toISOString()}`,
     `Error: ${message}`,
-    message.includes("rolled back") ? "The executor rolled back the transaction." : "Non-transactional DDL may have partially applied; inspect the database before resolving the migration.",
+    rolledBack ? "The executor rolled back the transaction." : "Non-transactional DDL may have partially applied; inspect the database before resolving the migration.",
   ].join("\n");
 }
