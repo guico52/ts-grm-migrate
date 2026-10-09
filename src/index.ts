@@ -4,6 +4,7 @@
  * 分层（对应 prisma-engines 的目录结构）：
  * - schema/model.ts   统一比较形状（继承 ts-grm 原生定义）
  * - schema/adapter.ts TableDef[] → Schema（目标态适配）
+ * - schema/patches.ts 列级扩展元数据（ts-grm-patches 的 autoIncrement / default）
  * - snapshot.ts       快照序列化 / 反序列化 / 校验
  * - differ.ts         diff 引擎                (sql_schema_differ.rs)
  * - introspector.ts   数据库现状读取            (introspection.rs + sql-schema-describer)

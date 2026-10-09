@@ -4,6 +4,7 @@
 
 ## 0.1.0-alpha.1 (pending publication)
 
+- 支持通过可选包 [`ts-grm-patches`](https://www.npmjs.com/package/ts-grm-patches) 声明的列级 `default` 与 `autoIncrement`，为 PostgreSQL / MySQL / SQLite / SQL Server / Oracle 生成对应的 DDL；并归一数据库 catalog 的默认值写法（`::type` cast、外层括号、`N` 前缀、数值加引号），避免重复生成同一条迁移。
 - CLI 默认使用简洁英语输出，提供 `--detail` 诊断信息、`--lang zh-CN` 中文提示，以及配置文件中的默认语言设置。
 - 调整测试输出，避免默认打印完整快照；保留失败原因和迁移后异常对账信息。
 - 移除自动运行的 GitHub Actions workflow，改由维护者执行发布前验证和发包。

@@ -230,3 +230,102 @@ describe("SchemaDiffer 约束与索引", () => {
 function empty(): Schema {
   return schema([]);
 }
+
+// ---- 列级补丁：autoIncrement 与默认值归一 ------------------------------------
+
+describe("SchemaDiffer 列级补丁（autoIncrement / default）", () => {
+  const autoCol = (managed: boolean, auto: boolean): Column => ({
+    ...col("ID", "integer"),
+    autoIncrement: auto,
+    ...(managed ? { autoIncrementManaged: true } : {}),
+  });
+
+  it("未装补丁（无 managed 标记）：现状自增、目标 false → 不管理，无变更", () => {
+    const from = table("A", [autoCol(false, true), col("NAME", "text")]);
+    const to = table("A", [autoCol(false, false), col("NAME", "text")]);
+    expect(differ.diff(schema([from]), schema([to])).changes).toEqual([]);
+  });
+
+  it("补丁管理：现状非自增 → 目标的 true 参与 diff", () => {
+    const from = table("A", [autoCol(false, false), col("NAME", "text")]);
+    const to = table("A", [autoCol(true, true), col("NAME", "text")]);
+    const alter = differ.diff(schema([from]), schema([to])).changes[0] as Extract<
+      Diff["changes"][number],
+      { kind: "ALTER_TABLE" }
+    >;
+    expect(alter.columns).toEqual([
+      { kind: "ALTER_COLUMN", column: "ID", type: undefined, nullable: undefined, default: undefined, autoIncrement: true },
+    ]);
+  });
+
+  it("补丁管理：目标改回非自增（false）同样参与 diff", () => {
+    const from = table("A", [autoCol(false, true), col("NAME", "text")]);
+    const to = table("A", [autoCol(true, false), col("NAME", "text")]);
+    const alter = differ.diff(schema([from]), schema([to])).changes[0] as Extract<
+      Diff["changes"][number],
+      { kind: "ALTER_TABLE" }
+    >;
+    expect(alter.columns).toEqual([
+      { kind: "ALTER_COLUMN", column: "ID", type: undefined, nullable: undefined, default: undefined, autoIncrement: false },
+    ]);
+  });
+
+  it("补丁管理：两侧都自增时忽略默认值写法差异（PG serial vs identity）", () => {
+    // 现状是 PG 的 serial：introspect 会把 nextval 默认值识别为自增
+    const from = table("A", [
+      { ...col("ID", "integer", false, "nextval('a_id_seq'::regclass)"), autoIncrement: true },
+      col("NAME", "text"),
+    ]);
+    const to = table("A", [
+      { ...col("ID", "integer", false, ""), autoIncrement: true, autoIncrementManaged: true },
+      col("NAME", "text"),
+    ]);
+    expect(differ.diff(schema([from]), schema([to])).changes).toEqual([]);
+  });
+
+  it("默认值归一：PG 的 ::type cast 不算差异", () => {
+    const from = table("A", [col("ID", "integer"), col("NAME", "text", false, "'active'::character varying")]);
+    const to = table("A", [col("ID", "integer"), col("NAME", "text", false, "'active'")]);
+    expect(differ.diff(schema([from]), schema([to])).changes).toEqual([]);
+  });
+
+  it("默认值归一：SQL Server 的 N 前缀与数值写法差异不算差异", () => {
+    let d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "N'active'")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'active'")])]),
+    );
+    expect(d.changes).toEqual([]);
+    d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "numeric", false, "0.00")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "numeric", false, "0")])]),
+    );
+    expect(d.changes).toEqual([]);
+    d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "integer", false, "'1'")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "integer", false, "1")])]),
+    );
+    expect(d.changes).toEqual([]);
+    // MySQL 把 CURRENT_TIMESTAMP 存成小写、表达式默认值包一层括号
+    d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "datetime", false, "current_timestamp")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "datetime", false, "(CURRENT_TIMESTAMP)")])]),
+    );
+    expect(d.changes).toEqual([]);
+  });
+
+  it("默认值归一不折叠字符串字面量的大小写", () => {
+    const d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'Active'")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'active'")])]),
+    );
+    expect(d.changes).toHaveLength(1);
+  });
+
+  it("默认值真的不同 / 未管理 → 行为不变", () => {
+    const d = differ.diff(
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'a'")])]),
+      schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'b'")])]),
+    );
+    expect(d.changes).toHaveLength(1);
+  });
+});

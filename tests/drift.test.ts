@@ -210,3 +210,31 @@ describe("describeDiff（对账报告）", () => {
     expect(drift[0]!.summary).toContain("…");
   });
 });
+
+describe("SchemaDrift 列级补丁", () => {
+  it("自增变化会被描述出来（而不是空摘要）", () => {
+    const d: Diff = {
+      changes: [
+        {
+          kind: "ALTER_TABLE",
+          table: "A",
+          columns: [
+            {
+              kind: "ALTER_COLUMN",
+              column: "ID",
+              type: undefined,
+              nullable: undefined,
+              default: undefined,
+              autoIncrement: true,
+            },
+          ],
+          constraints: [],
+          indexes: [],
+        },
+      ],
+      destructive: [],
+    };
+    expect(describeDiff(d, "en")[0]?.summary).toBe("Column ID: should be auto-increment");
+    expect(describeDiff(d, "zh-CN")[0]?.summary).toBe("列 ID：应为自增");
+  });
+});

@@ -66,6 +66,11 @@ export interface AlterColumn {
   readonly nullable: boolean | undefined;
   /** 默认值变化：string = 设置；"" = 删除；undefined = 不变 */
   readonly default: string | "" | undefined;
+  /**
+   * 自增变化（undefined = 不变）。仅当模型侧声明了自增（补丁已安装，
+   * 见 schema/model.ts 的 autoIncrementManaged）才会有值；方言无法原地完成时
+   * 由 DDL 层报错，而不是静默忽略。
+   */
   readonly autoIncrement: boolean | undefined;
   /**
    * 类型转换是否需要 USING（PG）：由方言在生成 DDL 时决定，

@@ -4,6 +4,7 @@ English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
 ## 0.1.0-alpha.1 (pending publication)
 
+- Support column-level `default` and `autoIncrement` declared through the optional [`ts-grm-patches`](https://www.npmjs.com/package/ts-grm-patches) package, including the matching DDL for PostgreSQL, MySQL, SQLite, SQL Server, and Oracle, and normalize catalog default forms (`::type` casts, parentheses, `N` prefixes, numeric quoting) so migrations are not regenerated.
 - Make CLI output concise and English by default, with `--detail` diagnostics, `--lang zh-CN` Chinese messages, and a configuration setting for the default language.
 - Reduce default test output while retaining failure reasons and post-migration drift warnings.
 - Remove the automatic GitHub Actions workflow; maintainers now run pre-release verification and publishing manually.

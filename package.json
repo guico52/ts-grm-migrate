@@ -81,6 +81,7 @@
     "mysql2": "^3.23.2",
     "oracledb": "^7",
     "pg": "^8.23.0",
+    "ts-grm-patches": "0.1.0",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "4.0.16"

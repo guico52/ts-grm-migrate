@@ -24,7 +24,7 @@ The ts-grm model registry is a process-level singleton. The CLI loads models in 
 
 `src/differ.ts` compares database and target models after both are converted to `Schema`. Columns match by name; constraints and indexes match by content because generated names may be unstable; column order is ignored.
 
-The migrator does not remove column defaults or comments that are absent from the model. Auto-increment strategies the model cannot express are excluded from diffing, while target constraints and indexes remain authoritative. Polymorphic model fields become ordinary columns and database constraints during adaptation and no longer retain their ts-grm semantics.
+The migrator reads column defaults and auto-increment from the model when the optional `ts-grm-patches` package is installed (`applyPatches()`, see `src/schema/patches.ts`). In that mode the model is authoritative for both attributes: a column without `default(...)` is target state "no default", and `autoIncrement()` participates in diffing through the `autoIncrementManaged` flag. Without the patch neither attribute is managed, so defaults and identity columns that exist only in the database are left alone. Column comments are never managed. Target constraints and indexes remain authoritative. Polymorphic model fields become ordinary columns and database constraints during adaptation and no longer retain their ts-grm semantics.
 
 SQLite cannot read constraint names, making content-based comparison essential. Some CHECK expressions are reformatted by the database, so equivalent expressions may still appear changed. Add real database tests before widening expression normalization.
 

@@ -11,6 +11,9 @@
  *    （见 docs/design.md 的设计决策），名字本就不参与比较；
  * 3. 主键从 `pragma table_info` 的 `pk` 列取，**不能**靠 `pragma index_list`
  *    —— `integer primary key` 是 rowid 别名，SQLite 不为它建索引。
+ * 4. 是否显式 AUTOINCREMENT 只能从 `sqlite_master.sql` 的原文判断
+ *    （pragma 不暴露这个关键字）：migrate 生成的 `INTEGER PRIMARY KEY AUTOINCREMENT`
+ *    会被读回 `autoIncrement: true`，与模型侧声明对齐。
  *
  * 类型字符串必须与 ts-grm `SqliteDriver.typeName()` 对齐（只产出
  * text / integer / real / blob），否则差分会永远不相等 —— 见 `normalizeSqliteType`。
@@ -25,9 +28,9 @@ export interface SqliteIntrospectorOptions {
   readonly query: SqlQueryable;
 }
 
-/** 表清单（排除 SQLite 内部表） */
+/** 表清单（排除 SQLite 内部表）；同时取建表原文，用于识别 AUTOINCREMENT */
 const TABLES_SQL = `
-select name
+select name, sql
 from sqlite_master
 where type = 'table' and name not like 'sqlite_%'
 order by name
@@ -45,7 +48,9 @@ export class SqliteIntrospector implements Introspector {
       const tables: Array<Table> = [];
       for (const row of tableRows.rows) {
         const name = asString(row["name"]);
-        const { columns, primaryKey } = await this._columns(name);
+        // AUTOINCREMENT 只存于建表原文；SQLite 只允许它出现在单列 INTEGER 主键上
+        const autoIncrement = /\bautoincrement\b/i.test(asString(row["sql"] ?? ""));
+        const { columns, primaryKey } = await this._columns(name, autoIncrement);
         const foreignKeys = await this._foreignKeys(name);
         const { uniques, indexes } = await this._indexes(name);
         tables.push({
@@ -68,6 +73,7 @@ export class SqliteIntrospector implements Introspector {
    */
   private async _columns(
     table: string,
+    autoIncrement: boolean,
   ): Promise<{ columns: Array<Column>; primaryKey: Array<Constraint> }> {
     const { rows } = await this._options.query.query(`pragma table_info(${quoteForPragma(table)})`);
     const pkColumns: Array<{ name: string; position: number }> = [];
@@ -84,8 +90,8 @@ export class SqliteIntrospector implements Introspector {
         // 长度已编码在类型里（SQLite 一般不写），不重复承载
         length: undefined,
         default: row["dflt_value"] == null ? undefined : asString(row["dflt_value"]),
-        // 模型侧无来源，且 diff 不管理 autoIncrement（见 differ.ts），统一 false
-        autoIncrement: false,
+        // AUTOINCREMENT 只能加在主键列上（见文件头第 4 点）
+        autoIncrement: autoIncrement && pkPosition > 0,
         ordinal: Number(row["cid"]) + 1,
         comment: undefined,
       };

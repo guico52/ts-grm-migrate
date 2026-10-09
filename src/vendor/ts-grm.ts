@@ -43,7 +43,7 @@ export {
   OraclePool,
   SqlServerPool,
 } from "@ts-grm/sql";
-export { ScalarType, EntityManager, model, prop } from "@ts-grm/core";
+export { ScalarType, EntityManager, model, prop, dsl } from "@ts-grm/core";
 export type { SqlClientOptions } from "@ts-grm/sql";
 export type { CascadeType, SqlClient } from "@ts-grm/core";
 

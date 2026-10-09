@@ -33,7 +33,7 @@ export class PostgresDdlGenerator implements DdlGenerator {
     for (const change of diff.changes) {
       switch (change.kind) {
         case "CREATE_TABLE":
-          sql.push(createTableSql(change.table));
+          sql.push(createTableSql(change.table, "postgres"));
           break;
         case "DROP_TABLE":
           drops.push(change);
@@ -64,7 +64,7 @@ export class PostgresDdlGenerator implements DdlGenerator {
   }
 
   createStatements(schema: Schema): ReadonlyArray<string> {
-    return schema.tables.map(createTableSql);
+    return schema.tables.map((table) => createTableSql(table, "postgres"));
   }
 
   private _alterTable(change: AlterTable): ReadonlyArray<string> {
@@ -86,12 +86,21 @@ export class PostgresDdlGenerator implements DdlGenerator {
   private _columnChange(table: string, col: ColumnChange): ReadonlyArray<string> {
     switch (col.kind) {
       case "ADD_COLUMN":
-        return [`alter table ${table} add column ${columnSql(col.column)}`];
+        return [`alter table ${table} add column ${columnSql(col.column, "postgres")}`];
       case "DROP_COLUMN":
         return [`alter table ${table} drop column ${q(col.column)}`];
       case "ALTER_COLUMN": {
         const sql: Array<string> = [];
         const column = q(col.column);
+        // 已有列的自增开关无法在 PG 上安全生成：加 identity 要求列 NOT NULL、
+        // 且可能需要对存量数据回填；删 identity 会连带删除序列。因此报错让人
+        // 手写迁移，而不是生成有副作用的语句（同 server/ddl.ts 的既有取舍）。
+        if (col.autoIncrement !== undefined) {
+          throw new Error(
+            `Changing the identity of existing column ${col.column} requires a manual migration ` +
+              `(add or drop GENERATED ... AS IDENTITY by hand, then use tgm resolve --applied <id>).`,
+          );
+        }
         if (col.type != null) {
           // 类型转换：PG 对 text→int 等需要 USING；diff 只记录「类型变了」，USING 暂由迁移 SQL 手写补充
           sql.push(`alter table ${table} alter column ${column} type ${col.type}`);
