@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/error.js";
 /** SQLite supports ordinary CREATE TABLE, ADD COLUMN, and independent indexes.
  * Column/constraint changes requiring a rebuild fail explicitly until safe data,
  * foreign-key, index and trigger preservation is implemented.
@@ -56,9 +57,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
     const tableDef = this._options.tableDefs?.get(table.name);
     if (tableDef != null) {
       if (this._options.driver == null) {
-        throw new Error(
-          `Creating table ${table.name} requires a dialect driver in DdlGeneratorOptions.driver`,
-        );
+        throw diagnostic("ddl_sqlite_1", table.name);
       }
       return [...tableDef.toCreationStatements(this._options.driver), ...table.indexes.map(index => indexSql(table.name, index))];
     }
@@ -94,10 +93,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
   private _addColumn(table: string, col: Extract<ColumnChange, { readonly kind: "ADD_COLUMN" }>): ReadonlyArray<string> {
     const column = col.column;
     if (column.autoIncrement) {
-      throw new Error(
-        `SQLite cannot add an AUTOINCREMENT column (${table}.${column.name}) to an existing table; ` +
-          `AUTOINCREMENT is only allowed in CREATE TABLE as INTEGER PRIMARY KEY.`,
-      );
+      throw diagnostic("ddl_sqlite_2", table, column.name);
     }
     const sql = `alter table ${table} add column ${columnSql(column, "sqlite")}`;
     return column.nullable
@@ -121,11 +117,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
    * 后者只会在真实库里安静地把表清空。这是刻意的取舍，不是遗漏。
    */
   private _rebuildTable(tableName: string): ReadonlyArray<string> {
-    throw new Error(
-      `SQLite cannot alter the columns or constraints of table "${tableName}" in place; table rebuild is not implemented. ` +
-        `A safe rebuild must preserve external foreign keys, indexes and data. ` +
-        `Rebuild manually, then use tgm resolve --applied <id> to record the migration.`,
-    );
+    throw diagnostic("ddl_sqlite_3", tableName);
   }
 
   private _indexChanges(table: string, indexes: ReadonlyArray<IndexChange>): ReadonlyArray<string> {

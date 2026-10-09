@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * Postgres Introspector —— 从 pg_catalog 读取数据库现状，产出 migrate 的 `Schema`。
  *
@@ -70,9 +71,7 @@ export class PostgresIntrospector implements Introspector {
         indexes.rows,
       );
     } catch (e) {
-      throw new Error(
-        `Failed to introspect PostgreSQL schema "${schemaName}": ${(e as Error).message}`,
-      );
+      throw diagnostic("introspector_postgres_1", schemaName, asError(e));
     }
   }
 }

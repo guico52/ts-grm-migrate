@@ -2,6 +2,11 @@
 
 [English](../../CHANGELOG.md) | 简体中文
 
+## 0.1.0-alpha.4（待发布）
+
+- 补齐 CLI 配置、迁移历史、锁、DDL、事务及差异报告的描述性语言；技术标识保留原样，通过 `--detail` 查看外部错误的原始诊断。
+- 按所选语言解释模型命名错误，仅为模块格式错误提供 ESM 排查提示。
+
 ## 0.1.0-alpha.1 (pending publication)
 
 - 新增 `dev --create-only` 和只读 `check`，开发生成前验证历史，保留不管理的独立索引，修复 PostgreSQL 依赖排序及 MySQL 自增与默认值联合变更。

@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/error.js";
 import { constraintName, type DdlContext, type DdlGenerator } from "../ddl.js";
 import type { Diff, AlterTable } from "../diff/types.js";
 import type {
@@ -42,7 +43,7 @@ export class ServerDdlGenerator implements DdlGenerator {
         .get(name)
         ?.constraints.some((c) => c.kind === "DROP_CONSTRAINT") ?? false;
     const removeConstraint = (name: string, c: Constraint): void => {
-      if (!c.name) throw new Error(`Cannot drop constraint on ${name} without its physical name`);
+      if (!c.name) throw diagnostic("server_ddl_1", name);
       (c.kind === "FOREIGN_KEY" ? dropFk : dropKeys).set(
         `${name}\0${c.name}`,
         `alter table ${table(name)} drop constraint ${q(c.name)}`,
@@ -154,9 +155,7 @@ export class ServerDdlGenerator implements DdlGenerator {
         }
         const old = before?.columns.find((c) => c.name === col.column);
         if (!old)
-          throw new Error(
-            `Altering ${this.dialect} column ${change.table}.${col.column} requires its original definition in DdlContext`,
-          );
+          throw diagnostic("server_ddl_2", this.dialect, change.table, col.column);
         if (
           this.dialect === "mssql" &&
           old.defaultConstraint &&
@@ -177,7 +176,7 @@ export class ServerDdlGenerator implements DdlGenerator {
           col.autoIncrement !== undefined &&
           col.autoIncrement !== old.autoIncrement
         )
-          throw new Error("Changing the identity strategy requires a manual migration");
+          throw diagnostic("server_ddl_3");
         if (this.dialect === "mssql") {
           if (col.type !== undefined || col.nullable !== undefined)
             body.push(
@@ -247,9 +246,9 @@ export class ServerDdlGenerator implements DdlGenerator {
       case "CHECK":
         return `${prefix} check (${c.expression})`;
       case "FOREIGN_KEY": {
-        if (c.deferrable) throw new Error("Deferrable foreign keys are not supported by this migration dialect");
+        if (c.deferrable) throw diagnostic("server_ddl_4");
         if (this.dialect === "oracle" && c.onDelete === "SET_DEFAULT")
-          throw new Error("Oracle does not support ON DELETE SET DEFAULT");
+          throw diagnostic("server_ddl_5");
         const action = ["NO_ACTION", "RESTRICT"].includes(c.onDelete)
           ? ""
           : ` on delete ${c.onDelete.replaceAll("_", " ")}`;
@@ -259,13 +258,13 @@ export class ServerDdlGenerator implements DdlGenerator {
   }
   private index(table: string, idx: Index): string {
     if (idx.predicate && this.dialect === "oracle")
-      throw new Error("Oracle does not support partial indexes");
+      throw diagnostic("server_ddl_6");
     return `create ${idx.unique ? "unique " : ""}index ${this.dialect === "mssql" ? this.sql.identifier(idx.name) : this.sql.table(idx.name)} on ${this.sql.table(table)} (${idx.columns.map((c) => this.sql.identifier(c)).join(", ")})${idx.predicate ? ` where ${idx.predicate}` : ""}`;
   }
 }
 
 function collationName(value: string): string {
   if (!/^[A-Za-z0-9_]+$/.test(value))
-    throw new Error("Unsupported SQL Server collation name");
+    throw diagnostic("server_ddl_7");
   return value;
 }

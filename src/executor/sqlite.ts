@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * SQLite 版 `SqlExecutor`。
  *
@@ -63,7 +64,7 @@ export class SqliteSqlExecutor implements SqlExecutor {
       } catch {
         // 回滚失败不掩盖主流程真正的错误
       }
-      throw new Error(`Statement failed (transaction rolled back): ${(e as Error).message}`);
+      throw diagnostic("executor_sqlite_1", asError(e));
     }
   }
 

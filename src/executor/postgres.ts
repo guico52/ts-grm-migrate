@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * Postgres 版 `SqlExecutor`。
  *
@@ -45,7 +46,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
       await client.query("commit");
     } catch (e) {
       await client.query("rollback").catch(() => undefined);
-      throw new Error(`Statement failed (transaction rolled back): ${(e as Error).message}`);
+      throw diagnostic("executor_postgres_1", asError(e));
     } finally {
       client.release();
     }
@@ -63,9 +64,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
     } catch (e) {
       await client.query("reset lock_timeout").catch(() => undefined);
       client.release();
-      throw new Error(
-        `Could not acquire migration lock within 10s: ${(e as Error).message}`,
-      );
+      throw diagnostic("executor_postgres_2", asError(e));
     }
     let released = false;
     return async () => {

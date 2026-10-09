@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import { createHash } from "node:crypto";
 import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
@@ -40,13 +41,11 @@ export class OracleSqlExecutor implements SqlExecutor {
       for (const sql of parsed) await this.query(sql);
       await complete?.(this);
     } catch (e) {
-      throw new Error(
-        `Oracle statement failed: ${(e as Error).message}. DDL commits implicitly; earlier statements may have applied. Inspect the database before using resolve.`,
-      );
+      throw diagnostic("executor_oracle_1", asError(e));
     }
   }
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this.locked) throw new Error("This Oracle executor already holds a migration lock");
+    if (this.locked) throw diagnostic("executor_oracle_2");
     // A deterministic numeric ID avoids ALLOCATE_UNIQUE's implicit commit and extra catalog writes.
     const id =
       createHash("sha256")
@@ -87,9 +86,7 @@ export function splitOracleSql(source: string): string[] {
         sql,
       )
     ) {
-      throw new Error(
-        "Oracle 迁移文件当前只支持 SQL，不支持 PL/SQL 或 SQL*Plus 命令",
-      );
+      throw diagnostic("executor_oracle_3");
     }
     statements.push(sql);
   };
@@ -159,7 +156,7 @@ export function splitOracleSql(source: string): string[] {
     else current += c;
   }
   if (quote || alternativeEnd || comment === "block")
-    throw new Error("Oracle SQL file contains an unterminated string or comment");
+    throw diagnostic("executor_oracle_4");
   finish();
   return statements;
 }

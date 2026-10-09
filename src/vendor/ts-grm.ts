@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/error.js";
 /**
  * ts-grm 依赖的唯一入口（适配层）。
  * TableDef、ColumnDef 与约束类型声明改写自 ts-grm 的 schema_def.ts：
@@ -141,10 +142,7 @@ export async function createSchema(
     schema as unknown as { readonly tableDefs?: ReadonlyArray<TableDef> }
   ).tableDefs;
   if (tableDefs == null) {
-    throw new Error(
-      "ts-grm createSchema() did not return structured table definitions (tableDefs is missing). " +
-        "The upstream schema implementation may have changed; check src/vendor/ts-grm.ts.",
-    );
+    throw diagnostic("vendor_ts_grm_1");
   }
   return tableDefs;
 }

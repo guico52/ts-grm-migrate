@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import type { Introspector, SqlQueryable } from "../introspector.js";
 import type { Column, Constraint, Index, Schema } from "../schema/model.js";
 import {
@@ -44,9 +45,7 @@ export class OracleIntrospector implements Introspector {
             table.SECONDARY !== "N" ||
             table.IOT_TYPE != null
           )
-            throw new Error(
-              `Oracle table ${name} uses a temporary, nested or index-organized structure, which is not supported`,
-            );
+            throw diagnostic("introspector_oracle_1", name);
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.TABLE_NAME === name);
           const tableColumns = forTable(columns).map(column);
@@ -62,9 +61,7 @@ export class OracleIntrospector implements Introspector {
               c.VALIDATED !== "VALIDATED" ||
               c.DEFERRABLE !== "NOT DEFERRABLE"
             )
-              throw new Error(
-                `Constraint ${constraintName} is disabled, unvalidated or deferred, which is not supported`,
-              );
+              throw diagnostic("introspector_oracle_2", constraintName);
             const names = rows.map((r) => s(r.COLUMN_NAME));
             switch (c.CONSTRAINT_TYPE) {
               case "P":
@@ -79,7 +76,7 @@ export class OracleIntrospector implements Introspector {
                 break;
               case "R": {
                 if (c.REF_OWNER !== this.options.schema)
-                  throw new Error(`Foreign key ${constraintName} references another schema, which is not supported`);
+                  throw diagnostic("introspector_oracle_3", constraintName);
                 const onDelete =
                   c.DELETE_RULE === "CASCADE"
                     ? "CASCADE"
@@ -116,9 +113,7 @@ export class OracleIntrospector implements Introspector {
                 )
                   break;
                 if (expression.length >= 4000)
-                  throw new Error(
-                    `CHECK ${constraintName} exceeds the catalog expression length and cannot be read safely`,
-                  );
+                  throw diagnostic("introspector_oracle_4", constraintName);
                 tableConstraints.push({
                   kind: "CHECK",
                   name: constraintName,
@@ -130,9 +125,7 @@ export class OracleIntrospector implements Introspector {
                 break;
               }
               default:
-                throw new Error(
-                  `Unsupported Oracle constraint type ${s(c.CONSTRAINT_TYPE)}`,
-                );
+                throw diagnostic("introspector_oracle_5", s(c.CONSTRAINT_TYPE));
             }
           }
           const tableIndexes: Index[] = [];
@@ -151,9 +144,7 @@ export class OracleIntrospector implements Introspector {
                   r.STATUS !== "VALID",
               )
             )
-              throw new Error(
-                `Index ${indexName} uses an expression, descending order or a special structure, which is not supported`,
-              );
+              throw diagnostic("introspector_oracle_6", indexName);
             tableIndexes.push({
               name: indexName,
               columns: rows.map((r) => s(r.COLUMN_NAME)),
@@ -170,13 +161,13 @@ export class OracleIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw new Error(`Failed to introspect Oracle schema: ${(e as Error).message}`);
+      throw diagnostic("introspector_oracle_7", asError(e));
     }
   }
 }
 function column(row: Row): Column {
   if (row.VIRTUAL_COLUMN === "YES" || row.HIDDEN_COLUMN === "YES")
-    throw new Error(`Virtual or hidden column ${s(row.COLUMN_NAME)} is not supported`);
+    throw diagnostic("introspector_oracle_8", s(row.COLUMN_NAME));
   let type = s(row.DATA_TYPE).toLowerCase();
   if (["varchar2", "char"].includes(type))
     type +=

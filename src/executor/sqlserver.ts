@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import { createHash } from "node:crypto";
 import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
@@ -48,18 +49,14 @@ export class SqlServerSqlExecutor implements SqlExecutor {
           .request()
           .batch("if @@trancount > 0 rollback transaction");
       } catch {
-        throw new Error(
-          `SQL Server statement failed and rollback could not be confirmed: ${(e as Error).message}`,
-        );
+        throw diagnostic("executor_sqlserver_1", asError(e));
       }
-      throw new Error(
-        `SQL Server statement failed (transaction rolled back): ${(e as Error).message}`,
-      );
+      throw diagnostic("executor_sqlserver_2", asError(e));
     }
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this._lockHeld) throw new Error("This SQL Server executor already holds a migration lock");
+    if (this._lockHeld) throw diagnostic("executor_sqlserver_3");
     // App locks are database-scoped. The schema, not a local filesystem path, identifies the resource.
     const name = `ts-grm:${createHash("sha256").update(this._schema).digest("hex")}`;
     const { rows } = await this.query(
@@ -69,7 +66,7 @@ export class SqlServerSqlExecutor implements SqlExecutor {
       [name, this._lockTimeoutMs],
     );
     if (rows[0]?.result == null || Number(rows[0].result) < 0)
-      throw new Error("Could not acquire the SQL Server migration lock");
+      throw diagnostic("executor_sqlserver_4");
     this._lockHeld = true;
     return async () => {
       if (!this._lockHeld) return;

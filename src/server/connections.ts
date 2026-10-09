@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/error.js";
 import type { DatabaseConfig } from "../config.js";
 import { SqlServerSqlExecutor } from "../executor/sqlserver.js";
 import { OracleSqlExecutor } from "../executor/oracle.js";
@@ -14,7 +15,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
   try {
     runtime = await import("mssql");
   } catch {
-    throw new Error("SQL Server requires mssql. Install it with yarn add mssql");
+    throw diagnostic("server_connections_1");
   }
   const pool = new runtime.ConnectionPool(
     database.connectionString ?? {
@@ -71,7 +72,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
       "select cast(serverproperty('ProductMajorVersion') as int) as version",
     );
     if (Number(version.rows[0]?.version) < 13)
-      throw new Error("SQL Server 2016+ is required");
+      throw diagnostic("server_connections_2");
     const { rows } = await executor.query("select schema_id(@p1) as id", [
       schema,
     ]);
@@ -105,7 +106,7 @@ export async function openOracle(
   try {
     runtime = (await import("oracledb")).default;
   } catch {
-    throw new Error("Oracle requires oracledb. Install it with yarn add oracledb");
+    throw diagnostic("server_connections_3");
   }
   const connectString =
     database.connectionString ??
@@ -121,14 +122,14 @@ export async function openOracle(
   };
   try {
     if (Number(connection.oracleServerVersionString.split(".")[0]) < 19)
-      throw new Error("Oracle 19c+ is required");
+      throw diagnostic("server_connections_4");
     const who = await connection.execute<{ NAME: string }>(
       "select sys_context('USERENV', 'CURRENT_SCHEMA') as name from dual",
       [],
       { outFormat: runtime.OUT_FORMAT_OBJECT },
     );
     const schema = requestedSchema ?? who.rows?.[0]?.NAME;
-    if (!schema) throw new Error("Could not determine the Oracle schema");
+    if (!schema) throw diagnostic("server_connections_5");
     const sql = new ServerSql("oracle", schema);
     await connection.execute(
       `alter session set current_schema=${sql.identifier(schema)}`,

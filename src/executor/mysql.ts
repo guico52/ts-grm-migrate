@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import { createHash } from "node:crypto";
 import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
@@ -56,25 +57,25 @@ export class MysqlSqlExecutor implements SqlExecutor {
           return { rows: Array.isArray(result) ? result as Array<Record<string, unknown>> : [] };
         } });
       } catch (e) {
-        throw new Error(`MySQL statement failed: ${(e as Error).message}. DDL commits implicitly; earlier statements may have applied. Inspect the database before using resolve.`);
+        throw diagnostic("executor_mysql_1", asError(e));
       }
     });
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this._locked) throw new Error("This MySQL executor already holds a migration lock");
+    if (this._locked) throw diagnostic("executor_mysql_2");
     const connection = await this._pool.getConnection();
     let name: string;
     try {
       await this._prepare(connection);
       const [result] = await connection.query("select database() as db");
       const db = (result as Array<{ db: string | null }>)[0]?.db;
-      if (!db) throw new Error("MySQL connection must specify a database");
+      if (!db) throw diagnostic("executor_mysql_3");
       // Lock identity is the database, not a machine-local path.
       name = `tgm:${createHash("sha256").update(db).digest("hex").slice(0, 60)}`;
       const [rows] = await connection.query(`select get_lock('${name}', ${this._lockTimeout}) as acquired`);
       if (Number((rows as Array<{ acquired: unknown }>)[0]?.acquired) !== 1) {
-        throw new Error(`Could not acquire the MySQL migration lock within ${this._lockTimeout}s`);
+        throw diagnostic("executor_mysql_4", this._lockTimeout);
       }
       this._locked = connection;
     } catch (e) {

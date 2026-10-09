@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
@@ -179,6 +179,82 @@ describe("CLI 可执行入口（需要先 build）", () => {
     };`);
     await expect(execFileAsync(process.execPath, [distCli, "dev", "--config", configFile], { cwd: dir }))
       .rejects.toMatchObject({ stderr: expect.stringContaining("错误:") });
+  });
+
+  it.each([
+    { language: "zh-CN", flags: [], prefix: "错误: 加载模型失败", hint: "提示：模型名称" },
+    { language: "en", flags: ["--lang", "zh-CN"], prefix: "错误: 加载模型失败", hint: "提示：模型名称" },
+    { language: "zh-CN", flags: ["--lang", "en"], prefix: "Error: Failed to load models", hint: "Hint: Model name" },
+  ])("模型命名错误遵循语言优先级：$language / $flags", async ({ language, flags, prefix, hint }) => {
+    if (!existsSync(distCli)) return;
+    await symlink(path.resolve(HERE, "../node_modules"), path.join(dir, "node_modules"), "dir");
+    await writeFile(path.join(dir, "package.json"), '{"type":"module"}');
+    await writeFile(path.join(dir, "model.js"), `
+      import { model, prop } from "@ts-grm/core";
+      export const USER = model("sys_user", "id", class { id = prop.i64(); });
+    `);
+    await writeFile(path.join(dir, "ts-grm-migrate.config.mjs"), `export default ${JSON.stringify({
+      dialect: "sqlite", language, database: { file: ":memory:" }, models: ["./model.js"],
+    })};`);
+    try {
+      await execFileAsync(process.execPath, [distCli, "check", ...flags], { cwd: dir });
+      expect.fail("An invalid model name must fail");
+    } catch (error) {
+      const failure = error as { code: number; stderr: string };
+      expect(failure.code).toBe(1);
+      expect(failure.stderr).toContain(prefix);
+      expect(failure.stderr).toContain(hint);
+      expect(failure.stderr).toContain("SysUser");
+      expect(failure.stderr).not.toContain("ESM");
+      if (hint.startsWith("提示")) expect(failure.stderr).not.toMatch(/Illegal model|Must follow|Hint:/);
+    }
+  });
+
+  it.each([
+    { config: { language: "zh-CN", models: ["./model.js"] }, args: ["check"], expected: "缺少数据库连接设置", absent: "missing database" },
+    { config: { language: "zh-CN", database: {} }, args: ["check"], expected: "缺少 models", absent: "missing models" },
+    { config: { language: "zh-CN", database: {}, models: ["./model.js"], dialect: "unknown" }, args: ["check"], expected: "未知方言", absent: "Unknown dialect" },
+    { config: { language: "zh-CN", dialect: "sqlite", schema: "invalid", database: { file: ":memory:" }, models: ["./model.js"] }, args: ["check"], expected: "不支持 schema", absent: "does not support schema" },
+    { config: { language: "zh-CN", dialect: "sqlite", database: { file: ":memory:" }, models: ["./missing.js"] }, args: ["check"], expected: "找不到文件或依赖", absent: "Illegal path" },
+    { config: { language: "zh-CN", dialect: "sqlite", database: { file: ":memory:" }, models: ["./model.js"] }, args: ["resolve", "--applied", "missing"], expected: "未找到迁移", absent: "was not found" },
+  ])("真实入口本地化配置与运行错误：$expected", async ({ config, args, expected, absent }) => {
+    if (!existsSync(distCli)) return;
+    await writeFile(path.join(dir, "ts-grm-migrate.config.mjs"), `export default ${JSON.stringify(config)};`);
+    const failure = await execFileAsync(process.execPath, [distCli, ...args], { cwd: dir }).catch((error) => error);
+    expect(failure.code).toBe(1);
+    expect(failure.stderr).toContain("错误:");
+    expect(failure.stderr).toContain(expected);
+    expect(failure.stderr).not.toContain(absent);
+  });
+
+  it("配置未加载时也使用显式指定的中文", async () => {
+    if (!existsSync(distCli)) return;
+    const failure = await execFileAsync(process.execPath, [distCli, "check", "--lang", "zh-CN"], { cwd: dir }).catch((error) => error);
+    expect(failure.code).toBe(1);
+    expect(failure.stderr).toContain("未找到配置文件");
+    expect(failure.stderr).not.toContain("Configuration file not found");
+  });
+
+  it("待执行迁移和 SQL 执行失败均使用中文，原始 SQL 错误仅在 detail 中显示", async () => {
+    if (!existsSync(distCli)) return;
+    await writeFile(path.join(dir, "ts-grm-migrate.config.mjs"), `export default ${JSON.stringify({
+      language: "zh-CN", dialect: "sqlite", database: { file: ":memory:" }, models: ["./missing.js"], migrationsDir: "./migrations",
+    })};`);
+    await mkdir(path.join(dir, "migrations"));
+    await writeFile(path.join(dir, "migrations/001_init.sql"), "not a valid sql;");
+    const pending = await execFileAsync(process.execPath, [distCli, "dev"], { cwd: dir }).catch((error) => error);
+    expect(pending.code).toBe(1);
+    expect(pending.stderr).toContain("生成新迁移前必须先应用待执行迁移");
+    expect(pending.stderr).not.toContain("Pending migrations");
+    const failed = await execFileAsync(process.execPath, [distCli, "deploy"], { cwd: dir }).catch((error) => error);
+    expect(failed.code).toBe(1);
+    expect(failed.stderr).toContain('迁移 "001_init" 执行失败');
+    expect(failed.stderr).toContain("事务已回滚");
+    expect(failed.stderr).toContain("SQLITE_ERROR");
+    expect(failed.stderr).not.toMatch(/Migration|Statement failed|syntax error/);
+    const detail = await execFileAsync(process.execPath, [distCli, "deploy", "--detail"], { cwd: dir }).catch((error) => error);
+    expect(detail.stderr).toContain("原始诊断");
+    expect(detail.stderr).toContain("syntax error");
   });
 });
 

@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/error.js";
 /**
  * 进程锁文件 —— 防止同一项目上并发运行多个 migrate 实例。
  *
@@ -44,19 +45,14 @@ export async function acquireProcessLock(lockPath: string): Promise<ProcessLock>
 
     const holder = await readLockInfo(lockPath);
     if (holder != null && isProcessAlive(holder.pid)) {
-      throw new Error(
-        `Another migration process holds ${lockPath} (pid ${holder.pid}, since ${holder.acquiredAt}). ` +
-          `If that process no longer exists, remove the lock file and retry.`,
-      );
+      throw diagnostic("lock_1", lockPath, holder.pid, holder.acquiredAt);
     }
 
     // 持有者已不存在（或锁文件损坏）：抢占
     await unlink(lockPath).catch(() => undefined);
   }
 
-  throw new Error(
-    `Could not acquire migration lock ${lockPath} after ${MAX_ATTEMPTS} attempts; other processes may be competing`,
-  );
+  throw diagnostic("lock_2", lockPath, MAX_ATTEMPTS);
 }
 
 /** 独占创建锁文件并写入持有者信息；已被占用返回 false */
@@ -113,7 +109,7 @@ async function readLockInfo(lockPath: string): Promise<LockInfo | null> {
       const info = parsed as { pid: number; acquiredAt?: unknown };
       return {
         pid: info.pid,
-        acquiredAt: typeof info.acquiredAt === "string" ? info.acquiredAt : "(unknown)",
+        acquiredAt: typeof info.acquiredAt === "string" ? info.acquiredAt : "?",
       };
     }
   } catch {

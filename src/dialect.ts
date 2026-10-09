@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/error.js";
 /**
  * 方言注册表 —— 「有哪些方言、上游由谁提供、migrate 实现到哪一步」的唯一出处。
  *
@@ -53,10 +54,7 @@ export const IMPLEMENTED_DIALECT_NAMES: ReadonlyArray<DialectName> = DIALECTS.fi
 export function dialectInfo(name: string): DialectInfo {
   const found = DIALECTS.find((d) => d.name === name);
   if (found == null) {
-    throw new Error(
-      `Unknown dialect "${name}". Known dialects: ${DIALECT_NAMES.join(" / ")} (implemented: ` +
-        `${IMPLEMENTED_DIALECT_NAMES.join(" / ")}).`,
-    );
+    throw diagnostic("dialect_1", name, DIALECT_NAMES.join(" / "), IMPLEMENTED_DIALECT_NAMES.join(" / "));
   }
   return found;
 }

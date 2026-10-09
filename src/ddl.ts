@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/error.js";
 /**
  * DDL 生成器 —— 把语义层的 diff 操作集翻译成方言 SQL。
  *
@@ -142,13 +143,11 @@ function sqliteAutoIncrementColumn(table: SchemaTable): Column | undefined {
   const autoColumns = table.columns.filter((c) => c.autoIncrement);
   if (autoColumns.length === 0) return undefined;
   if (autoColumns.length > 1) {
-    throw new Error(`SQLite allows at most one AUTOINCREMENT column per table (${table.name})`);
+    throw diagnostic("ddl_1", table.name);
   }
   const column = autoColumns[0]!;
   if (column.type.toLowerCase() !== "integer") {
-    throw new Error(
-      `SQLite requires an INTEGER column for AUTOINCREMENT (${table.name}.${column.name} is ${column.type})`,
-    );
+    throw diagnostic("ddl_2", table.name, column.name, column.type);
   }
   const primaryKey = table.constraints.find((c) => c.kind === "PRIMARY_KEY");
   if (
@@ -156,9 +155,7 @@ function sqliteAutoIncrementColumn(table: SchemaTable): Column | undefined {
     primaryKey.columns.length !== 1 ||
     primaryKey.columns[0] !== column.name
   ) {
-    throw new Error(
-      `SQLite requires AUTOINCREMENT on the single-column primary key (${table.name}.${column.name})`,
-    );
+    throw diagnostic("ddl_3", table.name, column.name);
   }
   return column;
 }

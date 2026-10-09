@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "./diagnostics/error.js";
 /**
  * 快照 —— migrate 的统一比较形状 Schema 的持久化形态。
  *
@@ -41,18 +42,16 @@ export function fromSnapshot(json: string): Schema {
   try {
     parsed = JSON.parse(json);
   } catch (e) {
-    throw new Error(`Snapshot is not valid JSON: ${(e as Error).message}`);
+    throw diagnostic("snapshot_1", asError(e));
   }
   if (!isRecord(parsed) || typeof parsed.formatVersion !== "number") {
-    throw new Error("Invalid snapshot: missing formatVersion");
+    throw diagnostic("snapshot_2");
   }
   if (parsed.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
-    throw new Error(
-      `Incompatible snapshot format: file is v${parsed.formatVersion}, engine supports v${SNAPSHOT_FORMAT_VERSION}`,
-    );
+    throw diagnostic("snapshot_3", parsed.formatVersion, SNAPSHOT_FORMAT_VERSION);
   }
   if (!isSchema(parsed.schema)) {
-    throw new Error("Invalid snapshot: schema shape mismatch");
+    throw diagnostic("snapshot_4");
   }
   return parsed.schema;
 }

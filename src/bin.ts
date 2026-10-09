@@ -2,6 +2,7 @@
 import { parseArgs, run } from "./cli.js";
 import { messages, type CliLanguage } from "./cli/messages.js";
 import { MigrationAbortedError } from "./migrator.js";
+import { formatError } from "./diagnostics/error.js";
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -15,7 +16,7 @@ async function main(): Promise<void> {
       process.exitCode = 0;
       return;
     }
-    console.error(`${m.error}: ${(e as Error).message}`);
+    console.error(`${m.error}: ${formatError(e, language, parseArgs(argv).flags.has("detail"))}`);
     process.exitCode = 1;
   }
 }

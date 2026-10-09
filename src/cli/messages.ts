@@ -33,6 +33,8 @@ Configuration files:
   target: (target: string) => `Target: ${target}`,
   cancelled: "Cancelled.",
   error: "Error",
+  connectionStringLabel: "(connection string)",
+  defaultDatabaseLabel: "(default database)",
   devApplied: (id: string, target: string) => `Generated and applied migration ${id} to ${target}.`,
   createOnlyDev: "--create-only is only supported by dev.",
   devCreated: (id: string) => `Generated migration ${id}; review the SQL, then run tgm deploy.`,
@@ -75,7 +77,7 @@ export type CliMessages = typeof en;
 const zhCN = {
   usage: `ts-grm-migrate — ts-grm 的数据库迁移工具
 
-用法: tgm <command> [options]
+用法: tgm <命令> [选项]
 
 命令:
   dev [-n <name>]              生成并应用迁移
@@ -105,6 +107,8 @@ const zhCN = {
   target: (target: string) => `目标：${target}`,
   cancelled: "已取消。",
   error: "错误",
+  connectionStringLabel: "（连接字符串）",
+  defaultDatabaseLabel: "（默认数据库）",
   devApplied: (id: string, target: string) => `已在 ${target} 生成并应用迁移 ${id}。`,
   createOnlyDev: "--create-only 仅用于 dev。",
   devCreated: (id: string) => `已生成迁移 ${id}；审核 SQL 后运行 tgm deploy。`,

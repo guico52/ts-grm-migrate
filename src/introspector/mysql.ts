@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 import type { Introspector, SqlQueryable } from "../introspector.js";
 import type { Column, Constraint, ForeignKeyConstraint, Index, OnDelete, Schema } from "../schema/model.js";
 import { normalizeMysqlCheck, normalizeMysqlType, quoteMysqlLiteral } from "../mysql/sql.js";
@@ -33,7 +34,7 @@ export class MysqlIntrospector implements Introspector {
       const db = str((await query("select database() as name"))[0]?.name);
       return { tables: tables.map((table) => {
         const name = str(table.name);
-        if (table.engine !== "InnoDB") throw new Error(`Table ${name} uses ${str(table.engine)}; only InnoDB is supported`);
+        if (table.engine !== "InnoDB") throw diagnostic("introspector_mysql_1", name, str(table.engine));
         const constraints = this._constraints(keys.filter((r) => r.TABLE_NAME === name), db);
         return {
           name,
@@ -43,14 +44,14 @@ export class MysqlIntrospector implements Introspector {
         };
       }) };
     } catch (e) {
-      throw new Error(`Failed to introspect MySQL schema: ${(e as Error).message}`);
+      throw diagnostic("introspector_mysql_2", asError(e));
     }
   }
 
   private _column(row: Row): Column {
     const extra = str(row.EXTRA);
     if (str(row.GENERATION_EXPRESSION) || /invisible/i.test(extra)) {
-      throw new Error(`Generated or hidden column ${str(row.TABLE_NAME)}.${str(row.COLUMN_NAME)} is not supported`);
+      throw diagnostic("introspector_mysql_3", str(row.TABLE_NAME), str(row.COLUMN_NAME));
     }
     const rawDefault = row.COLUMN_DEFAULT;
     let defaultValue: string | undefined;
@@ -84,11 +85,11 @@ export class MysqlIntrospector implements Introspector {
         case "PRIMARY KEY": return { kind: "PRIMARY_KEY", name, columns, implicit: undefined };
         case "UNIQUE": return { kind: "UNIQUE", name, columns, implicit: undefined };
         case "CHECK":
-          if (row.ENFORCED === "NO") throw new Error(`CHECK ${name} is not enforced and cannot be migrated`);
+          if (row.ENFORCED === "NO") throw diagnostic("introspector_mysql_4", name);
           return { kind: "CHECK", name, expression: str(row.CHECK_CLAUSE), comparisonExpression: normalizeMysqlCheck(str(row.CHECK_CLAUSE)), values: [], implicit: undefined };
         case "FOREIGN KEY": {
-          if (row.REFERENCED_TABLE_SCHEMA !== database) throw new Error(`Foreign key ${name} references another database, which is not supported`);
-          if (!["NO ACTION", "RESTRICT"].includes(str(row.UPDATE_RULE))) throw new Error(`Foreign key ${name} uses unsupported ON UPDATE ${str(row.UPDATE_RULE)}`);
+          if (row.REFERENCED_TABLE_SCHEMA !== database) throw diagnostic("introspector_mysql_5", name);
+          if (!["NO ACTION", "RESTRICT"].includes(str(row.UPDATE_RULE))) throw diagnostic("introspector_mysql_6", name, str(row.UPDATE_RULE));
           const onDelete = deleteAction(str(row.DELETE_RULE));
           return {
             kind: "FOREIGN_KEY", name, columns, referencedTable: str(row.REFERENCED_TABLE_NAME),
@@ -97,7 +98,7 @@ export class MysqlIntrospector implements Introspector {
             deferrable: false, implicit: undefined,
           };
         }
-        default: throw new Error(`Unsupported MySQL constraint ${str(row.CONSTRAINT_TYPE)}`);
+        default: throw diagnostic("introspector_mysql_7", str(row.CONSTRAINT_TYPE));
       }
     });
   }
@@ -107,7 +108,7 @@ export class MysqlIntrospector implements Introspector {
     const result: Array<Index> = [];
     for (const [name, entries] of group(rows, "INDEX_NAME")) {
       if (entries.some((r) => r.SUB_PART != null || r.EXPRESSION != null || r.COLLATION === "D" || r.INDEX_TYPE !== "BTREE" || r.IS_VISIBLE === "NO")) {
-        throw new Error(`Index ${name} uses a prefix, expression, descending, hidden or non-BTREE definition; migration is not supported`);
+        throw diagnostic("introspector_mysql_8", name);
       }
       if (name === "PRIMARY" || Number(entries[0]!.NON_UNIQUE) === 0) continue;
       const columns = entries.map((r) => str(r.COLUMN_NAME));
@@ -136,6 +137,6 @@ function deleteAction(value: string): OnDelete {
     case "SET NULL": return "SET_NULL";
     case "RESTRICT":
     case "NO ACTION": return "NO_ACTION";
-    default: throw new Error(`Unsupported ON DELETE ${value}`);
+    default: throw diagnostic("introspector_mysql_9", value);
   }
 }

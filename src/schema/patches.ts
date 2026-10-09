@@ -1,3 +1,4 @@
+import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * 列级扩展元数据（`autoIncrement` / `default`）的适配层。
  *
@@ -73,13 +74,13 @@ function readMember(target: object, key: string): unknown {
   try {
     return (target as Record<string, unknown>)[key];
   } catch (error) {
-    throw new Error(`Failed to read column patch metadata ${key}: ${(error as Error).message}`, { cause: error });
+    throw diagnostic("schema_patches_1", key, asError(error));
   }
 }
 
 function readBoolean(target: object, key: string): boolean {
   const value = readMember(target, key);
-  if (typeof value !== 'boolean') throw new Error(`Invalid column patch metadata ${key}: expected boolean`);
+  if (typeof value !== 'boolean') throw diagnostic("schema_patches_2", key);
   return value;
 }
 
@@ -112,11 +113,7 @@ export function renderColumnDefault(value: unknown, context: RenderDefaultContex
     const sql = renderNativeParts(value.parts, context);
     return context.dialect === 'sqlite' || context.dialect === 'mysql' ? `(${sql})` : sql;
   }
-  throw new Error(
-    `Unsupported default value for column ${context.table}.${context.column}: ` +
-      `expected a literal (string / number / boolean / bigint) or an upstream dsl.native.* expression. ` +
-      `Other ts-grm expressions are not valid column defaults.`,
-  );
+  throw diagnostic("schema_patches_3", context.table, context.column);
 }
 
 function isLiteral(value: unknown): value is string | number | boolean | bigint {
@@ -169,10 +166,7 @@ function renderNativeParts(parts: ReadonlyArray<unknown>, context: RenderDefault
       sql += renderInterpolated(part.value, context);
       continue;
     }
-    throw new Error(
-      `Unsupported dsl.native interpolation for column ${context.table}.${context.column}: ` +
-        `only literals, nested dsl.native expressions and interpolated values can be rendered as a column default.`,
-    );
+    throw diagnostic("schema_patches_4", context.table, context.column);
   }
   return sql;
 }
@@ -189,10 +183,7 @@ function renderInterpolated(value: unknown, context: RenderDefaultContext): stri
     return quoteStringLiteral(value.toISOString());
   }
   if (Array.isArray(value)) {
-    throw new Error(
-      `Unsupported array interpolation for column ${context.table}.${context.column}: ` +
-        `arrays cannot be rendered as a column default.`,
-    );
+    throw diagnostic("schema_patches_5", context.table, context.column);
   }
   if (isLiteral(value)) {
     return renderLiteral(value, context);
@@ -200,10 +191,7 @@ function renderInterpolated(value: unknown, context: RenderDefaultContext): stri
   if (isNativeExpression(value)) {
     return renderNativeParts(value.parts, context);
   }
-  throw new Error(
-    `Unsupported interpolated value for column ${context.table}.${context.column}: ` +
-      `only literals, Date and expressions can be rendered as a column default.`,
-  );
+  throw diagnostic("schema_patches_6", context.table, context.column);
 }
 
 /** 字面量 → 方言 SQL 片段 */
