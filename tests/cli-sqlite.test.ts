@@ -6,7 +6,7 @@
  * 每一轮都用一个新的库文件（`:memory:` 不行 —— 每次装配都会开一个新内存库）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +96,48 @@ describe("CLI 端到端（SQLite）", () => {
 
     expect(code).toBe(0);
     expect(logs.join("\n")).toContain("is up to date; no migration needed.");
+  });
+
+  it("create-only writes a pending file without applying SQL or creating history", async () => {
+    expect(await runCli(["dev", "--create-only", "-n", "review", "--config", configPath])).toBe(0);
+    expect(logs.join("\n")).toContain("Generated migration");
+    expect(tables()).toEqual([]);
+    const db = new Database(dbFile);
+    expect(db.prepare("select name from sqlite_master where name='_migrations'").all()).toEqual([]);
+    db.close();
+    const migrations = path.join(dir, "migrations");
+    const files = await readdir(migrations);
+    expect(files).toHaveLength(1);
+    await appendFile(path.join(migrations, files[0]!), '\ncreate index "reviewed_index" on "AUTHOR" ("ID");\n');
+    await expect(runCli(["dev", "--config", configPath])).rejects.toThrow(/Pending migrations/);
+    expect(await runCli(["deploy", "--config", configPath])).toBe(0);
+    expect(tables()).toEqual(["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]);
+    expect(await runCli(["check", "--config", configPath])).toBe(0);
+    const applied = new Database(dbFile);
+    try { expect(applied.prepare("select name from sqlite_master where name='reviewed_index'").all()).toHaveLength(1); }
+    finally { applied.close(); }
+  });
+
+  it("check reports drift without writing; independent unique indexes survive push", async () => {
+    await runCli(["dev", "--config", configPath]);
+    const db = new Database(dbFile);
+    try {
+      const history = db.prepare("select * from _migrations").all();
+      db.exec('create unique index "manual_unique" on "AUTHOR" ("ID"); alter table "AUTHOR" add column "LEGACY" text');
+      expect(await runCli(["check", "--config", configPath])).toBe(1);
+      expect(errors.join("\n")).toContain("LEGACY");
+      expect(db.prepare('pragma table_info("AUTHOR")').all()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "LEGACY" })]));
+      expect(db.prepare("select * from _migrations").all()).toEqual(history);
+      db.exec('alter table "AUTHOR" drop column "LEGACY"');
+      expect(await runCli(["check", "--config", configPath])).toBe(0);
+      expect(await runCli(["push", "--config", configPath])).toBe(0);
+      expect(db.prepare("select name from sqlite_master where name='manual_unique'").all()).toHaveLength(1);
+    } finally { db.close(); }
+  });
+
+  it("check does not create a missing SQLite file", async () => {
+    await expect(runCli(["check", "--config", configPath])).rejects.toThrow(/unable to open database/);
+    expect(await readdir(dir)).toEqual(["ts-grm-migrate.config.ts"]);
   });
 
   it("status：汇报已应用与待应用", async () => {

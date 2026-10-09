@@ -133,4 +133,5 @@ export interface DropTable {
 export type DestructiveChange =
   | DropTable
   | { readonly kind: "DROP_COLUMN"; readonly table: string; readonly column: string }
+  | { readonly kind: "DROP_INDEX"; readonly table: string; readonly index: string }
   | { readonly kind: "ALTER_COLUMN"; readonly table: string; readonly column: string; readonly type: string };

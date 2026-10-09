@@ -83,4 +83,22 @@ run.sequential("MySQL 端到端迁移", () => {
     await migrator.resolve({ migration: "one", action: "applied" });
     expect((await migrator.deploy()).applied).toEqual([]);
   });
+
+  it("switching auto_increment also updates defaults in the same migration", async () => {
+    await executor.query("create table counter (id int not null default 7 primary key)");
+    await executor.query("insert into counter values (1)");
+    const introspector = new MysqlIntrospector({ query: executor });
+    const differ = new SchemaDiffer("mysql");
+    const generator = new MysqlDdlGenerator();
+    const from = await introspector.introspect();
+    const to = { tables: from.tables.map(t => ({ ...t, columns: t.columns.map(c => ({ ...c, autoIncrement: true, autoIncrementManaged: true, default: undefined })) })) };
+    await executor.executeStatements(generator.statements(differ.diff(from, to), { from, to }));
+    expect(differ.diff(await introspector.introspect(), to).changes).toEqual([]);
+    const generated = await introspector.introspect();
+    const normal = { tables: generated.tables.map(t => ({ ...t, columns: t.columns.map(c => ({ ...c, autoIncrement: false, autoIncrementManaged: true, default: "'9'" })) })) };
+    await executor.executeStatements(generator.statements(differ.diff(generated, normal), { from: generated, to: normal }));
+    expect(differ.diff(await introspector.introspect(), normal).changes).toEqual([]);
+    await executor.query("insert into counter () values ()");
+    expect((await executor.query("select id from counter order by id")).rows).toEqual([{ id: 1 }, { id: 9 }]);
+  });
 });

@@ -3,7 +3,7 @@
   "version": "0.1.0-alpha.1",
   "packageManager": "yarn@4.1.0",
   "type": "module",
-  "description": "Schema migration engine for ts-grm — inspired by Prisma Migrate (prisma-engines) and drizzle-kit",
+  "description": "Schema migration engine for ts-grm \u2014 inspired by Prisma Migrate (prisma-engines) and drizzle-kit",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
@@ -89,5 +89,13 @@
   "license": "MIT",
   "engines": {
     "node": ">=24.11.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guico52/ts-grm-migrate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/guico52/ts-grm-migrate/issues"
+  },
+  "homepage": "https://github.com/guico52/ts-grm-migrate#readme"
 }

@@ -44,6 +44,8 @@ export interface Table extends Omit<
   readonly constraints: ReadonlyArray<Constraint>;
   /** migrate 扩展：索引。ts-grm 模型无此概念，来源：补充声明 / introspection */
   readonly indexes: ReadonlyArray<Index>;
+  /** false means independent indexes are outside this target's management scope. */
+  readonly indexesManaged?: boolean;
 }
 
 /**

@@ -18,11 +18,7 @@ export interface SchemaDrift {
   readonly table: string;
   /** 人类可读的说明，如「缺少列 EMAIL」 */
   readonly summary: string;
-  /**
-   * 是否由**已知限制**导致（目前只有 CHECK 表达式：PG 会把它 deparse 成另一种写法，
-   * 与模型侧生成的 `col in (...)` 永远不相等）。这类差异无法通过迁移消除，
-   * 不应作为异常告警。
-   */
+  /** Reserved for differences whose harmless equivalence has actually been proven. */
   readonly known: boolean;
 }
 
@@ -95,8 +91,8 @@ function describeAlter(alter: AlterTable, zh: boolean): Array<SchemaDrift> {
     drift.push({
       table,
       summary: change.kind === "ADD_CONSTRAINT" ? (zh ? `缺少约束 ${label}` : `Missing constraint ${label}`) : (zh ? `多出约束 ${label}` : `Extra constraint ${label}`),
-      // CHECK 的表达式在 PG 里会被 deparse（见文件头注释），永远对不齐
-      known: change.constraint.kind === "CHECK",
+      // 未证明表达式等价的 CHECK 差异必须保留告警。
+      known: false,
     });
   }
 

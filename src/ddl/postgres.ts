@@ -1,95 +1,156 @@
-/**
- * Postgres DDL 生成器。
- *
- * - 列/约束/索引级变更自建（ts-grm 无单条变更 API）；
- * - CREATE_TABLE **自建**（带引号标识符）：ts-grm 原生 toCreationStatements 的
- *   表名不带引号（`create table AUTHOR`），PG 会把未加引号的标识符折叠为小写
- *   （`author`），与目标态/快照的表名（`AUTHOR`）不一致 → introspection 后的
- *   diff 会永久误判。原生建表复用只保留给 SQLite（无大小写折叠问题，
- *   见 src/ddl/sqlite.ts）。
- * - 标识符一律加引号（表/列名来自数据库实际名字，防保留字与大小写折叠）。
+/** PostgreSQL DDL uses physical quoted names and defers foreign keys until all keys exist.
+ * Dependency removal precedes column/table changes; keys and indexes precede foreign keys.
  */
-import type { AlterTable, ColumnChange, ConstraintChange, DropTable, IndexChange } from "../diff/types.js";
-import type { Diff } from "../diff/types.js";
-import type { Schema, Table as SchemaTable } from "../schema/model.js";
+import type { ColumnChange, ConstraintChange, IndexChange } from '../diff/types.js';
+import type { Diff } from '../diff/types.js';
+import type { Schema } from '../schema/model.js';
 import {
   columnSql,
   constraintName,
   constraintSql,
   createTableSql,
   quoteIdentifier,
-} from "../ddl.js";
-import type { DdlGenerator } from "../ddl.js";
-import type { Dialect } from "../introspector.js";
+} from '../ddl.js';
+import type { DdlContext, DdlGenerator } from '../ddl.js';
+import type { Dialect } from '../introspector.js';
 
 const q = quoteIdentifier;
 
 export class PostgresDdlGenerator implements DdlGenerator {
-  readonly dialect: Dialect = "postgres";
+  readonly dialect: Dialect = 'postgres';
 
-  statements(diff: Diff): ReadonlyArray<string> {
-    const sql: Array<string> = [];
-    const drops: Array<DropTable> = [];
+  statements(diff: Diff, context?: DdlContext): ReadonlyArray<string> {
+    const dropFks = new Map<string, string>();
+    const dropKeys: string[] = [],
+      dropIndexes: string[] = [],
+      body: string[] = [],
+      drops: string[] = [];
+    const addKeys: string[] = [],
+      addIndexes: string[] = [];
+    const addFks = new Map<string, string>();
+    const removeFk = (table: string, c: ConstraintChange['constraint'], seq: number): void => {
+      dropFks.set(
+        `${table}\0${c.name ?? c.kind + seq}`,
+        this._constraintChange(
+          q(table),
+          table,
+          { kind: 'DROP_CONSTRAINT', constraint: c },
+          seq,
+        )[0]!,
+      );
+    };
+    const addFk = (table: string, c: ConstraintChange['constraint'], seq: number): void => {
+      addFks.set(
+        `${table}\0${c.kind === 'FOREIGN_KEY' ? c.columns.join('\0') : seq}`,
+        this._constraintChange(q(table), table, { kind: 'ADD_CONSTRAINT', constraint: c }, seq)[0]!,
+      );
+    };
+    // Unchanged incoming FKs also depend on keys being replaced and columns changing type.
+    // @see https://github.com/prisma/prisma-engines/tree/main/schema-engine/connectors/sql-schema-connector/src/sql_schema_differ
+    const affected = (table: string, columns: ReadonlyArray<string>): boolean =>
+      diff.changes.some(
+        (change) =>
+          change.kind === 'ALTER_TABLE' &&
+          change.table === table &&
+          (change.columns.some(
+            (c) =>
+              c.kind !== 'ADD_COLUMN' &&
+              columns.includes(c.column) &&
+              (c.kind === 'DROP_COLUMN' || c.type !== undefined),
+          ) ||
+            change.constraints.some(
+              (c) =>
+                c.kind === 'DROP_CONSTRAINT' &&
+                (c.constraint.kind === 'PRIMARY_KEY' || c.constraint.kind === 'UNIQUE'),
+            )),
+      );
+    if (context)
+      for (const table of context.from.tables) {
+        for (const c of table.constraints) {
+          if (
+            c.kind !== 'FOREIGN_KEY' ||
+            (!affected(table.name, c.columns) && !affected(c.referencedTable, c.referencedColumns))
+          )
+            continue;
+          removeFk(table.name, c, table.constraints.indexOf(c) + 1);
+          const target = context.to.tables.find((t) => t.name === table.name);
+          const next = target?.constraints.find(
+            (n) => n.kind === 'FOREIGN_KEY' && n.columns.join('\0') === c.columns.join('\0'),
+          );
+          if (next) addFk(table.name, next, target!.constraints.indexOf(next) + 1);
+        }
+      }
     for (const change of diff.changes) {
-      switch (change.kind) {
-        case "CREATE_TABLE":
-          sql.push(createTableSql(change.table, "postgres"));
-          break;
-        case "DROP_TABLE":
-          drops.push(change);
-          break;
-        case "ALTER_TABLE":
-          sql.push(...this._alterTable(change));
-          break;
+      if (change.kind === 'CREATE_TABLE') {
+        body.push(
+          createTableSql(
+            {
+              ...change.table,
+              constraints: change.table.constraints.filter((c) => c.kind !== 'FOREIGN_KEY'),
+              indexes: [],
+            },
+            'postgres',
+          ),
+        );
+        change.table.constraints.forEach((c, i) => {
+          if (c.kind === 'FOREIGN_KEY') addFk(change.table.name, c, i + 1);
+        });
+        for (const index of change.table.indexes)
+          addIndexes.push(...this._indexChange(q(change.table.name), { kind: 'ADD_INDEX', index }));
+      } else if (change.kind === 'DROP_TABLE') {
+        for (const name of change.foreignKeyNames)
+          dropFks.set(
+            `${change.table}\0${name}`,
+            `alter table ${q(change.table)} drop constraint ${q(name)}`,
+          );
+        drops.push(`drop table ${q(change.table)}`);
+      } else {
+        for (const col of change.columns) body.push(...this._columnChange(q(change.table), col));
+        change.constraints.forEach((con, i) => {
+          const target = context?.to.tables.find((t) => t.name === change.table);
+          const targetIndex = target?.constraints.indexOf(con.constraint) ?? -1;
+          const seq = targetIndex >= 0 ? targetIndex + 1 : i + 1;
+          if (con.constraint.kind === 'FOREIGN_KEY') {
+            if (con.kind === 'DROP_CONSTRAINT') removeFk(change.table, con.constraint, seq);
+            else addFk(change.table, con.constraint, seq);
+          } else {
+            (con.kind === 'DROP_CONSTRAINT' ? dropKeys : addKeys).push(
+              ...this._constraintChange(q(change.table), change.table, con, seq),
+            );
+          }
+        });
+        for (const idx of change.indexes)
+          (idx.kind === 'DROP_INDEX' ? dropIndexes : addIndexes).push(
+            ...this._indexChange(q(change.table), idx),
+          );
       }
     }
-
-    // 删表分两阶段，且「全部先摘外键、再全部删表」：
-    // 若按表逐个「摘自己的外键 → 删自己」，被引用的表会先被删掉，
-    // 而引用它的表（同样要删）此时外键还没摘 → PG 报
-    // `cannot drop table X because other objects depend on it`，
-    // 整个迁移事务回滚（实测：book / book_tag_mapping / tag 三表，
-    // 字母序下 book 先被删即失败）。
-    // 摘完所有外键后，各 drop table 之间再无依赖，与遍历顺序无关。
-    // 对应 prisma 把 DropForeignKey 作为独立步骤并排在 DropTable 之前。
-    for (const drop of drops) {
-      for (const name of drop.foreignKeyNames) {
-        sql.push(`alter table ${q(drop.table)} drop constraint ${q(name)}`);
-      }
-    }
-    for (const drop of drops) {
-      sql.push(`drop table ${q(drop.table)}`);
-    }
-    return sql;
+    return [
+      ...dropFks.values(),
+      ...dropKeys,
+      ...dropIndexes,
+      ...body,
+      ...drops,
+      ...addKeys,
+      ...addIndexes,
+      ...addFks.values(),
+    ];
   }
 
   createStatements(schema: Schema): ReadonlyArray<string> {
-    return schema.tables.map((table) => createTableSql(table, "postgres"));
-  }
-
-  private _alterTable(change: AlterTable): ReadonlyArray<string> {
-    const sql: Array<string> = [];
-    const table = q(change.table);
-    let seq = 0;
-    for (const col of change.columns) {
-      sql.push(...this._columnChange(table, col));
-    }
-    for (const con of change.constraints) {
-      sql.push(...this._constraintChange(table, change.table, con, ++seq));
-    }
-    for (const idx of change.indexes) {
-      sql.push(...this._indexChange(table, idx));
-    }
-    return sql;
+    return this.statements({
+      changes: schema.tables.map((table) => ({ kind: 'CREATE_TABLE', table })),
+      destructive: [],
+    });
   }
 
   private _columnChange(table: string, col: ColumnChange): ReadonlyArray<string> {
     switch (col.kind) {
-      case "ADD_COLUMN":
-        return [`alter table ${table} add column ${columnSql(col.column, "postgres")}`];
-      case "DROP_COLUMN":
+      case 'ADD_COLUMN':
+        return [`alter table ${table} add column ${columnSql(col.column, 'postgres')}`];
+      case 'DROP_COLUMN':
         return [`alter table ${table} drop column ${q(col.column)}`];
-      case "ALTER_COLUMN": {
+      case 'ALTER_COLUMN': {
         const sql: Array<string> = [];
         const column = q(col.column);
         // 已有列的自增开关无法在 PG 上安全生成：加 identity 要求列 NOT NULL、
@@ -107,12 +168,12 @@ export class PostgresDdlGenerator implements DdlGenerator {
         }
         if (col.nullable != null) {
           sql.push(
-            `alter table ${table} alter column ${column} ${col.nullable ? "drop not null" : "set not null"}`,
+            `alter table ${table} alter column ${column} ${col.nullable ? 'drop not null' : 'set not null'}`,
           );
         }
         if (col.default !== undefined) {
           sql.push(
-            col.default === ""
+            col.default === ''
               ? `alter table ${table} alter column ${column} drop default`
               : `alter table ${table} alter column ${column} set default ${col.default}`,
           );
@@ -129,26 +190,30 @@ export class PostgresDdlGenerator implements DdlGenerator {
     seq: number,
   ): ReadonlyArray<string> {
     switch (con.kind) {
-      case "ADD_CONSTRAINT": {
+      case 'ADD_CONSTRAINT': {
         const name = constraintName(tableName, con.constraint, seq);
         return [`alter table ${table} add ${constraintSql(con.constraint, name)}`];
       }
-      case "DROP_CONSTRAINT": {
+      case 'DROP_CONSTRAINT': {
         // 现状约束有名字（introspection 填写）；缺失时按目标态规则生成（可能不匹配，注释警告）
         const name = con.constraint.name ?? constraintName(tableName, con.constraint, seq);
         const sql = `alter table ${table} drop constraint ${q(name)}`;
-        return con.constraint.name == null ? [`-- WARN: Constraint name missing; inferred from naming rules. Verify before applying.\n${sql}`] : [sql];
+        return con.constraint.name == null
+          ? [
+              `-- WARN: Constraint name missing; inferred from naming rules. Verify before applying.\n${sql}`,
+            ]
+          : [sql];
       }
     }
   }
 
   private _indexChange(table: string, idx: IndexChange): ReadonlyArray<string> {
     switch (idx.kind) {
-      case "ADD_INDEX":
+      case 'ADD_INDEX':
         return [
-          `create ${idx.index.unique ? "unique " : ""}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(", ")})`,
+          `create ${idx.index.unique ? 'unique ' : ''}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(', ')})${idx.index.predicate ? ` where ${idx.index.predicate}` : ''}`,
         ];
-      case "DROP_INDEX":
+      case 'DROP_INDEX':
         return [`drop index ${q(idx.index.name)}`];
     }
   }

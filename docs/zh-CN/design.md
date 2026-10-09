@@ -24,13 +24,13 @@ ts-grm 的模型注册表是进程级单例。CLI 在独立进程中加载模型
 
 数据库现状和模型目标都转成 `Schema` 后，由 `src/differ.ts` 比较。列按名字匹配；约束和索引按内容匹配，因为数据库或 ts-grm 生成的名字不一定稳定；列顺序不参与比较。
 
-安装可选的 `ts-grm-patches` 包（`applyPatches()`，见 `src/schema/patches.ts`）后，列默认值与自增由模型提供：此时模型是这两个属性的权威 —— 没有 `default(...)` 的列目标态就是「无默认值」，`autoIncrement()` 通过 `autoIncrementManaged` 标记参与差分。未安装补丁时两者都不管理，只在数据库里存在的默认值与自增列不会被改动。列注释始终不管理。约束和索引以目标态为准。模型的多态字段在适配时转换成普通列和数据库约束，之后不再保留 ts-grm 的模型语义。
+安装可选的 `ts-grm-patches` 包（`applyPatches()`，见 `src/schema/patches.ts`）后，列默认值与自增由模型提供：此时模型是这两个属性的权威 —— 没有 `default(...)` 的列目标态就是「无默认值」，`autoIncrement()` 通过 `autoIncrementManaged` 标记参与差分。未安装补丁时两者都不管理，只在数据库里存在的默认值与自增列不会被改动。列注释始终不管理。约束以目标态为准。模型派生表设置 `indexesManaged: false`，保留独立索引；程序化目标态可以明确管理它们。默认值比较位于 `src/schema/defaults.ts`，按列类型和方言进行精确数值比较；getter 异常会中止适配。模型的多态字段在适配时转换成普通列和数据库约束，之后不再保留 ts-grm 的模型语义。
 
 SQLite 读取不到约束名，因此按内容比较尤其必要。部分 CHECK 表达式在数据库中会被重新格式化；等价表达式仍可能被判定为变更。需要扩大归一化范围时，应先补对应方言的真实数据库测试。
 
 ## 迁移与恢复
 
-`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
+`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`；`dev --create-only` 仅生成文件。`dev` 和 `deploy` 共用历史完整性校验，待应用文件阻止生成新迁移。PostgreSQL DDL 按解除依赖、表和列变更、键与索引、外键的阶段排序。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
 
 同一项目的本地并发由 `src/lock.ts` 的进程锁限制，跨机器并发由数据库锁限制。PostgreSQL、SQLite 和 SQL Server 把迁移 SQL 与成功记录放在同一事务中。MySQL 和 Oracle 的 DDL 可能隐式提交，失败后必须根据实际数据库状态决定如何恢复。
 
@@ -41,3 +41,5 @@ SQLite 需要重建表的变更目前明确报错。安全重建还需要处理�
 ## 验证修改
 
 运行 `corepack yarn check` 做静态检查、构建和本地测试。数据库测试使用 `corepack yarn test:postgres-mysql` 和 `corepack yarn test:servers`；没有相应数据库环境时，普通测试会跳过这些用例。版本范围的验证步骤见 [兼容性](compatibility.md)。
+
+支持的生命周期从空数据库开始，既有库接管不在当前范围内。主动省略影子库，避免实例准备与历史重放成本。`check` 是只读的严格模型比较，不重放迁移历史。参见 [迁移工作流](migrations.md)。

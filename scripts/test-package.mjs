@@ -38,6 +38,15 @@ try {
   assert.match(status, /init/);
   assert.match(run(process.execPath, [bin, 'dev'], app), /no migration needed/);
   run(process.execPath, [bin, 'deploy'], app);
+  assert.match(run(process.execPath, [bin, 'check'], app), /matches the model/);
+  if (version === '0.0.13') {
+    run('npm', ['install', '--no-audit', '--no-fund', 'ts-grm-patches@0.1.0'], app);
+    await writeFile(path.join(app, 'patched-model.ts'), `import { model, prop } from '@ts-grm/core';\nimport 'ts-grm-patches';\nexport const ITEM = model('PatchedItem', 'id', class { id = prop.i32().autoIncrement(); name = prop.str(80).default('01'); });\n`);
+    await writeFile(path.join(app, 'patched.config.mts'), `import { applyPatches } from 'ts-grm-patches';\napplyPatches();\nexport default { dialect: 'sqlite', database: { file: './patched.db' }, models: ['./patched-model.ts'], migrationsDir: './patched-migrations' };\n`);
+    assert.match(run(process.execPath, [bin, 'dev', '--create-only', '--config', 'patched.config.mts'], app), /Generated migration/);
+    assert.match(run(process.execPath, [bin, 'deploy', '--config', 'patched.config.mts'], app), /Applied 1 migration/);
+    assert.match(run(process.execPath, [bin, 'check', '--config', 'patched.config.mts'], app), /matches the model/);
+  }
   run(process.execPath, ['--input-type=module', '-e', `import { defineConfig } from 'ts-grm-migrate'; if (typeof defineConfig !== 'function') process.exit(1);`], app);
   await writeFile(path.join(app, 'consumer.mts'), `import { defineConfig, type Schema } from 'ts-grm-migrate';\nconst schema: Schema = { tables: [] };\ndefineConfig({dialect:'sqlite',database:{file:':memory:'},models:[]});\nconsole.log(schema);\n`);
   run(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'consumer.mts'], app);

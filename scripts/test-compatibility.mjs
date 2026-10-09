@@ -10,6 +10,7 @@ if (!versions.length || versions.some(v => !/^\d+\.\d+\.\d+$/.test(v))) {
   throw new Error('Usage: node scripts/test-compatibility.mjs 0.0.12 0.0.13');
 }
 const scratch = await mkdtemp(path.join(tmpdir(), 'tgm-compat-'));
+const patchVersion = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).devDependencies['ts-grm-patches'];
 const results = [];
 const env = { ...process.env };
 if (env.COMPAT_DATABASES !== '1') {
@@ -24,7 +25,8 @@ try {
     const cwd = path.join(scratch, version);
     await mkdir(cwd);
     await writeFile(path.join(cwd, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-    const install = run('npm', ['install', '--ignore-scripts', '--omit=optional', '--legacy-peer-deps', '--no-audit', '--no-fund', `@ts-grm/core@${version}`, `@ts-grm/sql@${version}`], cwd);
+    const patches = version === '0.0.13'; // Companion package's published peer range.
+    const install = run('npm', ['install', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund', `@ts-grm/core@${version}`, `@ts-grm/sql@${version}`, ...(patches ? [`ts-grm-patches@${patchVersion}`] : [])], cwd);
     if (!install.passed) {
       console.error(`${version}: dependency installation failed\n${install.output}`);
       results.push({ version, install });
@@ -33,17 +35,21 @@ try {
     // npm may install a different nested core for historical SQL releases. Record that fact.
     const sql = JSON.parse(await readFile(path.join(cwd, 'node_modules/@ts-grm/sql/package.json'), 'utf8'));
     for (const entry of await readdir(path.join(root, 'node_modules'))) {
-      if (entry === '@ts-grm' || entry === '.package-lock.json') continue;
+      if (entry === '@ts-grm' || entry === 'ts-grm-patches' || entry === '.package-lock.json') continue;
+      try { await readFile(path.join(cwd, 'node_modules', entry, 'package.json')); continue; } catch { /* Link only missing test tools. */ }
       try { await symlink(path.join(root, 'node_modules', entry), path.join(cwd, 'node_modules', entry), 'dir'); }
       catch (e) { if (e.code !== 'EEXIST') throw e; }
     }
     for (const entry of ['src', 'tests', 'tsconfig.json', 'vitest.config.ts']) {
       await cp(path.join(root, entry), path.join(cwd, entry), { recursive: true });
     }
+    if (!patches) {
+      for (const file of ['patches.test.ts', 'patches-postgres.test.ts', 'patches-mysql.test.ts']) await rm(path.join(cwd, 'tests', file));
+    }
     const types = run(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit'], cwd);
     const tests = run(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run', '--exclude', 'tests/manual-postgres.test.ts'], cwd);
-    results.push({ version, sqlCoreDependency: sql.dependencies?.['@ts-grm/core'], types, tests });
-    console.log(`${version}: types=${types.passed ? 'PASS' : 'FAIL'} tests=${tests.passed ? 'PASS' : 'FAIL'}`);
+    results.push({ version, patches: patches ? patchVersion : 'outside companion peer range', sqlCoreDependency: sql.dependencies?.['@ts-grm/core'], types, tests });
+    console.log(`${version}: types=${types.passed ? 'PASS' : 'FAIL'} tests=${tests.passed ? 'PASS' : 'FAIL'} patches=${patches ? patchVersion : 'not supported'}`);
     console.log(tests.output.split('\n').filter(line => /Test Files|Tests\s/.test(line)).join('\n'));
     if (!types.passed) console.error(types.output);
     if (!tests.passed) console.error(tests.output.slice(-16000));

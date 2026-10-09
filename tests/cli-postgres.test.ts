@@ -115,6 +115,13 @@ describePg("CLI 端到端（真实数据库）", () => {
     expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
   });
 
+  it("check does not initialize a missing target schema or history", async () => {
+    expect(await runCli(["check", "--config", configPath])).toBe(1);
+    expect(errors.join("\n")).toContain("Table is missing");
+    expect((await pool.query('select nspname from pg_namespace where nspname=$1', [schemaName])).rows).toEqual([]);
+    expect(await tables()).toEqual([]);
+  });
+
   it("dev：省略名字时迁移只用时间戳命名", async () => {
     const code = await runCli(["dev", "--config", configPath]);
 

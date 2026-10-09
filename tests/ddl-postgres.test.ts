@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { lookup } from "node:dns/promises";
 import { Pool } from "pg";
 import { SchemaDiffer } from "../src/differ";
+import { PostgresIntrospector } from "../src/introspector/postgres";
 import { PostgresDdlGenerator } from "../src";
 import type { Column, Constraint, Schema, Table as SchemaTable } from "../src/schema/model";
 
@@ -93,8 +94,8 @@ describePg("DDL 执行（真实数据库）", () => {
       fk("book_tag_mapping_book_id_fkey", ["book_id"], "book", ["id"]),
       fk("book_tag_mapping_tag_id_fkey", ["tag_id"], "tag", ["id"]),
     ]);
-    // 建表按依赖顺序（被引用者在前）—— 建表侧的同源问题本次不修
-    const buildOrder: Schema = { tables: [bookTable, tagTable, mappingTable] };
+    // Deliberately create the referencing table first.
+    const buildOrder: Schema = { tables: [mappingTable, bookTable, tagTable] };
     // 删除按 introspection 的字母序给出（book 排在中间表之前），正是触发 bug 的顺序
     const from: Schema = { tables: [bookTable, mappingTable, tagTable] };
     const to: Schema = { tables: [] };
@@ -125,4 +126,25 @@ describePg("DDL 执行（真实数据库）", () => {
       client.release();
     }
   }, 60_000);
+
+  it("cyclic foreign keys and replacement of referenced keys preserve data", async () => {
+    const client = await pool.connect();
+    try {
+      await client.query(`drop schema if exists "${schemaName}" cascade; create schema "${schemaName}"; set search_path to "${schemaName}"`);
+      const a = table("a", [col("id"), { ...col("b_id"), nullable: true }], [pk(["id"]), fk("a_b", ["b_id"], "b", ["id"])]);
+      const b = table("b", [col("id"), { ...col("a_id"), nullable: true }], [pk(["id"]), fk("b_a", ["a_id"], "a", ["id"])]);
+      const generator = new PostgresDdlGenerator();
+      for (const statement of generator.createStatements({ tables: [a, b] })) await client.query(statement);
+      await client.query('insert into a values (1, null); insert into b values (1, 1); update a set b_id=1');
+      const from = await new PostgresIntrospector({ query: client, schema: schemaName }).introspect();
+      const to: Schema = { tables: from.tables.map(t => ({ ...t, constraints: t.constraints.map(c => c.kind === "PRIMARY_KEY" ? { kind: "UNIQUE" as const, name: `${t.name}_unique`, columns: c.columns, implicit: undefined } : c) })) };
+      for (const statement of generator.statements(new SchemaDiffer().diff(from, to), { from, to })) await client.query(statement);
+      expect((await client.query('select * from a')).rows).toEqual([{ id: 1, b_id: 1 }]);
+      const actual = await new PostgresIntrospector({ query: client, schema: schemaName }).introspect();
+      expect(new SchemaDiffer().diff(actual, to).changes).toEqual([]);
+      const withoutKeys: Schema = { tables: actual.tables.map(t => ({ ...t, constraints: [] })) };
+      for (const statement of generator.statements(new SchemaDiffer().diff(actual, withoutKeys), { from: actual, to: withoutKeys })) await client.query(statement);
+      expect(new SchemaDiffer().diff(await new PostgresIntrospector({ query: client, schema: schemaName }).introspect(), withoutKeys).changes).toEqual([]);
+    } finally { client.release(); }
+  });
 });

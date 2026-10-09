@@ -120,6 +120,11 @@ describe('列级补丁适配', () => {
 });
 
 describe('readColumnPatch 探测', () => {
+  it('getter failure aborts rather than requesting a destructive change', () => {
+    const broken = { get default(): unknown { throw new Error('broken getter'); }, autoIncrement: false };
+    expect(() => adapt(fakeTableDef('T', [{ name: 'status', prop: broken }]))).toThrow(/t.status.*default.*broken getter/);
+    expect(() => readColumnPatch({ get autoIncrement(): boolean { throw new Error('broken identity'); } })).toThrow(/autoIncrement.*broken identity/);
+  });
   it('普通对象（无补丁读取器）→ 不管理', () => {
     expect(readColumnPatch({})).toEqual({
       autoIncrementManaged: false,
@@ -148,6 +153,7 @@ describe('renderColumnDefault', () => {
 
   it('字面量按方言转义', () => {
     expect(renderColumnDefault("it's", context)).toBe("'it''s'");
+    expect(renderColumnDefault('中文', { ...context, dialect: 'mssql' })).toBe("N'中文'");
     expect(renderColumnDefault(0, context)).toBe('0');
     expect(renderColumnDefault(true, context)).toBe('true');
     expect(renderColumnDefault(10n, context)).toBe('10');

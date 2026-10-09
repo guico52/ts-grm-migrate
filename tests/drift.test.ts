@@ -158,7 +158,7 @@ describe("describeDiff（对账报告）", () => {
     ]);
   });
 
-  it("CHECK 约束标为已知限制，不算异常", () => {
+  it("缺失 CHECK 必须作为异常报告", () => {
     const drift = describeDiff(
       diff([
         {
@@ -182,10 +182,9 @@ describe("describeDiff（对账报告）", () => {
       ]),
     );
     expect(drift).toHaveLength(1);
-    expect(drift[0]!.known).toBe(true);
+    expect(drift[0]!.known).toBe(false);
     expect(drift[0]!.summary).toContain("check (");
-    // 关键：已知限制不进入异常列表
-    expect(abnormalDrift(drift)).toEqual([]);
+    expect(abnormalDrift(drift)).toEqual(drift);
   });
 
   it("长表达式被截断，避免刷屏", () => {

@@ -5,9 +5,13 @@
 [ts-grm](https://github.com/babyfish-ct/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
 但**模型就是你写的 ts-grm 代码**，不需要额外的 schema 文件，也没有代码生成步骤。
 
+当前范围是**新的 ts-grm 应用及其后续模型演进**，请从空数据库开始。暂不支持接管既有应用数据库或为既有表建立 baseline。主动不采用影子库的取舍见 [迁移工作流](migrations.md)。
+
 ## 功能清单
 
 - **增量迁移**：对比你的模型与数据库现状，生成可读的 SQL 迁移文件，并记录应用历史
+- **SQL 审核**：`dev --create-only` 生成待应用文件，审核和编辑后再部署
+- **严格检查**：`check` 对模型与数据库的差异返回非零退出码
 - **按序部署**：把所有未应用的迁移依次应用到目标库（部署 / CI 场景）
 - **快速同步**：快速执行迁移SQL，将数据库同步为model定义的形状
 - **迁移后对账**：应用完再核对数据库与模型，不一致就指出「哪个库、哪张表、差在哪」
@@ -57,7 +61,10 @@ export default defineConfig({
 然后：
 
 ```sh
-npx tgm dev -n init      # 对比模型与数据库，生成并应用第一个迁移
+npx tgm dev --create-only -n init  # 生成 SQL 供审核
+# 审核生成文件后：
+npx tgm deploy                    # 应用初始迁移
+npx tgm check                     # 检查模型是否一致
 npx tgm dev              # 不写名字也行：迁移只用时间戳命名
 npx tgm status           # 看看应用了哪些、还剩哪些
 ```
@@ -84,8 +91,10 @@ npx tgm status           # 看看应用了哪些、还剩哪些
 [ts-grm-patches](https://www.npmjs.com/package/ts-grm-patches) 提供 —— 与本工具一起安装：
 
 ```sh
-npm install -D ts-grm-patches
+npm install -D ts-grm-patches@0.1.0
 ```
+
+`ts-grm-patches@0.1.0` 要求 core/sql 均为 `0.0.13`；迁移器本身不使用补丁时仍支持 `0.0.9`–`0.0.13`。
 
 然后在**任何 `model(...)` 定义之前**调用一次：
 
@@ -116,9 +125,7 @@ migrate 侧无需任何配置：适配器会探测补丁并接管这两个属性
   只在数据库里存在的默认值会被删掉（`alter column ... drop default`）。
   未安装补丁时，migrate 不碰数据库里已有的默认值与自增。
 - `autoIncrement()` 与 `default(...)` 不能声明在同一列上，同时写会直接报错。
-- **已有列上开关自增需要手工迁移**，再用 `tgm resolve --applied <id>` 记录：PostgreSQL、
-  SQL Server、Oracle 都无法原地安全完成，SQLite 更是不能改表。建表，或新增列时声明
-  `autoIncrement()` 是支持的。
+- **PostgreSQL / SQL Server / Oracle / SQLite 的已有列上开关自增需要手工 SQL 迁移**，参见 [工作流](migrations.md#自定义-sql-与无法自动生成的变更)。MySQL 支持切换已有列并同时更新默认值。所有方言支持建表时声明自增；SQLite 不支持向已有表添加自增列。
 - 表达式默认值只接受 `dsl.native.*`（例如 `` dsl.native.str`uuid_generate_v4()` ``）；
   其它 ts-grm 表达式节点会被拒绝，而不是拼出一段可疑的 SQL。字面量需与列的值类型一致。
 - 若 `applyPatches()` 在模型定义之后才调用，该模型的列不受影响。
@@ -133,7 +140,7 @@ migrate 侧无需任何配置：适配器会探测补丁并接管这两个属性
 
 数据库 catalog 里的写法与模型侧不同（PostgreSQL 会补 `'active'::character varying` 之类的 cast，
 SQL Server 会给表达式套括号、给字符串加 `N` 前缀，MySQL 会给数值默认值也加引号）。
-差分会把这些已知的等价写法归一，避免每次 `dev` 都重复生成同一条迁移。
+差分只移除与目标类型兼容的整个字面量 cast，并归一外层括号及方言专属前缀。文本数字保持文本语义，数值比较不损失浮点精度，表达式内部 cast 保留。无法证明等价时仍报告差异。元数据 getter 读取失败会中止迁移，不会被解释成删除属性。
 
 ## 数据库支持与配置
 
@@ -233,13 +240,15 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | 命令 | 用途 |
 | --- | --- |
 | `tgm dev [-n <名字>]` | 对比模型与数据库，生成并应用一个迁移（开发用；名字可省略，省略时只用时间戳命名） |
+| `tgm dev --create-only [-n <名字>]` | 仅生成待应用 SQL 文件，供审核和编辑 |
+| `tgm check` | 只读比较模型与数据库，有差异或错误时退出码为 1 |
 | `tgm deploy` | 应用所有未应用的迁移（部署 / CI 用，无交互） |
 | `tgm push [--force]` | 直接同步成模型的样子，不写文件、不记历史 |
 | `tgm status` | 查看已应用 / 待应用的迁移 |
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
+选项：`--create-only` 仅生成不应用（只用于 `dev`）、`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
 
 普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
 例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`。
@@ -262,9 +271,13 @@ npx tgm status --lang zh-CN --detail
 
 ## 行为约定
 
+- `dev` 和 `deploy` 都验证已应用文件的 checksum 及文件缺失；有待应用文件时 `dev` 会拒绝继续生成，需先执行 `deploy`。
+- 模型不管理独立索引和注释；自定义迁移的独立索引在列仍存在时保留。程序化 Schema 可显式管理索引，删除 unique index 会被标为破坏性变更。
+- `dev`、`deploy` 和 `push` 对账差异只给警告，成功执行仍返回 0；`check` 对差异返回 1，也包含无法证明等价的 CHECK 差异。
+
 - **迁移文件是人可读的 SQL**：`<migrationsDir>/<时间戳>_<名字>.sql`，可以手工编辑。
   但**已应用的迁移不能再改** —— 内容一旦变动，后续 `deploy` 会因 checksum 不匹配而拒绝继续
-- **破坏性变更会先问**：删表 / 删列 / 改列类型默认交互确认；非交互环境（CI）需显式加 `--force`
+- **破坏性变更会先问**：模型同步时删表 / 删列 / 改列类型及显式删除 unique index 会要求确认，非交互同步需加 `--force`。`deploy` 直接应用已审核文件，不进行交互确认。
 - **迁移后自动对账**：`dev` / `deploy` / `push` 完成后会再读一次数据库与模型比对，
   仍有差异就报出具体位置，例如：
 
@@ -287,6 +300,7 @@ npx tgm status --lang zh-CN --detail
 
 ## 更多文档
 
+- [审核 SQL、自定义迁移、事务回滚与失败恢复](migrations.md)
 - [兼容性与 ts-grm 版本范围](compatibility.md)
 - [设计与迁移内部机制](design.md)
 - [参与开发](CONTRIBUTING.md)

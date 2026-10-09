@@ -94,6 +94,7 @@ function isTable(value: unknown): boolean {
   if (!Array.isArray(columns) || !columns.every(isColumn)) return false;
   if (!Array.isArray(constraints) || !constraints.every(isConstraint)) return false;
   if (!Array.isArray(indexes) || !indexes.every(isIndex)) return false;
+  if (value.indexesManaged !== undefined && !isBoolean(value.indexesManaged)) return false;
   return true;
 }
 

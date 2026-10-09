@@ -22,7 +22,7 @@ import type { Runtime } from "./runtime.js";
 
 export type { ParsedArgs, RunOptions } from "./cli/types.js";
 
-const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail"]);
+const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail", "create-only"]);
 
 /** 解析 argv：`--k v` / `--k=v` / `-h` / 位置参数（第一个位置参数是命令） */
 /**
@@ -101,11 +101,17 @@ export async function run(
     log(m.usage);
     return 0;
   }
-  if (flags.has("detail") && flags.get("detail") !== true) {
-    errorLog(m.invalidOption("detail"));
+  for (const flag of ["detail", "create-only"]) {
+    if (flags.has(flag) && flags.get(flag) !== true) {
+      errorLog(m.invalidOption(flag));
+      return 1;
+    }
+  }
+  if (flags.has("create-only") && command !== "dev") {
+    errorLog(m.createOnlyDev);
     return 1;
   }
-  if (!["dev", "deploy", "push", "status", "resolve"].includes(command)) {
+  if (!["dev", "deploy", "push", "status", "resolve", "check"].includes(command)) {
     errorLog(m.unknownCommand(command));
     log(m.usage);
     return 1;
@@ -124,6 +130,7 @@ export async function run(
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
     driftLanguage: language,
+    readOnly: command === "check",
     ...(detail ? { onProgress: (event: MigrationProgress) => reportProgress(event, log, m) } : {}),
   });
   const dbLabel = describeDatabase(config);
@@ -135,7 +142,14 @@ export async function run(
     }
     switch (command) {
       case "dev":
-        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog, m, detail);
+        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog, m, detail, flags.has("create-only"));
+      case "check": {
+        const drift = await runtime.migrator.checkDrift();
+        reportDrift(drift, dbLabel, log, errorLog, m, detail);
+        if (drift.length > 0) return 1;
+        log(m.checkPassed(dbLabel));
+        return 0;
+      }
       case "deploy":
         return await runDeploy(runtime, dbLabel, log, errorLog, m, detail);
       case "push":
@@ -177,10 +191,15 @@ async function runDev(
   errorLog: (message: string) => void,
   m: CliMessages,
   detail: boolean,
+  createOnly: boolean,
 ): Promise<number> {
   // name 可选：不给就用纯时间戳命名（由 migrator 层的 generateMigrationId 负责）
   const migrationName = typeof name === "string" ? name.trim() : "";
-  const result = await runtime.migrator.dev({ name: migrationName });
+  const result = await runtime.migrator.dev({ name: migrationName, createOnly });
+  if (result.migrationId != null && createOnly) {
+    log(m.devCreated(result.migrationId));
+    return 0;
+  }
   if (!result.applied) {
     log(m.devNoop(dbLabel));
     return 0;
@@ -352,6 +371,9 @@ function printDestructive(
         break;
       case "DROP_COLUMN":
         errorLog(m.dropColumn(change.table, change.column));
+        break;
+      case "DROP_INDEX":
+        errorLog(m.dropIndex(change.table, change.index));
         break;
       case "ALTER_COLUMN":
         errorLog(m.alterColumn(change.table, change.column, change.type));

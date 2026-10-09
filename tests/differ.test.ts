@@ -178,6 +178,13 @@ describe("SchemaDiffer 列级别", () => {
 // ---- 约束 / 索引 -----------------------------------------------------------
 
 describe("SchemaDiffer 约束与索引", () => {
+  it("模型不管理索引时保留独立索引，包括唯一索引", () => {
+    const from = table("A", [col("ID", "integer")], [], [idx("manual_unique", ["ID"], true)]);
+    const to = { ...table("A", from.columns as Column[]), indexesManaged: false };
+    expect(differ.diff(schema([from]), schema([to]))).toEqual({ changes: [], destructive: [] });
+    const managed = differ.diff(schema([from]), schema([{ ...to, indexesManaged: true }]));
+    expect(managed.destructive).toEqual([{ kind: "DROP_INDEX", table: "A", index: "manual_unique" }]);
+  });
   it("约束按内容匹配：名字不同但内容相同 → 无变更", () => {
     const from = table("A", [col("ID", "integer")], [
       { ...pk(["ID"]), name: "old_pk" },
@@ -290,7 +297,7 @@ describe("SchemaDiffer 列级补丁（autoIncrement / default）", () => {
   });
 
   it("默认值归一：SQL Server 的 N 前缀与数值写法差异不算差异", () => {
-    let d = differ.diff(
+    let d = new SchemaDiffer("mssql").diff(
       schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "N'active'")])]),
       schema([table("A", [col("ID", "integer"), col("NAME", "text", false, "'active'")])]),
     );

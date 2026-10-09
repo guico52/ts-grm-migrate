@@ -179,9 +179,9 @@ describe("PostgresDdlGenerator", () => {
       indexes: [],
     }]);
     expect(new PostgresDdlGenerator().statements(d)).toEqual([
-      'alter table "BOOK" add constraint "BOOK_fk_AUTHOR_ID" foreign key ("AUTHOR_ID") references "AUTHOR" ("ID") on delete cascade',
-      'alter table "BOOK" add constraint "BOOK_ck_2" check (PRICE > 0)',
       'alter table "BOOK" drop constraint "BOOK_uq_name"',
+      'alter table "BOOK" add constraint "BOOK_ck_2" check (PRICE > 0)',
+      'alter table "BOOK" add constraint "BOOK_fk_AUTHOR_ID" foreign key ("AUTHOR_ID") references "AUTHOR" ("ID") on delete cascade',
     ]);
   });
 
@@ -202,11 +202,10 @@ describe("PostgresDdlGenerator", () => {
       },
     ]);
     expect(new PostgresDdlGenerator().statements(d)).toEqual([
-      'create table "BOOK" (\n  "ID" integer not null,\n  "TITLE" text not null,\n  constraint "BOOK_pk" primary key ("ID")\n)',
-      'create unique index "BOOK_title_idx" on "BOOK" ("TITLE")',
       'drop index "OLD_idx"',
-      // 删表统一排在最后（先摘外键、再删表，见下个用例）
+      'create table "BOOK" (\n  "ID" integer not null,\n  "TITLE" text not null,\n  constraint "BOOK_pk" primary key ("ID")\n)',
       'drop table "OLD"',
+      'create unique index "BOOK_title_idx" on "BOOK" ("TITLE")',
     ]);
   });
 

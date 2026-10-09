@@ -24,13 +24,13 @@ The ts-grm model registry is a process-level singleton. The CLI loads models in 
 
 `src/differ.ts` compares database and target models after both are converted to `Schema`. Columns match by name; constraints and indexes match by content because generated names may be unstable; column order is ignored.
 
-The migrator reads column defaults and auto-increment from the model when the optional `ts-grm-patches` package is installed (`applyPatches()`, see `src/schema/patches.ts`). In that mode the model is authoritative for both attributes: a column without `default(...)` is target state "no default", and `autoIncrement()` participates in diffing through the `autoIncrementManaged` flag. Without the patch neither attribute is managed, so defaults and identity columns that exist only in the database are left alone. Column comments are never managed. Target constraints and indexes remain authoritative. Polymorphic model fields become ordinary columns and database constraints during adaptation and no longer retain their ts-grm semantics.
+The migrator reads column defaults and auto-increment from the model when the optional `ts-grm-patches` package is installed (`applyPatches()`, see `src/schema/patches.ts`). In that mode the model is authoritative for both attributes: a column without `default(...)` is target state "no default", and `autoIncrement()` participates in diffing through the `autoIncrementManaged` flag. Without the patch neither attribute is managed, so defaults and identity columns that exist only in the database are left alone. Column comments are never managed. Target constraints remain authoritative. Model-derived tables set `indexesManaged: false`, preserving independent indexes; explicit programmatic targets can manage them. Default comparison lives in `src/schema/defaults.ts` and uses column types and dialects with exact numeric comparison. Getter failures abort adaptation. Polymorphic model fields become ordinary columns and database constraints during adaptation and no longer retain their ts-grm semantics.
 
 SQLite cannot read constraint names, making content-based comparison essential. Some CHECK expressions are reformatted by the database, so equivalent expressions may still appear changed. Add real database tests before widening expression normalization.
 
 ## Migrations and recovery
 
-`src/migrator.ts` manages `dev`, `deploy`, `push`, and `resolve`. Migration files are created exclusively, and checksums detect edits to applied files. An unfinished record is written before execution. After an interruption or history-recording failure, subsequent deployment will not replay automatically; inspect the database and use `resolve`.
+`src/migrator.ts` manages `dev`, `deploy`, `push`, and `resolve`; `dev --create-only` generates files without applying them. `dev` and `deploy` share history integrity validation; pending files block new generation. PostgreSQL DDL orders dependency removal, table/column changes, keys/indexes, then foreign keys. Migration files are created exclusively, and checksums detect edits to applied files. An unfinished record is written before execution. After an interruption or history-recording failure, subsequent deployment will not replay automatically; inspect the database and use `resolve`.
 
 `src/lock.ts` limits local concurrency within a project, and database locks limit concurrency across machines. PostgreSQL, SQLite, and SQL Server record migration SQL and success in one transaction. MySQL and Oracle DDL may commit implicitly; after failure, recovery must follow the actual database state.
 
@@ -41,3 +41,5 @@ SQLite changes that require table rebuilding currently fail explicitly. A safe r
 ## Verifying changes
 
 Run `corepack yarn check` for static checks, build, and local tests. Database tests use `corepack yarn test:postgres-mysql` and `corepack yarn test:servers`; ordinary tests skip those cases when the database environment is absent. See [compatibility](compatibility.md) for version-range validation.
+
+The supported lifecycle begins with an empty database; existing database adoption is out of scope. Shadow databases are deliberately omitted to avoid provisioning and replay costs. `check` is a read-only strict model comparison and does not replay migration history. See [migration workflows](migrations.md).
