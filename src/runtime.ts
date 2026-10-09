@@ -59,6 +59,8 @@ export interface Runtime {
 }
 
 export interface RuntimeOptions {
+  /** Inspect without initializing schemas or writing the SQLite database. */
+  readonly readOnly?: boolean;
   /**
    * 破坏性变更确认钩子（CLI 传交互式确认）。
    * 不传 = 总是允许（CI / 程序化调用，「我知道在做什么」的默认）。
@@ -94,7 +96,7 @@ export async function createRuntime(
     );
   }
 
-  const connection = await createConnection(dialect, config, cwd);
+  const connection = await createConnection(dialect, config, cwd, options.readOnly ?? false);
   try {
     return await assembleRuntime(config, cwd, options, dialect, connection);
   } catch (e) {
@@ -123,9 +125,10 @@ async function createConnection(
   dialect: DialectName,
   config: MigrateConfig,
   cwd: string,
+  readOnly: boolean,
 ): Promise<DialectConnection> {
   if (dialect === "sqlite") {
-    const database = await openSqlite(config, cwd);
+    const database = await openSqlite(config, cwd, readOnly);
     const executor = new SqliteSqlExecutor(database);
     return {
       executor,
@@ -163,7 +166,7 @@ async function createConnection(
   }
   if (dialect === "mssql") {
     const schema = config.schema ?? "dbo";
-    const connection = await openSqlServer(config.database, schema);
+    const connection = await openSqlServer(config.database, schema, readOnly);
     return { ...connection,
       introspector: new SqlServerIntrospector({ query: connection.executor, schema: connection.schema }),
       driver: new SqlServerDriver(new SqlServerPool({ server: config.database.host ?? "localhost" })),
@@ -212,7 +215,7 @@ async function assembleRuntime(
   if (dialect === "postgres") {
     // 非 public 时确保目标 schema 存在（幂等）：search_path 指向不存在的 schema
     // 会让后续每一条未限定表名的语句都失败
-    if (schema !== "public") {
+    if (schema !== "public" && !options.readOnly) {
       await executor.executeStatements([
         `create schema if not exists ${quoteIdentifier(schema)}`,
       ]);
@@ -328,11 +331,12 @@ async function createPool(config: MigrateConfig): Promise<ManagedPool> {
 async function openSqlite(
   config: MigrateConfig,
   cwd: string,
+  readOnly: boolean,
 ): Promise<SqliteDatabaseLike & { close(): void }> {
-  let Database: new (file: string) => SqliteDatabaseLike & { close(): void };
+  let Database: new (file: string, options?: { readonly: boolean; fileMustExist: boolean }) => SqliteDatabaseLike & { close(): void };
   try {
     const mod = (await import("better-sqlite3")) as unknown as {
-      default: new (file: string) => SqliteDatabaseLike & { close(): void };
+      default: new (file: string, options?: { readonly: boolean; fileMustExist: boolean }) => SqliteDatabaseLike & { close(): void };
     };
     Database = mod.default;
   } catch {
@@ -342,5 +346,5 @@ async function openSqlite(
   }
   // 相对项目根解析（":memory:" 这类特殊值原样传）
   const file = config.database.file ?? ":memory:";
-  return new Database(file === ":memory:" ? file : path.resolve(cwd, file));
+  return new Database(file === ":memory:" ? file : path.resolve(cwd, file), readOnly && file !== ":memory:" ? { readonly: true, fileMustExist: true } : undefined);
 }

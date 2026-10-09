@@ -179,6 +179,38 @@ describe("Migrator", () => {
     });
   }
 
+  it("dev validates checksums and missing applied files even when models match", async () => {
+    const file = await writeMigration("init", "select 1;");
+    markApplied(file, "changed");
+    await expect(makeMigrator().dev({})).rejects.toThrow(/checksum mismatch/);
+    await rm(path.join(dir, "migrations", "init.sql"));
+    await expect(makeMigrator().dev({})).rejects.toThrow(/missing from disk/);
+    expect(executor.executed).toEqual([]);
+  });
+
+  it("dev rejects pending migrations before introspection or file generation", async () => {
+    await writeMigration("pending", "select 1;");
+    const read = vi.spyOn(introspector, "introspect");
+    await expect(makeMigrator(ONE_TABLE).dev({})).rejects.toThrow(/Run tgm deploy first/);
+    expect(read).not.toHaveBeenCalled();
+    expect(await files.listFiles()).toHaveLength(1);
+    expect(executor.executed).toEqual([]);
+  });
+
+  it("createOnly writes SQL without executing it or creating history", async () => {
+    const ensure = vi.spyOn(history, "ensureTable");
+    const result = await makeMigrator(ONE_TABLE).dev({ name: "review", createOnly: true });
+    expect(result.migrationId).toMatch(/_review$/);
+    expect(result.applied).toBe(false);
+    expect(await files.listFiles()).toHaveLength(1);
+    expect(ensure).not.toHaveBeenCalled();
+    expect(history.applied).toEqual([]);
+    expect(executor.executed).toEqual([]);
+    await expect(makeMigrator(ONE_TABLE).dev({ createOnly: true })).rejects.toThrow(/Pending migrations/);
+    await makeMigrator(ONE_TABLE).deploy();
+    expect(executor.executed).toHaveLength(1);
+  });
+
   it("history failure blocks replay even when failure reporting also fails", async () => {
     await writeMigration("first", "select 1;");
     vi.spyOn(history, "recordApplied").mockRejectedValue(new Error("history unavailable"));

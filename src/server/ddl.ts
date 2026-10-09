@@ -99,7 +99,10 @@ export class ServerDdlGenerator implements DdlGenerator {
         }
         if (columnChanged(before.name)) {
           for (const index of before.indexes) removeIndex(before.name, index);
-          for (const index of after?.indexes ?? [])
+          const indexes = after?.indexesManaged === false
+            ? before.indexes.filter(index => index.columns.every(name => after.columns.some(column => column.name === name)))
+            : after?.indexes ?? [];
+          for (const index of indexes)
             addIndex(before.name, index);
         }
       }

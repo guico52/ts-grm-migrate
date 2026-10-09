@@ -11,4 +11,6 @@
 3. 运行 `npm publish --dry-run --tag next`，核对入口、类型声明、许可证、第三方声明和 README。确认工作区状态及要发布的版本。
 4. 由维护者登录 npm，运行 `npm publish --tag next`，再查询 npm registry 确认版本与 dist-tag。
 
-首次公开 GitHub 仓库时，在 `package.json` 中填写真实的 `repository`、`bugs` 和 `homepage` 地址。发布前检查 Git 历史和打包清单，不携带凭据或本地配置。
+确认 `package.json` 中的 `repository`、`bugs` 和 `homepage` 指向当前维护的仓库。发布前检查 Git 历史和打包清单，不携带凭据或本地配置。
+
+列补丁修改需同时通过 `0.0.13` 的补丁测试与 `0.0.9` 的基础兼容性测试。确认 `--create-only` 不写历史、`check` 不写数据库、独立索引在模型演进后保留。修改生成 SQL 时，发布前在隔离的空数据库中应用完整迁移历史。

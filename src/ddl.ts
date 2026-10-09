@@ -4,14 +4,8 @@
  * 对应 prisma-engines 的 `libs/sql-ddl`（语句构造）+ `sql_renderer.rs`（方言分发）。
  * 每个方言一个实现（Postgres / SQLite 见 src/ddl/）。
  *
- * 生成策略（整表级操作条件复用 ts-grm 原生，列/约束级变更自建）：
- * - CREATE_TABLE / SQLite 重建表：若提供了目标态 TableDef 映射（生成期持有），
- *   走 ts-grm 原生 `toCreationStatements(driver)`，保证与 ts-grm 建表语义零漂移；
- *   否则回退到自建（本文件的 createTableSql，语义等价）。
- * - ADD/DROP COLUMN、ALTER COLUMN、ADD/DROP CONSTRAINT、索引：自建。
- *   ts-grm 没有单条变更 API，这部分是 migrate 的核心职责。
- * - SQLite 的 drop column / 改类型 / 改约束无法原地执行 → 重建表路径
- *   （drop 旧表 + 原生建表 + 数据迁移 TODO，见 src/ddl/sqlite.ts）。
+ * SQLite 的普通建表可复用 ts-grm 原生；默认值与自增由自建 DDL 表达。
+ * 列级变更由各方言生成；SQLite 需要重建表的变更明确拒绝。
  */
 import type { Diff } from "./diff/types.js";
 import type {
@@ -39,7 +33,7 @@ export interface DdlGenerator {
   statements(diff: Diff, context?: DdlContext): ReadonlyArray<string>;
 
   /**
-   * 把整个 schema 渲染为建表 SQL（用于重建表路径 / 影子库初始化）。
+   * 把整个 schema 渲染为建表 SQL（用于空库初始化）。
    * 传入目标态 TableDef 映射时逐表复用 ts-grm 原生 toCreationStatements。
    */
   createStatements(schema: Schema): ReadonlyArray<string>;
@@ -137,9 +131,6 @@ export function createTableSql(table: SchemaTable, dialect: Dialect): string {
     }
     parts.push(`  ${constraintSql(constraint, constraintName(table.name, constraint, ++seq))}`);
   }
-  for (const index of table.indexes) {
-    parts.push(`  ${indexSql(table.name, index)}`);
-  }
   return `create table ${quoteIdentifier(table.name)} (\n${parts.join(",\n")}\n)`;
 }
 
@@ -190,10 +181,7 @@ export function constraintSql(constraint: Constraint, name: string): string {
   }
 }
 
-/** 索引片段（inline 形态，createTableSql 内使用） */
+/** Independent index DDL for PostgreSQL and SQLite. */
 export function indexSql(table: string, index: Index): string {
-  return (
-    `constraint ${quoteIdentifier(index.name)} ${index.unique ? "unique " : ""}index` +
-    ` (${index.columns.map(quoteIdentifier).join(", ")})`
-  );
+  return `create ${index.unique ? "unique " : ""}index ${quoteIdentifier(index.name)} on ${quoteIdentifier(table)} (${index.columns.map(quoteIdentifier).join(", ")})${index.predicate ? ` where ${index.predicate}` : ""}`;
 }

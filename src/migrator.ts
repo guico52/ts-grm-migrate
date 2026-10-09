@@ -129,41 +129,16 @@ export interface ResolveOptions {
 }
 
 export class Migrator {
-  private readonly _differ = new SchemaDiffer();
+  private readonly _differ: SchemaDiffer;
 
-  constructor(private readonly _options: MigratorOptions) {}
+  constructor(private readonly _options: MigratorOptions) {
+    this._differ = new SchemaDiffer(_options.ddl.dialect);
+  }
 
   /** 应用所有未应用的迁移（deploy 路径，无交互） */
   async deploy(): Promise<DeployResult> {
     return await this._withLocks(true, async () => {
-      const files = await this._options.files.listFiles();
-      const applied = await this._effectiveApplied();
-      this._assertNoFailed(applied);
-      const appliedById = new Map(applied.map((a) => [a.id, a]));
-
-      // 漂移检测 1：已应用的迁移内容不得再变
-      for (const file of files) {
-        const record = appliedById.get(file.id);
-        if (record != null && record.checksum !== file.checksum) {
-          throw new Error(
-            `Migration "${file.id}" was applied but its file has changed (checksum mismatch): ` +
-              `history ${short(record.checksum)} / disk ${short(file.checksum)}. ` +
-              `Restore the applied file and create a new migration for corrections.`,
-          );
-        }
-      }
-
-      // 漂移检测 2：历史里有、磁盘上没有的迁移
-      const fileIds = new Set(files.map((f) => f.id));
-      const missing = applied.filter((a) => !fileIds.has(a.id));
-      if (missing.length > 0) {
-        throw new Error(
-          `Applied migrations are missing from disk: ${missing.map((m) => m.id).join(", ")}. ` +
-            `Restore the files or correct the migration history manually.`,
-        );
-      }
-
-      const pending = files.filter((f) => !appliedById.has(f.id));
+      const { files, pending } = await this._validatedHistory();
       const appliedNow: Array<string> = [];
       for (const file of pending) {
         await this._applyOne(file);
@@ -182,18 +157,20 @@ export class Migrator {
    * 与数据库无差异时不产生文件；破坏性变更的确认交给 CLI 层（`Diff.destructive`）。
    * `name` 可省略，省略时迁移只用时间戳命名。
    */
-  async dev(options: { readonly name?: string }): Promise<DevResult> {
-    return await this._withLocks(true, async () => {
-      this._assertNoFailed(await this._effectiveApplied());
+  async dev(options: { readonly name?: string; readonly createOnly?: boolean }): Promise<DevResult> {
+    return await this._withLocks(!options.createOnly, async () => {
+      const { files: existing, pending } = await this._validatedHistory();
+      if (pending.length > 0) {
+        throw new Error(`Pending migrations must be applied before generating a new migration: ${pending.map(f => f.id).join(", ")}. Run tgm deploy first.`);
+      }
       const { diff, from, to } = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
         return { diff, migrationId: undefined, applied: false, drift: [] };
       }
-      await this._confirmIfNeeded(diff);
+      if (!options.createOnly) await this._confirmIfNeeded(diff);
 
       const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
       // Allocate after all existing generated timestamps, even if the clock moves backwards.
-      const existing = await this._options.files.listFiles();
       let time = Date.now();
       for (const file of existing) {
         const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})?(?:_|$)/.exec(file.id);
@@ -210,6 +187,7 @@ export class Migrator {
       const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
 
       await this._options.files.write(file);
+      if (options.createOnly) return { diff, migrationId: id, applied: false, drift: [] };
       await this._applyOne(file);
       return { diff, migrationId: id, applied: true, drift: await this._describeDrift() };
     });
@@ -285,6 +263,38 @@ export class Migrator {
   }
 
   // ---- 内部 ----------------------------------------------------------------
+
+  private async _validatedHistory(): Promise<{ files: ReadonlyArray<MigrationFile>; pending: ReadonlyArray<MigrationFile> }> {
+    const files = await this._options.files.listFiles();
+    const applied = await this._effectiveApplied();
+    this._assertNoFailed(applied);
+    const appliedById = new Map(applied.map((a) => [a.id, a]));
+
+    // 漂移检测 1：已应用的迁移内容不得再变
+    for (const file of files) {
+      const record = appliedById.get(file.id);
+      if (record != null && record.checksum !== file.checksum) {
+        throw new Error(
+          `Migration "${file.id}" was applied but its file has changed (checksum mismatch): ` +
+            `history ${short(record.checksum)} / disk ${short(file.checksum)}. ` +
+            `Restore the applied file and create a new migration for corrections.`,
+        );
+      }
+    }
+
+    // 漂移检测 2：历史里有、磁盘上没有的迁移
+    const fileIds = new Set(files.map((f) => f.id));
+    const missing = applied.filter((a) => !fileIds.has(a.id));
+    if (missing.length > 0) {
+      throw new Error(
+        `Applied migrations are missing from disk: ${missing.map((m) => m.id).join(", ")}. ` +
+          `Restore the files or correct the migration history manually.`,
+      );
+    }
+
+    const pending = files.filter((f) => !appliedById.has(f.id));
+    return { files, pending };
+  }
 
   /** 再 introspect 一次并与模型对比（空 = 一致） */
   private async _describeDrift(): Promise<ReadonlyArray<SchemaDrift>> {

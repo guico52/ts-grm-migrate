@@ -22,3 +22,7 @@ TS_GRM_TEST_VERSION=0.0.9 corepack yarn test:servers
 The minimum Node version is `24.11.0`. The published `@ts-grm/sql@0.0.13` artifact contains `using` declarations; the checked Node versions 22.18.0, 22.22.3, and 22.23.2 could not parse that syntax. This project does not transform the upstream artifact, so it does not claim Node 22 support. If upstream build output or Node changes, retest in a clean environment before adjusting `engines`.
 
 The migrator reads the internal `tableDefs` of objects returned by ts-grm. These fields are not part of an upstream public type guarantee. Inspect `src/vendor/ts-grm.ts` and run the compatibility matrix when changing versions.
+
+## Optional column patches
+
+`ts-grm-patches@0.1.0` supports only ts-grm `>=0.0.13 <0.0.14`. This does not narrow the migrator's base peer range. The compatibility script installs the companion in the isolated environment at `0.0.13`, sharing that environment's ORM instance. Earlier versions run base tests without companion-only fixtures; the JSON report states whether patches were tested. The `0.0.13` clean package test also verifies companion installation, `--create-only`, deployment, and `check`.

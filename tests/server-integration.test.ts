@@ -134,7 +134,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
       });
       const migrate = async (target: Schema): Promise<void> => {
         const from = await introspector.introspect();
-        const diff = new SchemaDiffer().diff(from, target);
+        const diff = new SchemaDiffer(dialect).diff(from, target);
         await executor.executeStatements(
           ddl.statements(diff, { from, to: target }),
         );
@@ -208,6 +208,15 @@ for (const dialect of ["mssql", "oracle"] as const) {
           ),
         ).toBe(0);
         expect(errors).toEqual([]);
+        expect(await run(["check", "--config", configPath], process.cwd(), { log: () => {}, errorLog: (s) => errors.push(s) })).toBe(0);
+        expect(errors).toEqual([]);
+        if (dialect === "mssql") {
+          const absent = `${schema}_absent`;
+          const readOnly = await createRuntime({ ...config, schema: absent }, process.cwd(), { readOnly: true });
+          try { expect((await readOnly.migrator.checkDrift()).length).toBeGreaterThan(0); }
+          finally { await readOnly.close(); }
+          expect((await executor.query('select schema_id(@p1) as id', [absent])).rows[0]?.id).toBeNull();
+        }
       });
 
       it("循环外键、修改双方列类型后保留数据、再删除整个依赖图", async () => {
@@ -248,7 +257,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         };
         await migrate(next);
         expect(
-          new SchemaDiffer().diff(await introspector.introspect(), next)
+          new SchemaDiffer(dialect).diff(await introspector.introspect(), next)
             .changes,
         ).toEqual([]);
         expect(
@@ -260,6 +269,18 @@ for (const dialect of ["mssql", "oracle"] as const) {
         ).toBe(1);
         await migrate({ tables: [] });
         expect((await introspector.introspect()).tables).toEqual([]);
+      });
+
+      it("unmanaged independent unique indexes survive column evolution", async () => {
+        const base = { ...table("INDEX_OWNER", [col("ID"), col("VALUE")]), indexes: [{ name: "MANUAL_UNIQUE", columns: ["VALUE"], unique: true, predicate: undefined }] };
+        await migrate({ tables: [base] });
+        await executor.query(`insert into ${sql.table("INDEX_OWNER")} values (1, 7)`);
+        const next: Schema = { tables: [{ ...base, indexes: [], indexesManaged: false, columns: base.columns.map(c => c.name === "VALUE" ? { ...c, type: dialect === "mssql" ? "bigint" : "number(19)" } : c) }] };
+        await migrate(next);
+        const actual = await introspector.introspect();
+        expect(actual.tables[0]?.indexes).toEqual(expect.arrayContaining([expect.objectContaining({ name: "MANUAL_UNIQUE", unique: true })]));
+        expect(new SchemaDiffer(dialect).diff(actual, next).changes).toEqual([]);
+        await expect(executor.query(`insert into ${sql.table("INDEX_OWNER")} values (2, 7)`)).rejects.toThrow();
       });
 
       it("默认值含分号和单引号，修改列保留默认值，删除列处理约束", async () => {
@@ -336,7 +357,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         };
         await migrate(target);
         expect(
-          new SchemaDiffer().diff(await introspector.introspect(), target)
+          new SchemaDiffer(dialect).diff(await introspector.introspect(), target)
             .changes,
         ).toEqual([]);
         const next = {
@@ -350,7 +371,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         };
         await migrate(next);
         expect(
-          new SchemaDiffer().diff(await introspector.introspect(), next)
+          new SchemaDiffer(dialect).diff(await introspector.introspect(), next)
             .changes,
         ).toEqual([]);
         await expect(
@@ -376,7 +397,7 @@ for (const dialect of ["mssql", "oracle"] as const) {
         };
         await migrate(target);
         expect(
-          new SchemaDiffer().diff(await introspector.introspect(), target)
+          new SchemaDiffer(dialect).diff(await introspector.introspect(), target)
             .changes,
         ).toEqual([]);
         await executor.query(

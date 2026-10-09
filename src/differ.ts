@@ -2,7 +2,7 @@
  * diff 引擎 —— 对比「现状 schema」与「目标 schema」，产出操作集。
  *
  * 现状（数据库 introspection 结果）与目标（模型推导结果）都是 `Schema` 形状，
- * 所以 differ 本身是方言无关的。对应 prisma-engines 的 `sql_schema_differ.rs`。
+ * 结构操作是方言无关的；默认值等价比较使用方言与列类型。对应 prisma-engines 的 `sql_schema_differ.rs`。
  *
  * 匹配规则（docs/design.md 设计决策）：
  * - 列按名字匹配（列名在表内唯一）；
@@ -18,7 +18,7 @@
  *   见 `src/schema/patches.ts` 的 `autoIncrementManaged`）才参与比较；
  *   未安装补丁时目标态恒 false 表示「不管理」，不能当成「目标态非自增」
  *   去生成 drop identity；
- * - 约束/索引是结构性的，目标态缺失 = 删除（目标态是权威描述）。
+ * - 约束是权威描述；独立索引只在目标态未声明 indexesManaged: false 时管理。
  *
  * 破坏性标注（data-loss 评估）：
  * - DROP_TABLE / DROP_COLUMN / ALTER_COLUMN（类型变化）→ destructive；
@@ -27,6 +27,8 @@
  * 输出顺序：CREATE_TABLE → ALTER_TABLE → DROP_TABLE（新建先行，删除在后）。
  */
 import type { Schema, Table, Column, Constraint, Index } from "./schema/model.js";
+import type { DialectName } from "./dialect.js";
+import { sameDefault } from "./schema/defaults.js";
 import type {
   AlterTable,
   Change,
@@ -43,6 +45,7 @@ export interface Differ {
 }
 
 export class SchemaDiffer implements Differ {
+  constructor(private readonly dialect: DialectName = "postgres") {}
   diff(from: Schema, to: Schema): Diff {
     const fromMap = new Map(from.tables.map((t) => [t.name, t]));
     const toMap = new Map(to.tables.map((t) => [t.name, t]));
@@ -138,12 +141,14 @@ export class SchemaDiffer implements Differ {
       nullable: from.nullable !== to.nullable ? to.nullable : undefined,
       // default：目标 undefined = 不管理；"" = 删除；其他 = 设置（仅当与现状不同）
       default:
-        autoIncrementChanged || sameAutoIncrement
+        sameAutoIncrement
           ? undefined
-          : to.default !== undefined &&
-              (to.default === "" ? from.default !== undefined : !sameDefault(to.default, from.default))
-            ? to.default
-            : undefined,
+          : autoIncrementChanged && to.autoIncrement
+            ? (from.default !== undefined ? "" : undefined)
+            : to.default !== undefined &&
+                (to.default === "" ? from.default !== undefined : !sameDefault(to.default, from.default, to.type, this.dialect))
+              ? to.default
+              : undefined,
       autoIncrement: autoIncrementChanged ? to.autoIncrement : undefined,
     };
     const changed =
@@ -174,6 +179,7 @@ export class SchemaDiffer implements Differ {
 
   /** 索引：内容匹配（唯一性 + 列集合 + 谓词），名字不算内容；DROP 先于 ADD 执行 */
   private _indexChanges(from: Table, to: Table): Array<IndexChange> {
+    if (to.indexesManaged === false) return [];
     const changes: Array<IndexChange> = [];
     const managedFrom = from.indexes.filter((index) => !index.implicit);
     const fromKeys = new Set(from.indexes.map(indexKey));
@@ -194,6 +200,9 @@ export class SchemaDiffer implements Differ {
   /** ALTER_TABLE 中的破坏性子集 */
   private _destructiveOf(alter: AlterTable): Array<DestructiveChange> {
     const destructive: Array<DestructiveChange> = [];
+    for (const idx of alter.indexes) {
+      if (idx.kind === "DROP_INDEX" && idx.index.unique) destructive.push({ kind: "DROP_INDEX", table: alter.table, index: idx.index.name });
+    }
     for (const col of alter.columns) {
       switch (col.kind) {
         case "DROP_COLUMN":
@@ -235,86 +244,4 @@ function indexKey(index: Index): string {
   return `${index.unique ? "uniq" : "idx"}:${index.columns.join(",")}${
     index.predicate != null ? `:${index.predicate}` : ""
   }`;
-}
-
-/**
- * 默认值的等价判定。
- *
- * 目标态由模型侧渲染，现状来自 catalog，同一语义常有不同写法：
- * - catalog 常常把整个表达式包一层括号（SQL Server、MySQL）；
- * - PostgreSQL 会补出类型 cast（`'active'::character varying`）；
- * - SQL Server 的字符串字面量带 `N` 前缀；
- * - 数值的写法可能不同（`0` / `0.00`，MySQL 把数值默认值也加引号）。
- *
- * 因此先分词（引号/标识符/数字/符号，不拆散引号内容），再：去外层括号、
- * 去 `N` 前缀、去 `::<type>` cast，把非引号 token 折叠为小写（SQL 关键字与函数名
- * 大小写不敏感，MySQL 会把 `CURRENT_TIMESTAMP` 存成小写），最后数值按数值比较。
- *
- * 只做**等价写法**归一，不改变语义：字符串字面量与双引号标识符保留原文，
- * 也不会把 `'0'` 当成文本 `0` 以外的含义。
- */
-function sameDefault(left: string, right: string | undefined): boolean {
-  if (right === undefined) return false;
-  const a = canonicalDefault(left);
-  const b = canonicalDefault(right);
-  if (a === b) return true;
-  const na = numericOf(a);
-  const nb = numericOf(b);
-  return na !== undefined && nb !== undefined && na === nb;
-}
-
-const DEFAULT_TOKEN = /'(?:''|[^'])*'|"(?:""|[^"])*"|::|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|[^\s]/g;
-
-function canonicalDefault(value: string): string {
-  const tokens = value.match(DEFAULT_TOKEN) ?? [];
-  // 外层括号（catalog 常把整个表达式包一层；可能嵌套）
-  while (tokens[0] === "(" && tokens.at(-1) === ")") {
-    let depth = 0;
-    if (
-      !tokens.every((t, i) => {
-        if (t === "(") depth++;
-        if (t === ")") depth--;
-        return depth > 0 || i === tokens.length - 1;
-      })
-    ) {
-      break;
-    }
-    tokens.shift();
-    tokens.pop();
-  }
-  const result: Array<string> = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    // SQL Server 的 unicode 字符串前缀 N'...'：前缀不参与语义
-    if (/^[Nn]$/.test(token) && tokens[i + 1]?.startsWith("'")) {
-      continue;
-    }
-    // `::<type>` cast：类型名可能多词、带括号参数（character varying / numeric(10, 2)）
-    if (token === "::") {
-      i++;
-      while (i + 1 < tokens.length && isCastToken(tokens[i + 1]!)) {
-        i++;
-      }
-      continue;
-    }
-    result.push(token.startsWith("'") || token.startsWith('"') ? token : token.toLowerCase());
-  }
-  return result.join(" ");
-}
-
-function isCastToken(token: string): boolean {
-  return (
-    /^[A-Za-z_$][\w$]*$/.test(token) ||
-    /^\d+$/.test(token) ||
-    token === "(" ||
-    token === ")" ||
-    token === ","
-  );
-}
-
-/** 纯数值（可带引号）→ 数值；否则 undefined */
-function numericOf(value: string): number | undefined {
-  const match = /^-?\d+(?:\.\d+)?$/.exec(value) ?? /^'(-?\d+(?:\.\d+)?)'$/.exec(value);
-  if (match == null) return undefined;
-  return Number(match[1] ?? match[0]);
 }

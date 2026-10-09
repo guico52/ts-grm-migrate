@@ -138,6 +138,33 @@ describePg('列级补丁（真实 PostgreSQL）', () => {
     });
   }, 60_000);
 
+  it('textual digits and large integer default changes converge without loss', async () => {
+    await inFreshSchema(async client => {
+      const generator = new PostgresDdlGenerator();
+      const target = await targetSchema();
+      for (const statement of generator.createStatements(target)) await client.query(statement);
+      const introspector = new PostgresIntrospector({ query: client, schema: TEST_SCHEMA });
+      const differ = new SchemaDiffer("postgres");
+      for (const literal of ["'01'", "'1'"]) {
+        const from = await introspector.introspect();
+        const to: Schema = { tables: target.tables.map(t => ({ ...t, columns: t.columns.map(c => c.name === 'status' ? { ...c, default: literal } : c) })) };
+        const statements = generator.statements(differ.diff(from, to), { from, to });
+        expect(statements.some(s => s.includes(`set default ${literal}`))).toBe(true);
+        for (const statement of statements) await client.query(statement);
+        expect(differ.diff(await introspector.introspect(), to).changes).toEqual([]);
+      }
+      await client.query('create table exact_default (value bigint not null default 9007199254740992)');
+      const from = await introspector.introspect();
+      const to: Schema = { tables: from.tables.map(t => t.name === 'exact_default' ? { ...t, columns: t.columns.map(c => ({ ...c, default: '9007199254740993' })) } : t) };
+      const statements = generator.statements(differ.diff(from, to), { from, to });
+      expect(statements).toContain('alter table "exact_default" alter column "value" set default 9007199254740993');
+      for (const statement of statements) await client.query(statement);
+      await client.query('insert into exact_default default values');
+      expect((await client.query('select value::text from exact_default')).rows).toEqual([{ value: '9007199254740993' }]);
+      expect(differ.diff(await introspector.introspect(), to).changes).toEqual([]);
+    });
+  });
+
   it('去掉默认值声明 → 生成 drop default（模型是权威）', async () => {
     await inFreshSchema(async (client) => {
       // 先按「有默认值」建好，再用一个没有默认值的同构目标态去 diff

@@ -41,9 +41,7 @@ const NOT_MANAGED: ColumnPatchMetadata = {
 /**
  * 读取列 prop 上的扩展元数据。
  *
- * getter 由补丁安装，读取时可能抛错（例如上游换了实现）；这里吞掉异常并
- * 降级为「不管理」—— 元数据读取失败不该让整个迁移崩掉，而且降级方向是
- * 保守的（不管理 = 不生成任何默认值/自增变更）。
+ * getter 读取失败必须中止：不能把失败解释成删除默认值或取消自增。
  */
 export function readColumnPatch(prop: unknown): ColumnPatchMetadata {
   if (prop == null || (typeof prop !== 'object' && typeof prop !== 'function')) {
@@ -74,17 +72,15 @@ function hasMember(target: object, key: string): boolean {
 function readMember(target: object, key: string): unknown {
   try {
     return (target as Record<string, unknown>)[key];
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(`Failed to read column patch metadata ${key}: ${(error as Error).message}`, { cause: error });
   }
 }
 
 function readBoolean(target: object, key: string): boolean {
-  try {
-    return (target as Record<string, unknown>)[key] === true;
-  } catch {
-    return false;
-  }
+  const value = readMember(target, key);
+  if (typeof value !== 'boolean') throw new Error(`Invalid column patch metadata ${key}: expected boolean`);
+  return value;
 }
 
 /** 渲染默认值所需的上下文（错误信息与方言字面量都要用到） */
@@ -221,7 +217,7 @@ function renderLiteral(
   if (typeof value === 'string') {
     // MySQL 的默认值经 introspect 统一加引号（含数值），这里保持同一写法，
     // 否则目标态与现状永远对不上（见 src/introspector/mysql.ts）。
-    return quoteStringLiteral(value);
+    return `${context.dialect === 'mssql' ? 'N' : ''}${quoteStringLiteral(value)}`;
   }
   if (typeof value === 'boolean') {
     switch (context.dialect) {

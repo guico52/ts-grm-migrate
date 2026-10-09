@@ -89,7 +89,12 @@ function toColumn(
   tableName: string,
 ): Column {
   const name = toPhysicalName(columnDef.name, dialect);
-  const patch = readColumnPatch(columnDef.prop);
+  let patch;
+  try {
+    patch = readColumnPatch(columnDef.prop);
+  } catch (error) {
+    throw new Error(`Invalid patch metadata for column ${tableName}.${name}: ${(error as Error).message}`, { cause: error });
+  }
   const autoIncrement = patch.autoIncrementManaged && patch.autoIncrement;
   if (autoIncrement && patch.default !== undefined) {
     throw new Error(
@@ -181,6 +186,7 @@ function toTable(tableDef: TableDef, driver: SchemaDriver, dialect: DialectName)
     constraints: tableDef.constraints.map((c) => toConstraint(c, driver, dialect)),
     // ts-grm 模型无索引概念，migrate 侧补充声明 / introspection 另行填充
     indexes: [],
+    indexesManaged: false,
   };
 }
 

@@ -1,23 +1,13 @@
-/**
- * SQLite DDL 生成器。
- *
- * SQLite 的 ALTER 能力极弱：只能 ADD COLUMN（且限制多），不能 drop column /
- * 改类型 / 改约束。因此：
- * - 纯 ADD_COLUMN → 原地 `alter table add column`；
- * - 其余列变更 / 任何约束变更 → **重建表路径**：
- *   `drop 旧表 + 原生建表（目标态 TableDef）+ 数据迁移 TODO`，
- *   建表复用 ts-grm `toCreationStatements`（与 ts-grm 建表语义零漂移）；
- * - 索引变更：SQLite 支持独立 create/drop index，不触发重建。
- *
- * 重建表需要目标表结构，因此依赖 DdlGeneratorOptions.tableDefs（生成期持有）；
- * 缺失时抛错提示（无法从 diff 反推完整目标结构）。
+/** SQLite supports ordinary CREATE TABLE, ADD COLUMN, and independent indexes.
+ * Column/constraint changes requiring a rebuild fail explicitly until safe data,
+ * foreign-key, index and trigger preservation is implemented.
  */
 import type { AlterTable, ColumnChange, ConstraintChange, IndexChange } from "../diff/types.js";
 import type { Diff } from "../diff/types.js";
 import type { Schema, Table as SchemaTable } from "../schema/model.js";
 import type { SchemaDriver } from "../schema/adapter.js";
 import type { TableDef } from "../vendor/ts-grm.js";
-import { columnSql, createTableSql, quoteIdentifier } from "../ddl.js";
+import { columnSql, createTableSql, indexSql, quoteIdentifier } from "../ddl.js";
 import type { DdlGenerator, DdlGeneratorOptions } from "../ddl.js";
 import type { Dialect } from "../introspector.js";
 
@@ -61,7 +51,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
     // 不能复用 ts-grm 原生建表：原生 toCreationStatements 不表达这两个能力，会静默丢掉它们。
     // 自建路径的 SQLite 细节（AUTOINCREMENT 必须内联在主键上）见 src/ddl.ts。
     if (this._requiresSelfBuiltTable(table)) {
-      return [createTableSql(table, "sqlite")];
+      return [createTableSql(table, "sqlite"), ...table.indexes.map(index => indexSql(table.name, index))];
     }
     const tableDef = this._options.tableDefs?.get(table.name);
     if (tableDef != null) {
@@ -70,9 +60,9 @@ export class SqliteDdlGenerator implements DdlGenerator {
           `Creating table ${table.name} requires a dialect driver in DdlGeneratorOptions.driver`,
         );
       }
-      return tableDef.toCreationStatements(this._options.driver);
+      return [...tableDef.toCreationStatements(this._options.driver), ...table.indexes.map(index => indexSql(table.name, index))];
     }
-    return [createTableSql(table, "sqlite")];
+    return [createTableSql(table, "sqlite"), ...table.indexes.map(index => indexSql(table.name, index))];
   }
 
   /** 表里是否有模型侧声明、而原生建表表达不了的列属性 */
@@ -144,7 +134,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
       switch (idx.kind) {
         case "ADD_INDEX":
           sql.push(
-            `create ${idx.index.unique ? "unique " : ""}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(", ")})`,
+            `create ${idx.index.unique ? "unique " : ""}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(", ")})${idx.index.predicate ? ` where ${idx.index.predicate}` : ""}`,
           );
           break;
         case "DROP_INDEX":

@@ -10,12 +10,14 @@ Commands:
   deploy                       Apply pending migrations
   push                         Sync the database without migration history
   status                       Show migration status
+  check                        Check model/database differences (exit 1 on drift)
   resolve --applied <id>       Mark a migration as applied
   resolve --rolled-back <id>   Mark a migration as rolled back
 
 Options:
   -n, --name <name>            Migration name (dev)
   --config <path>              Configuration file path
+  --create-only                Generate SQL without applying it (dev)
   --force                      Skip destructive-change confirmation
   --detail                     Show steps, SQL and lock information
   --lang <en|zh-CN>            Output language (overrides config)
@@ -32,6 +34,9 @@ Configuration files:
   cancelled: "Cancelled.",
   error: "Error",
   devApplied: (id: string, target: string) => `Generated and applied migration ${id} to ${target}.`,
+  createOnlyDev: "--create-only is only supported by dev.",
+  devCreated: (id: string) => `Generated migration ${id}; review the SQL, then run tgm deploy.`,
+  checkPassed: (target: string) => `${target} matches the model.`,
   devNoop: (target: string) => `${target} is up to date; no migration needed.`,
   deployApplied: (count: number, target: string) => `Applied ${count} migration${count === 1 ? "" : "s"} to ${target}.`,
   deployNoop: (target: string) => `No pending migrations for ${target}.`,
@@ -55,6 +60,7 @@ Configuration files:
   destructive: "Potentially destructive changes:",
   dropTable: (table: string) => `  - Drop table ${table}`,
   dropColumn: (table: string, column: string) => `  - Drop column ${table}.${column}`,
+  dropIndex: (table: string, index: string) => `  - Drop unique index ${table}.${index} (removes uniqueness enforcement)`,
   alterColumn: (table: string, column: string, type: string) => `  - Alter column type ${table}.${column} → ${type}`,
   detailProcessLock: (path: string) => `Acquired process lock: ${path}`,
   detailDatabaseLock: (key: string) => `Acquired database lock: ${key}`,
@@ -76,12 +82,14 @@ const zhCN = {
   deploy                       应用待处理迁移
   push                         同步数据库，不记录迁移历史
   status                       查看迁移状态
+  check                        检查模型与数据库差异（有差异时退出码为 1）
   resolve --applied <id>       标记迁移已应用
   resolve --rolled-back <id>   标记迁移已回滚
 
 选项:
   -n, --name <name>            迁移名（dev）
   --config <path>              配置文件路径
+  --create-only                仅生成 SQL，不应用迁移（dev）
   --force                      跳过破坏性变更确认
   --detail                     显示执行步骤、SQL 和锁信息
   --lang <en|zh-CN>            输出语言（覆盖配置）
@@ -98,6 +106,9 @@ const zhCN = {
   cancelled: "已取消。",
   error: "错误",
   devApplied: (id: string, target: string) => `已在 ${target} 生成并应用迁移 ${id}。`,
+  createOnlyDev: "--create-only 仅用于 dev。",
+  devCreated: (id: string) => `已生成迁移 ${id}；审核 SQL 后运行 tgm deploy。`,
+  checkPassed: (target: string) => `${target} 与模型一致。`,
   devNoop: (target: string) => `${target} 已是最新，无需迁移。`,
   deployApplied: (count: number, target: string) => `已在 ${target} 应用 ${count} 个迁移。`,
   deployNoop: (target: string) => `${target} 没有待应用的迁移。`,
@@ -121,6 +132,7 @@ const zhCN = {
   destructive: "检测到可能丢失数据的变更：",
   dropTable: (table: string) => `  - 删除表 ${table}`,
   dropColumn: (table: string, column: string) => `  - 删除列 ${table}.${column}`,
+  dropIndex: (table: string, index: string) => `  - 删除唯一索引 ${table}.${index}（取消唯一性约束）`,
   alterColumn: (table: string, column: string, type: string) => `  - 修改列类型 ${table}.${column} → ${type}`,
   detailProcessLock: (path: string) => `已获取进程锁：${path}`,
   detailDatabaseLock: (key: string) => `已获取数据库锁：${key}`,

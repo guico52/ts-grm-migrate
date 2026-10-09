@@ -11,4 +11,6 @@ Before each release:
 3. Run `npm publish --dry-run --tag next` and inspect entry points, type declarations, licenses, third-party notices, and the README. Confirm the worktree state and version to be published.
 4. The maintainer signs in to npm, runs `npm publish --tag next`, and then checks the npm registry for the version and dist-tag.
 
-Before making the GitHub repository public for the first time, fill in real `repository`, `bugs`, and `homepage` URLs in `package.json`. Check Git history and the package contents for credentials and local configuration before publishing.
+Confirm that the `repository`, `bugs`, and `homepage` URLs in `package.json` point to the maintained repository. Check Git history and the package contents for credentials and local configuration before publishing.
+
+Column-patch changes must pass the companion tests at `0.0.13` in addition to base compatibility at `0.0.9`. Confirm `--create-only` writes no history, `check` has no database writes, and independent indexes survive model evolution. Apply the complete history to an isolated empty database before releasing changes to generated SQL.

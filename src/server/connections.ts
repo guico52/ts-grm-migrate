@@ -9,7 +9,7 @@ import { ServerSql } from "./sql.js";
  * @see https://github.com/tediousjs/node-mssql/blob/master/lib/base/connection-pool.js
  * @see https://github.com/tediousjs/node-mssql/blob/master/lib/base/transaction.js
  */
-export async function openSqlServer(database: DatabaseConfig, schema: string) {
+export async function openSqlServer(database: DatabaseConfig, schema: string, readOnly = false) {
   let runtime: typeof import("mssql");
   try {
     runtime = await import("mssql");
@@ -75,7 +75,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string) {
     const { rows } = await executor.query("select schema_id(@p1) as id", [
       schema,
     ]);
-    if (rows[0]?.id == null) {
+    if (rows[0]?.id == null && !readOnly) {
       const sql = new ServerSql("mssql", schema);
       await executor.query(
         `exec(${sql.literal(`create schema ${sql.identifier(schema)}`)})`,
