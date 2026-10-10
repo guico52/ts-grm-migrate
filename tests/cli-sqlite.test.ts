@@ -195,4 +195,19 @@ describe("CLI 端到端（SQLite）", () => {
     expect(await runCli(["--help", "--config", configPath])).toBe(0);
     expect(logs.join("\n")).toContain("Usage:");
   });
+  it("push --dry-run previews SQL without creating history or changing database bytes", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const db = new Database(dbFile); db.exec("create table temp_extra(x integer)"); db.close();
+    const before = await readFile(dbFile);
+    const code = await runCli(["push", "--dry-run", "--config", configPath]);
+    expect(code).toBe(0);
+    expect(logs.join("\n")).toContain('drop table "temp_extra"');
+    expect(await readFile(dbFile)).toEqual(before);
+  });
+
+  it("push refuses pending migrations instead of bypassing deploy", async () => {
+    await runCli(["dev", "--create-only", "--config", configPath]);
+    await expect(runCli(["push", "--force", "--config", configPath])).rejects.toThrow(/Pending migrations/);
+  });
+
 });

@@ -9,7 +9,7 @@ import type { Schema, Table as SchemaTable } from "../schema/model.js";
 import type { SchemaDriver } from "../schema/adapter.js";
 import type { TableDef } from "../vendor/ts-grm.js";
 import { columnSql, createTableSql, indexSql, quoteIdentifier } from "../ddl.js";
-import type { DdlGenerator, DdlGeneratorOptions } from "../ddl.js";
+import type { DdlContext, DdlGenerator, DdlGeneratorOptions } from "../ddl.js";
 import type { Dialect } from "../introspector.js";
 
 const q = quoteIdentifier;
@@ -19,23 +19,36 @@ export class SqliteDdlGenerator implements DdlGenerator {
 
   constructor(private readonly _options: DdlGeneratorOptions = {}) {}
 
-  statements(diff: Diff): ReadonlyArray<string> {
+  statements(diff: Diff, context?: DdlContext): ReadonlyArray<string> {
     const sql: Array<string> = [];
+    const drops = diff.changes.filter(c => c.kind === "DROP_TABLE");
+    const ordered = new Set<string>();
+    const visiting = new Set<string>();
+    const visit = (name: string): void => {
+      if (ordered.has(name)) return;
+      if (visiting.has(name)) throw diagnostic("sqlite_cycle", name);
+      visiting.add(name);
+      for (const table of context?.from.tables ?? []) {
+        if (drops.some(d => d.table === table.name) && table.constraints.some(c => c.kind === "FOREIGN_KEY" && c.referencedTable === name)) visit(table.name);
+      }
+      visiting.delete(name); ordered.add(name);
+    };
+    for (const drop of drops) visit(drop.table);
     for (const change of diff.changes) {
       switch (change.kind) {
         case "CREATE_TABLE":
           sql.push(...this._createTable(change.table));
           break;
         case "DROP_TABLE":
-          // 不处理 change.foreignKeyNames：SQLite 没有 `alter table ... drop
-          // constraint`，且它删表时不校验外键依赖，不存在 PG 那个问题。
-          sql.push(`drop table ${q(change.table)}`);
+          // DROP TABLE is deferred until referencing tables have been removed.
+          // @see https://www.sqlite.org/lang_droptable.html
           break;
         case "ALTER_TABLE":
           sql.push(...this._alterTable(change));
           break;
       }
     }
+    sql.push(...[...ordered].map(name => `drop table ${q(name)}`));
     return sql;
   }
 
@@ -48,6 +61,9 @@ export class SqliteDdlGenerator implements DdlGenerator {
   }
 
   private _createTable(table: SchemaTable): ReadonlyArray<string> {
+    if (table.constraints.some(c => c.kind === "FOREIGN_KEY" && c.deferrable)) {
+      throw diagnostic("unsupported_structure", table.name, diagnostic("structure_deferred_fk"));
+    }
     // 模型侧声明了 default / autoIncrement（`ts-grm-patches`，见 src/schema/patches.ts）时
     // 不能复用 ts-grm 原生建表：原生 toCreationStatements 不表达这两个能力，会静默丢掉它们。
     // 自建路径的 SQLite 细节（AUTOINCREMENT 必须内联在主键上）见 src/ddl.ts。

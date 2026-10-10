@@ -17,3 +17,9 @@
 
 发布包将 `@ts-grm/core` 和 `@ts-grm/sql` 保留为外部 peerDependencies，不嵌入上游实现。
 其他数据库驱动也为外部依赖，其许可证由各自包提供。
+
+## proper-lockfile
+
+本地原子租约使用 MIT 许可的外部依赖 `proper-lockfile`。其依赖的许可证由各自发布包提供。
+
+- @see https://github.com/moxystudio/node-proper-lockfile

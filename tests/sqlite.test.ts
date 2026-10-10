@@ -27,7 +27,7 @@ describe("normalizeSqliteType：与 ts-grm SqliteDriver.typeName 对齐", () => 
     expect(normalizeSqliteType("VARCHAR(50)")).toBe("text");
     expect(normalizeSqliteType("CLOB")).toBe("text");
     expect(normalizeSqliteType("DOUBLE PRECISION")).toBe("real");
-    expect(normalizeSqliteType("NUMERIC(10,2)")).toBe("real");
+    expect(normalizeSqliteType("NUMERIC(10,2)")).toBe("numeric");
     expect(normalizeSqliteType("BLOB")).toBe("blob");
     // 大小写与前后的空白都要吃掉
     expect(normalizeSqliteType("  Integer ")).toBe("integer");
@@ -195,7 +195,7 @@ describe("SqliteDdlGenerator 的行为边界", () => {
   const diffWith = (changes: Schema extends never ? never : Parameters<SqliteDdlGenerator["statements"]>[0]["changes"]) =>
     ({ changes, destructive: [] });
 
-  it("drop table 直接执行（SQLite 删表不校验外键依赖）", () => {
+  it("drop table without incoming dependencies", () => {
     const sql = new SqliteDdlGenerator().statements(
       diffWith([{ kind: "DROP_TABLE", table: "OLD", foreignKeyNames: ["old_fk"] }]),
     );

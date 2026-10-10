@@ -13,3 +13,9 @@ The `TableDef`, `ColumnDef`, and constraint type declarations in `src/vendor/ts-
 - [Full Apache-2.0 license](LICENSES/Apache-2.0.txt)
 
 The published package keeps `@ts-grm/core` and `@ts-grm/sql` as external peer dependencies; it does not bundle upstream implementations. Database drivers are external dependencies with their own licenses.
+
+## proper-lockfile
+
+Atomic renewable local leases use the external MIT-licensed `proper-lockfile` package. Its dependencies retain their own licenses in their distributed packages.
+
+- @see https://github.com/moxystudio/node-proper-lockfile

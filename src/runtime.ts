@@ -128,7 +128,7 @@ async function createConnection(
 ): Promise<DialectConnection> {
   if (dialect === "sqlite") {
     const database = await openSqlite(config, cwd, readOnly);
-    const executor = new SqliteSqlExecutor(database);
+    const executor = new SqliteSqlExecutor(database, config.database.file === ":memory:" || !config.database.file ? undefined : path.resolve(cwd, config.database.file));
     return {
       executor,
       introspector: new SqliteIntrospector({ query: executor }),

@@ -22,21 +22,25 @@ export interface PgClientLike {
     sql: string,
     params?: ReadonlyArray<unknown>,
   ): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }>;
-  release(): void;
+  release(error?: Error | boolean): void;
 }
 
 export class PostgresSqlExecutor implements SqlExecutor {
+  private _locked: PgClientLike | undefined;
+  private _acquiring = false;
   constructor(private readonly _pool: PgPoolLike) {}
 
   async query(
     sql: string,
     params?: ReadonlyArray<unknown>,
   ): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
-    return await this._pool.query(sql, params);
+    return await (this._locked ?? this._pool).query(sql, params);
   }
 
   async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
-    const client = await this._pool.connect();
+    const client = this._locked ?? await this._pool.connect();
+    const owned = client !== this._locked;
+    let broken: Error | undefined;
     try {
       await client.query("begin");
       for (const sql of statements) {
@@ -45,26 +49,41 @@ export class PostgresSqlExecutor implements SqlExecutor {
       await complete?.(client);
       await client.query("commit");
     } catch (e) {
-      await client.query("rollback").catch(() => undefined);
+      try { await client.query("rollback"); } catch (rollbackError) {
+        broken = asError(rollbackError);
+        throw diagnostic("executor_postgres_rollback", asError(e), broken);
+      }
       throw diagnostic("executor_postgres_1", asError(e));
     } finally {
-      client.release();
+      if (owned) client.release(broken);
     }
   }
 
   async acquireMigrationLock(key: string): Promise<() => Promise<void>> {
-    // advisory lock 是会话级：必须占用同一条连接，直到解锁或连接断开
-    const client = await this._pool.connect();
+    if (this._locked || this._acquiring) throw diagnostic("lock_busy", key);
+    this._acquiring = true;
+    // The same session owns the lock and all migration work.
+    let client: PgClientLike;
+    try {
+      client = await this._pool.connect();
+    } catch (error) {
+      this._acquiring = false;
+      throw error;
+    }
     try {
       // **必须先设锁超时**：`pg_advisory_lock` 默认无限等待，一旦锁被别的会话
       // 持有（残留连接、异常退出的实例）就会永久挂住，表现为测试莫名超时。
       // Prisma 同样带 ADVISORY_LOCK_TIMEOUT。
       await client.query("set lock_timeout = '10s'");
       await client.query("select pg_advisory_lock(hashtext(current_database()), hashtext(current_schema() || ':' || $1))", [key]);
+      await client.query("reset lock_timeout");
+      this._locked = client;
     } catch (e) {
       await client.query("reset lock_timeout").catch(() => undefined);
-      client.release();
+      client.release(asError(e));
       throw diagnostic("executor_postgres_2", asError(e));
+    } finally {
+      this._acquiring = false;
     }
     let released = false;
     return async () => {
@@ -72,15 +91,14 @@ export class PostgresSqlExecutor implements SqlExecutor {
         return;
       }
       released = true;
+      this._locked = undefined;
       try {
-        await client.query("select pg_advisory_unlock(hashtext(current_database()), hashtext(current_schema() || ':' || $1))", [key]);
-      } catch {
-        // 解锁失败通常意味着连接已断（锁会随会话结束自动释放），
-        // 不掩盖主流程里真正的错误
-      } finally {
-        // 归还前复位，避免这条连接的下一个使用者继承 lock_timeout
-        await client.query("reset lock_timeout").catch(() => undefined);
+        const result = await client.query("select pg_advisory_unlock(hashtext(current_database()), hashtext(current_schema() || ':' || $1)) as unlocked", [key]);
+        if (result.rows[0]?.unlocked !== true) throw diagnostic("lock_busy", key);
         client.release();
+      } catch (error) {
+        client.release(asError(error));
+        throw error;
       }
     };
   }

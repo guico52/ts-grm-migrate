@@ -61,6 +61,8 @@ export { PostgresIntrospector } from "./introspector/postgres.js";
 export type { PostgresIntrospectorOptions } from "./introspector/postgres.js";
 export type { DdlGenerator, DdlGeneratorOptions } from "./ddl.js";
 export { PostgresDdlGenerator } from "./ddl/postgres.js";
+export { SqliteSqlExecutor } from "./executor/sqlite.js";
+export { SqliteIntrospector } from "./introspector/sqlite.js";
 export { SqliteDdlGenerator } from "./ddl/sqlite.js";
 export {
   checksumOf,

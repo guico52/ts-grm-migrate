@@ -17,7 +17,7 @@ npx tgm check
 
 `dev` and `dev --create-only` both validate applied-file checksums and missing files. They refuse to generate another migration while pending files exist; run `deploy` first. This also applies after pulling a teammate's migrations. After deployment, never edit the applied file; add a new migration instead.
 
-`dev` without `--create-only` remains the shortcut for generating and applying a migration immediately. `push` is intended for disposable experimentation and writes no history. To start reproducible migration history after experimenting with `push`, generate the initial migration against a fresh empty database.
+`dev` without `--create-only` remains the shortcut for generating and applying a migration immediately. `push` synchronizes the current model-managed structure and writes no history. Pending, failed, missing or modified migration files block it; resolve the migration workflow first. `push --dry-run` previews the SQL without creating schemas or writing database/history state (an existing SQLite file is required). Applied migrations must form a continuous prefix of the ordered files. To start reproducible migration history after experimenting with `push`, generate the initial migration against a fresh empty database.
 
 ## Custom SQL and unsupported automatic changes
 
@@ -63,6 +63,10 @@ Model tables, columns, and constraints are authoritative. Without `ts-grm-patche
 npx tgm check       # 0: model matches; 1: drift or an error
 ```
 
-`check` reads the database without creating schemas, changing tables, or writing history. For SQLite it requires the specified file to exist. `dev`, `deploy`, and `push` report remaining drift as a warning and retain their successful execution exit code. CHECK differences are reported too: unproven expression equivalence is not silently ignored. Conservative comparisons can report equivalent expressions; inspect these cases rather than assuming every warning is a migration failure.
+`check` reads the database without creating schemas, changing tables, or writing history. For SQLite it requires the specified file to exist. `dev` and `deploy` report remaining drift as a warning. `push` returns 1 if the post-sync comparison still finds differences. Cancellation returns 1. CHECK differences are reported too: unproven expression equivalence is not silently ignored. Conservative comparisons can report equivalent expressions; inspect these cases rather than assuming every warning is a migration failure.
 
 There is deliberately no shadow database. Replaying a second database would add provisioning, permissions, execution time, and dialect-specific management to a small ORM companion. The chosen checks cover applied-file integrity and database-versus-model differences; they do not prove that all migration history reproduces the database. Validate releases by applying the full history to an isolated empty database yourself.
+
+Supported CHECK expressions round-trip through catalog formatting; other expressions are compared conservatively. SQLite retains NUMERIC affinity separately from REAL, reads CHECK constraints and partial index predicates, and drops referencing tables before their parents. Cyclic table drops are rejected. Special indexes are retained outside model index management, but operations that could rewrite their columns or manage those indexes are rejected. Generated/hidden columns and unsupported constraint semantics are rejected rather than flattened into ordinary structures.
+
+Local locks use atomic renewable directory leases (`proper-lockfile`); crashed leases expire after 10 seconds. PostgreSQL holds the lock and runs all work on the same session. SQLite file databases additionally lock the canonical file path across checkouts; Native better-sqlite3 filenames are detected automatically; wrappers without a `name` must supply the file path as the second `SqliteSqlExecutor` constructor argument. Never remove a live lease manually.

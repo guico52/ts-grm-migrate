@@ -22,7 +22,7 @@ import type { Runtime } from "./runtime.js";
 
 export type { ParsedArgs, RunOptions } from "./cli/types.js";
 
-const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail", "create-only"]);
+const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail", "create-only", "dry-run"]);
 
 /** 解析 argv：`--k v` / `--k=v` / `-h` / 位置参数（第一个位置参数是命令） */
 /**
@@ -122,7 +122,7 @@ export async function run(
   m = messages(language);
   options.onLanguage?.(language);
 
-  for (const flag of ["detail", "create-only"]) {
+  for (const flag of ["detail", "create-only", "dry-run", "force"]) {
     if (flags.has(flag) && flags.get(flag) !== true) {
       errorLog(m.invalidOption(flag));
       return 1;
@@ -133,11 +133,16 @@ export async function run(
     return 1;
   }
 
+  if (flags.has("dry-run") && command !== "push") { errorLog(m.dryRunPush); return 1; }
+
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
     driftLanguage: language,
-    readOnly: command === "check",
-    ...(detail ? { onProgress: (event: MigrationProgress) => reportProgress(event, log, m) } : {}),
+    readOnly: command === "check" || command === "status" || flags.has("dry-run"),
+    onProgress: (event: MigrationProgress) => {
+      if (event.kind === "data-condition") errorLog(m.dataCondition(event.table));
+      else if (detail) reportProgress(event, log, m);
+    },
   });
   const dbLabel = describeDatabase(config, m);
 
@@ -159,7 +164,7 @@ export async function run(
       case "deploy":
         return await runDeploy(runtime, dbLabel, log, errorLog, m, detail);
       case "push":
-        return await runPush(runtime, dbLabel, log, errorLog, m, detail);
+        return await runPush(runtime, dbLabel, log, errorLog, m, detail, flags.has("dry-run"));
       case "status":
         return await runStatus(runtime, log, m);
       case "resolve":
@@ -169,9 +174,9 @@ export async function run(
     }
   } catch (e) {
     if (e instanceof MigrationAbortedError) {
-      // 使用者主动取消：不是失败，不让调用方处理
+      // Cancellation did not complete the requested operation.
       log(m.cancelled);
-      return 0;
+      return 1;
     }
     throw e;
   } finally {
@@ -181,6 +186,7 @@ export async function run(
 
 function reportProgress(event: MigrationProgress, log: (message: string) => void, m: CliMessages): void {
   switch (event.kind) {
+    case "data-condition": break;
     case "process-lock": log(m.detailProcessLock(event.path)); break;
     case "database-lock": log(m.detailDatabaseLock(event.key)); break;
     case "sql": log(m.detailSql(event.sql)); break;
@@ -241,15 +247,21 @@ async function runPush(
   errorLog: (message: string) => void,
   m: CliMessages,
   detail: boolean,
+  dryRun: boolean,
 ): Promise<number> {
-  const result = await runtime.migrator.push();
+  const result = await runtime.migrator.push({ dryRun });
+  if (dryRun) {
+    for (const sql of result.statements) log(sql);
+    if (!result.statements.length) log(m.pushNoop(dbLabel));
+    return 0;
+  }
   if (result.statements.length === 0) {
     log(m.pushNoop(dbLabel));
   } else {
     log(m.pushApplied(result.statements.length, dbLabel));
   }
   reportDrift(result.drift, dbLabel, log, errorLog, m, detail);
-  return 0;
+  return result.drift.length ? 1 : 0;
 }
 
 /** 数据库的可读标识（用于对账消息里指认「哪个库」） */
@@ -262,7 +274,7 @@ function describeDatabase(config: MigrateConfig, m: CliMessages): string {
 }
 
 /**
- * 输出对账结果。已知限制（如 CHECK 表达式）降级为一行提示，不当作异常。
+ * Report managed differences without hiding unproven CHECK equivalence.
  */
 function reportDrift(
   drift: ReadonlyArray<SchemaDrift>,

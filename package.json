@@ -75,6 +75,7 @@
     "@types/node": "^25.0.3",
     "@types/oracledb": "^7",
     "@types/pg": "^8.20.0",
+    "@types/proper-lockfile": "4.1.4",
     "@vitest/coverage-v8": "4.0.16",
     "better-sqlite3": "^13.0.3",
     "mssql": "^12.7.0",
@@ -97,5 +98,8 @@
   "bugs": {
     "url": "https://github.com/guico52/ts-grm-migrate/issues"
   },
-  "homepage": "https://github.com/guico52/ts-grm-migrate#readme"
+  "homepage": "https://github.com/guico52/ts-grm-migrate#readme",
+  "dependencies": {
+    "proper-lockfile": "4.1.2"
+  }
 }

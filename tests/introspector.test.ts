@@ -86,15 +86,14 @@ describe("PostgresIntrospector：组装", () => {
     expect(b!.comment).toBeUndefined();
   });
 
-  it("列上的 CHECK / 未知约束类型被跳过，不影响其他约束", async () => {
-    const schema = await introspect({
+  it("unsupported exclusion constraints are rejected", async () => {
+    await expect(introspect({
       tables: [{ name: "T" }],
       constraints: [
         { table_name: "T", name: "pk", kind: "p", columns: ["ID"] },
         { table_name: "T", name: "excl", kind: "x", columns: ["ID"] },
       ],
-    });
-    expect(schema.tables[0]!.constraints.map((c) => c.kind)).toEqual(["PRIMARY_KEY"]);
+    })).rejects.toThrow(/unsupported constraint semantics/);
   });
 });
 

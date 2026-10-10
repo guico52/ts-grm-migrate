@@ -35,6 +35,14 @@ npm install -D ts-grm-migrate@next
 - `@next` follows prereleases. Pin an exact version when reproducibility matters, for example `ts-grm-migrate@0.1.0-alpha.0`.
 - Run the installed CLI with `npx tgm`, or use `tgm` / `ts-grm-migrate` through your package manager.
 
+In a workspace with non-hoisted dependencies (for example a Bun installation), npm's workspace lookup may miss the child's local CLI or select a different version installed at the root. From the child project, use:
+
+```bash
+npx --workspaces=false tgm dev --create-only -n init
+```
+
+This keeps npm's lookup in the current project. If npm reports `No versions available for tgm`, it has failed to locate the local executable and is looking for a package named `tgm`; the package to install is `ts-grm-migrate`. Check that `node_modules/.bin/tgm` resolves to an existing `dist/bin.mjs`, and reinstall dependencies with the project's package manager if the link is broken. The CLI cannot repair npm's command resolution because it has not started yet. [npm exec workspace behavior](https://docs.npmjs.com/cli/npm-exec/).
+
 ## Quick start
 
 > **Your project must use ESM.** Set `"type": "module"` in `package.json`. The ts-grm model registry is a module-level singleton; the migration tool and your models must share the same ESM instance. CommonJS models may register with a separate instance and be invisible to the migration tool.
@@ -213,7 +221,7 @@ You can also run `tests/server-integration.test.ts` against dedicated instances 
 | `tgm resolve --applied <id>` | Mark SQL already executed manually as applied |
 | `tgm resolve --rolled-back <id>` | Mark an attempt as rolled back so it becomes pending again |
 
-Options: `--create-only` generates without applying (`dev` only); `--config <path>` selects a configuration file; `-n` / `--name <name>` names a migration; `--force` skips destructive-change confirmation; `--detail` shows execution steps, SQL, and locks; `--lang <en|zh-CN>` selects the language for this command; `-h` shows help.
+Options: `--dry-run` previews SQL without applying it (`push` only); `--create-only` generates without applying (`dev` only); `--config <path>` selects a configuration file; `-n` / `--name <name>` names a migration; `--force` skips destructive-change confirmation; `--detail` shows execution steps, SQL, and locks; `--lang <en|zh-CN>` selects the language for this command; `-h` shows help.
 
 Normal commands report the target, migration count or ID, and result. `status` intentionally lists migrations because it is an inspection command. For example, `tgm deploy` may print `Applied 2 migrations to postgres/app/public.` The SQL shown with `--detail` may contain business data: take care when saving or sharing logs. Diagnostic events do not print connection passwords.
 
@@ -245,7 +253,7 @@ export const SYS_USER = model("SysUser", "id", class {
 - **Independent indexes and comments are not managed by models:** custom migration indexes are preserved while their columns remain. Explicit programmatic schemas may manage indexes; removing a unique index is flagged as destructive.
 - **Migration files are readable SQL:** `<migrationsDir>/<timestamp>_<name>.sql` can be edited before application. **Do not edit an applied migration.** `deploy` rejects a changed checksum; make a new migration instead.
 - **Destructive changes require confirmation:** dropping tables or columns, changing column types, and explicit unique-index removal prompt during model synchronization; non-interactive synchronization requires `--force`. `deploy` applies reviewed SQL files without confirmation.
-- **Post-migration checks:** `dev`, `deploy`, and `push` reread the schema and warn about remaining differences while retaining a successful execution exit code. `check` returns 1 for differences, including CHECK constraints whose equivalence cannot be proven. For example:
+- **Post-migration checks:** `dev` and `deploy` reread the schema and warn about remaining differences. `push` returns 1 if differences remain after synchronization; cancellation also returns 1. `check` returns 1 for differences, including CHECK constraints whose equivalence cannot be proven. For example:
 
   ```text
   Warning: postgres/app/public differs from the model:
