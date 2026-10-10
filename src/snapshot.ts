@@ -152,7 +152,7 @@ function isIndex(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const { name, columns, unique, predicate } = value;
   return (
-    isString(name) &&
+    isString(name) && isOptionalString(value.unsupported) &&
     isStringArray(columns) &&
     isBoolean(unique) &&
     isOptionalString(predicate) && (value.implicit === undefined || isBoolean(value.implicit))

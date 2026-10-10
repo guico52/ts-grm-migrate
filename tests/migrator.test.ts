@@ -261,6 +261,41 @@ describe("Migrator", () => {
     expect(lock.mock.calls[0]).toEqual(["ts-grm-migrate"]);
   });
 
+  it("rejects pending migrations inserted before an applied migration", async () => {
+    const later = await writeMigration("002", "select 2;");
+    markApplied(later);
+    await writeMigration("001", "select 1;");
+    await expect(makeMigrator().deploy()).rejects.toThrow(/continuous prefix/);
+    expect(executor.executed).toEqual([]);
+  });
+
+  it("push refuses pending and failed migrations even in preview", async () => {
+    const file = await writeMigration("001", "select 1;");
+    await expect(makeMigrator().push()).rejects.toThrow(/Pending migrations/);
+    await expect(makeMigrator().push({dryRun:true})).rejects.toThrow(/Pending migrations/);
+    await history.markFailed(file.id, "failed");
+    await expect(makeMigrator().push()).rejects.toThrow(/attempts failed/);
+    expect(executor.executed).toEqual([]);
+  });
+
+  it("push preview validates SQL without confirming, executing or creating history", async () => {
+    const ensure = vi.spyOn(history, "ensureTable");
+    const result = await makeMigrator(ONE_TABLE).push({dryRun:true});
+    expect(result.statements).toHaveLength(1);
+    expect(executor.executed).toEqual([]);
+    expect(history.applied).toEqual([]);
+    expect(ensure).not.toHaveBeenCalled();
+    expect(await files.listFiles()).toEqual([]);
+  });
+
+  it("reports cleanup failures without hiding the migration error and releases the local lease", async () => {
+    vi.spyOn(executor, "acquireMigrationLock").mockResolvedValue(async()=>{throw new Error("unlock failed");});
+    vi.spyOn(history, "listApplied").mockRejectedValue(new Error("history failed"));
+    await expect(makeMigrator().deploy()).rejects.toThrow(/history failed.*unlock failed/);
+    const { stat } = await import("node:fs/promises");
+    await expect(stat(path.join(dir,"migrate.lock"))).rejects.toThrow();
+  });
+
   describe("deploy", () => {
     it("按 sortKey 顺序应用未应用的迁移，并记录历史", async () => {
       await writeMigration("20260911T120001_b", "select 2;");

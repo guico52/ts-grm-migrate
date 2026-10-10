@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+import { acquireProcessLock } from "../lock.js";
 import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * SQLite 版 `SqlExecutor`。
@@ -9,15 +11,16 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  * 与 Postgres 版有两处差异：
  *
  * 1. better-sqlite3 是**同步 API**，这里包装成异步以满足 `SqlExecutor`。
- * 2. **没有 advisory lock**，`acquireMigrationLock` 是 no-op。SQLite 是嵌入式
- *    单文件库，不存在「多机同时连一个库」的部署形态（它的并发模型是本机文件锁）；
- *    本地多进程由进程锁文件挡住，同一文件的并发写由 SQLite 自身串行化。
- *    这是刻意的取舍，不是遗漏。
+ * 2. File databases use a canonical-path process lease for the whole operation,
+ *    including introspection and planning. Memory databases need no external lock.
+ *    Programmatic callers should pass the file path as the second constructor argument.
  */
 import type { MigrationCompletion, SqlExecutor } from "../executor.js";
 
 /** better-sqlite3 的 Database（只声明用到的部分） */
 export interface SqliteDatabaseLike {
+  /** Native better-sqlite3 exposes its database filename. */
+  readonly name?: string;
   prepare(sql: string): SqliteStatementLike;
   /** 执行（可含多条语句的）SQL 文本，不返回行 */
   exec(sql: string): unknown;
@@ -32,7 +35,7 @@ export interface SqliteStatementLike {
 }
 
 export class SqliteSqlExecutor implements SqlExecutor {
-  constructor(private readonly _database: SqliteDatabaseLike) {}
+  constructor(private readonly _database: SqliteDatabaseLike, private readonly _file: string | undefined = _database.name) {}
 
   async query(
     sql: string,
@@ -69,9 +72,9 @@ export class SqliteSqlExecutor implements SqlExecutor {
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    // 见文件头注释第 2 点：SQLite 没有 advisory lock，也不需要
-    return async () => {
-      // no-op
-    };
+    if (!this._file || this._file === ":memory:") return async () => {};
+    const file = await realpath(this._file);
+    const lock = await acquireProcessLock(`${file}.tgm-lock`);
+    return () => lock.release();
   }
 }

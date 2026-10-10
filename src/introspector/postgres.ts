@@ -25,11 +25,8 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  *    会被原样返回成 `"{A,B}"` 字符串（实测）。SQL 里统一 `::text` 转型规避，
  *    `asStringArray` 再兜一层（见该函数注释）。
  *
- * 已知限制：
- * - CHECK 的表达式原文（`pg_get_constraintdef`）与模型侧适配器还原的写法不同
- *   （PG 会 deparse 成 `((col)::text = ANY (ARRAY[...]))`），diff 会判为变化并
- *   drop+add；归一化留待后续（见 `src/differ.ts` 注释）。
- * - 暂不处理分区表（`relkind = 'p'`）与排他约束。
+ * CHECK comparison normalizes supported literal membership forms conservatively.
+ * Unsupported generated/partitioned structures and constraint semantics are rejected.
  */
 import type { CascadeType } from "../vendor/ts-grm.js";
 import type { Dialect, Introspector, SqlQueryable } from "../introspector.js";
@@ -64,6 +61,30 @@ export class PostgresIntrospector implements Introspector {
       const columns = await query.query(COLUMNS_SQL, [schemaName]);
       const constraints = await query.query(CONSTRAINTS_SQL, [schemaName]);
       const indexes = await query.query(INDEXES_SQL, [schemaName]);
+      for (const row of tables.rows) {
+        if (row["kind"] === "p" || row["inherited"] === true) {
+          throw diagnostic("unsupported_structure", row["name"], diagnostic("structure_table"));
+        }
+      }
+      for (const row of columns.rows) {
+        if (row["generated"] || row["custom_collation"] === true) {
+          throw diagnostic("unsupported_structure", `${row["table_name"]}.${row["name"]}`, diagnostic("structure_column"));
+        }
+      }
+      for (const row of constraints.rows) {
+        const unsupportedForeignKey = row["kind"] === "f" && (
+          (row["referenced_schema"] && row["referenced_schema"] !== schemaName) ||
+          (row["update_action"] && row["update_action"] !== "a") ||
+          row["initially_deferred"] === true
+        );
+        const unsupported = row["kind"] === "x" || row["validated"] === false ||
+          (row["kind"] === "c" && row["no_inherit"] === true) ||
+          row["nulls_not_distinct"] === true || unsupportedForeignKey ||
+          (row["kind"] !== "f" && row["deferrable"] === true);
+        if (unsupported) {
+          throw diagnostic("unsupported_structure", `${row["table_name"]}.${row["name"]}`, diagnostic("structure_constraint"));
+        }
+      }
       return assemble(
         tables.rows,
         columns.rows,
@@ -78,13 +99,14 @@ export class PostgresIntrospector implements Introspector {
 
 // ---- SQL -------------------------------------------------------------------
 
-/** 普通表（relkind = 'r'）；分区表 'p' 与视图暂不纳入 */
+/** Include partitioned tables to reject them explicitly; views are outside model management. */
 const TABLES_SQL = `
-select c.relname as name
+select c.relname as name, c.relkind as kind,
+       exists (select 1 from pg_inherits inh where inh.inhrelid = c.oid or inh.inhparent = c.oid) as inherited
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = $1
-  and c.relkind = 'r'
+  and c.relkind in ('r', 'p')
 order by c.relname
 `;
 
@@ -97,9 +119,12 @@ select
   a.attnum as ordinal,
   pg_get_expr(d.adbin, d.adrelid) as default_expr,
   a.attidentity as identity,
+  coalesce(to_jsonb(a)->>'attgenerated', '') as generated,
+  a.attcollation <> typ.typcollation as custom_collation,
   col_description(c.oid, a.attnum) as comment
 from pg_attribute a
 join pg_class c on c.oid = a.attrelid
+join pg_type typ on typ.oid = a.atttypid
 join pg_namespace n on n.oid = c.relnamespace
 left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
 where n.nspname = $1
@@ -119,6 +144,12 @@ select
   con.conname as name,
   con.contype as kind,
   con.condeferrable as deferrable,
+  con.condeferred as initially_deferred,
+  con.convalidated as validated,
+  con.connoinherit as no_inherit,
+  coalesce((to_jsonb(ci)->>'indnullsnotdistinct')::boolean, false) as nulls_not_distinct,
+  con.confupdtype as update_action,
+  fn.nspname as referenced_schema,
   con.confdeltype as delete_action,
   pg_get_constraintdef(con.oid) as definition,
   (
@@ -136,8 +167,10 @@ from pg_constraint con
 join pg_class c on c.oid = con.conrelid
 join pg_namespace n on n.oid = c.relnamespace
 left join pg_class fc on fc.oid = con.confrelid
+left join pg_namespace fn on fn.oid = fc.relnamespace
+left join pg_index ci on ci.indexrelid = con.conindid
 where n.nspname = $1
-  and con.contype in ('p', 'u', 'f', 'c')
+  and con.contype in ('p', 'u', 'f', 'c', 'x')
 order by c.relname, con.conname
 `;
 
@@ -147,6 +180,12 @@ select
   c.relname as table_name,
   i.relname as name,
   ix.indisunique as is_unique,
+  (am.amname <> 'btree' or ix.indexprs is not null or ix.indnkeyatts <> ix.indnatts
+   or not ix.indisvalid or not ix.indisready
+   or coalesce((to_jsonb(ix)->>'indnullsnotdistinct')::boolean, false)
+   or exists (select 1 from unnest(ix.indoption) opt where opt <> 0)
+   or exists (select 1 from unnest(ix.indclass) as cls(class_oid) join pg_opclass op on op.oid = cls.class_oid where not op.opcdefault)
+   or exists (select 1 from unnest(ix.indkey, ix.indcollation) as k(attnum, coll_oid) join pg_attribute a on a.attrelid = ix.indrelid and a.attnum = k.attnum where k.coll_oid <> a.attcollation)) as unsupported,
   pg_get_expr(ix.indpred, ix.indrelid) as predicate,
   (
     select array_agg(a.attname::text order by k.ord)
@@ -155,6 +194,7 @@ select
   ) as columns
 from pg_index ix
 join pg_class i on i.oid = ix.indexrelid
+join pg_am am on am.oid = i.relam
 join pg_class c on c.oid = ix.indrelid
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = $1
@@ -278,6 +318,7 @@ function toConstraint(row: Row): Constraint | null {
 function toIndex(row: Row): Index {
   return {
     name: asString(row["name"]),
+    ...(row["unsupported"] === true ? { unsupported: "POSTGRES_SPECIAL_INDEX" } : {}),
     columns: asStringArray(row["columns"]),
     unique: row["is_unique"] === true,
     predicate: row["predicate"] == null ? undefined : asString(row["predicate"]),

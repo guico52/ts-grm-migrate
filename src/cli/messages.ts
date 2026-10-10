@@ -18,6 +18,7 @@ Options:
   -n, --name <name>            Migration name (dev)
   --config <path>              Configuration file path
   --create-only                Generate SQL without applying it (dev)
+  --dry-run                    Preview SQL without changes (push)
   --force                      Skip destructive-change confirmation
   --detail                     Show steps, SQL and lock information
   --lang <en|zh-CN>            Output language (overrides config)
@@ -26,6 +27,8 @@ Options:
 Configuration files:
   ${CONFIG_FILENAMES.join("\n  ")}
 `,
+  dataCondition: (table: string) => `Existing data in ${table} must satisfy the new NOT NULL, key or CHECK constraints. SQL may fail; non-transactional DDL may partially apply.`,
+  dryRunPush: "Option --dry-run is only supported by push.",
   invalidLanguage: (value: string) => `Unsupported language "${value}". Use en or zh-CN.`,
   invalidOption: (flag: string) => `Option --${flag} does not take a value.`,
   unknownCommand: (command: string) => `Unknown command "${command}".`,
@@ -75,6 +78,8 @@ Configuration files:
 export type CliMessages = typeof en;
 
 const zhCN = {
+  dataCondition: (table: string) => `${table} 的已有数据必须满足新的非空、键或 CHECK 约束。SQL 可能失败；非事务型 DDL 可能部分生效。`,
+  dryRunPush: "--dry-run 仅支持 push。",
   usage: `ts-grm-migrate — ts-grm 的数据库迁移工具
 
 用法: tgm <命令> [选项]
@@ -92,6 +97,7 @@ const zhCN = {
   -n, --name <name>            迁移名（dev）
   --config <path>              配置文件路径
   --create-only                仅生成 SQL，不应用迁移（dev）
+  --dry-run                    预览 SQL，不修改数据库（push）
   --force                      跳过破坏性变更确认
   --detail                     显示执行步骤、SQL 和锁信息
   --lang <en|zh-CN>            输出语言（覆盖配置）

@@ -228,4 +228,35 @@ describePg("Migrator 集成（真实数据库）", () => {
   async function executeQuery(sql: string) {
     return await pool.query(sql);
   }
+  it("supports a one-connection pool and CHECK create/read/sync round trips", async () => {
+    const single = new Pool({ ...PG_CONFIG, max: 1, connectionTimeoutMillis: 1000, options: `-c search_path=${TEST_SCHEMA}` });
+    const executor = new PostgresSqlExecutor(single);
+    const release = await executor.acquireMigrationLock("single");
+    try {
+      const target = {tables:[{name:"roundtrip", columns:[
+        {name:"TYPE", type:"character varying(30)", nullable:false, length:undefined, default:undefined, autoIncrement:false, ordinal:1, comment:undefined},
+        {name:"v", type:"integer", nullable:true, length:undefined, default:undefined, autoIncrement:false, ordinal:2, comment:undefined}
+      ], constraints:[
+        {kind:"CHECK" as const, name:"roundtrip_type", implicit:undefined, values:["Book","O'Brien, X"], expression:`"TYPE" in ('Book', 'O''Brien, X')`},
+        {kind:"CHECK" as const, name:"roundtrip_v", implicit:undefined, values:[1,2], expression:'"v" in (1, 2)'}
+      ], indexes:[]}]};
+      const ddl = new PostgresDdlGenerator();
+      await executor.executeStatements(ddl.createStatements(target));
+      await executor.query('alter table roundtrip add constraint roundtrip_pk primary key ("TYPE")');
+      await executor.query('create table related(kind character varying(30) references roundtrip("TYPE") deferrable initially immediate)');
+      const initial = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
+      const related = initial.tables.find(t => t.name === "related")!;
+      expect(related.constraints.some(c => c.kind === "FOREIGN_KEY" && c.deferrable)).toBe(true);
+      await executor.query("drop table related");
+      await executor.query("alter table roundtrip drop constraint roundtrip_pk");
+      const actual = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
+      const { SchemaDiffer } = await import("../src/differ");
+      expect(new SchemaDiffer().diff(actual,target).changes).toEqual([]);
+      await executor.query('create index special_idx on roundtrip(lower("TYPE"))');
+      const special = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
+      expect(special.tables[0]!.indexes[0]!.unsupported).toBeDefined();
+      expect(()=>new SchemaDiffer().diff(special,target)).toThrow(/special index/);
+    } finally {await release();await single.end();}
+  });
+
 });

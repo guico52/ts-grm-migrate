@@ -115,7 +115,7 @@ export class FileMigrationStore implements MigrationFileStore {
       const id = name.slice(0, -".sql".length);
       files.push({ id, sql, checksum: checksumOf(sql), sortKey: id });
     }
-    return files.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    return files.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
   }
 
   async write(file: MigrationFile): Promise<void> {

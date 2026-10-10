@@ -151,6 +151,8 @@ export interface CheckConstraint extends Omit<
 }
 
 export interface Index {
+  /** Catalog feature that cannot be safely represented or regenerated. */
+  readonly unsupported?: string;
   /** Database-required supporting index, not an independently managed model index. */
   readonly implicit?: boolean;
   readonly name: string;

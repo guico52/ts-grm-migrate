@@ -171,7 +171,8 @@ export function constraintSql(constraint: Constraint, name: string): string {
       return (
         `constraint ${quoteIdentifier(name)} foreign key (${constraint.columns.map(quoteIdentifier).join(", ")})` +
         ` references ${quoteIdentifier(constraint.referencedTable)} (${constraint.referencedColumns.map(quoteIdentifier).join(", ")})` +
-        onDeleteSql(constraint.onDelete)
+        onDeleteSql(constraint.onDelete) +
+        (constraint.deferrable ? " deferrable initially immediate" : "")
       );
     case "CHECK":
       return `constraint ${quoteIdentifier(name)} check (${constraint.expression})`;

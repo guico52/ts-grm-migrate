@@ -71,6 +71,7 @@ export type MigrationProgress =
   | { readonly kind: "process-lock"; readonly path: string }
   | { readonly kind: "database-lock"; readonly key: string }
   | { readonly kind: "sql"; readonly sql: string }
+  | { readonly kind: "data-condition"; readonly table: string }
   | { readonly kind: "migration-start" | "migration-applied"; readonly id: string };
 
 /** 使用者在确认破坏性变更时选择中止 */
@@ -168,9 +169,9 @@ export class Migrator {
       if (diff.changes.length === 0) {
         return { diff, migrationId: undefined, applied: false, drift: [] };
       }
-      if (!options.createOnly) await this._confirmIfNeeded(diff);
-
       const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
+      this._warnDataConditions(diff);
+      if (!options.createOnly) await this._confirmIfNeeded(diff);
       // Allocate after all existing generated timestamps, even if the clock moves backwards.
       let time = Date.now();
       for (const file of existing) {
@@ -195,11 +196,15 @@ export class Migrator {
   }
 
   /** 无历史快速同步：diff 后直接应用，不写文件、不记历史（push 路径） */
-  async push(): Promise<PushResult> {
+  async push(options: { readonly dryRun?: boolean } = {}): Promise<PushResult> {
     return await this._withLocks(false, async () => {
+      const { pending } = await this._validatedHistory();
+      if (pending.length) throw diagnostic("migrator_1", pending.map(f => f.id).join(", "));
       const { diff, from, to } = await this._diffAgainstDatabase();
-      await this._confirmIfNeeded(diff);
       const statements = this._options.ddl.statements(diff, { from, to });
+      this._warnDataConditions(diff);
+      if (options.dryRun) return { diff, statements, drift: describeDiff(diff, this._options.driftLanguage) };
+      await this._confirmIfNeeded(diff);
       if (statements.length > 0) {
         for (const sql of statements) this._options.onProgress?.({ kind: "sql", sql });
         await this._options.executor.executeStatements(statements);
@@ -282,6 +287,11 @@ export class Migrator {
       throw diagnostic("migrator_5", missing.map((m) => m.id).join(", "));
     }
 
+    let gap: string | undefined;
+    for (const file of files) {
+      if (!appliedById.has(file.id)) gap ??= file.id;
+      else if (gap !== undefined) throw diagnostic("history_order", gap);
+    }
     const pending = files.filter((f) => !appliedById.has(f.id));
     return { files, pending };
   }
@@ -303,6 +313,15 @@ export class Migrator {
     throw diagnostic("migrator_6", failed.map((f) => f.id).join(", "));
   }
 
+  private _warnDataConditions(diff: Diff): void {
+    for (const change of diff.changes) {
+      if (change.kind !== "ALTER_TABLE") continue;
+      if (change.columns.some(c => c.kind === "ADD_COLUMN" ? !c.column.nullable : c.kind === "ALTER_COLUMN" && c.nullable === false) || change.constraints.some(c => c.kind === "ADD_CONSTRAINT") || change.indexes.some(c => c.kind === "ADD_INDEX" && c.index.unique)) {
+        this._options.onProgress?.({ kind: "data-condition", table: change.table });
+      }
+    }
+  }
+
   /** 有破坏性变更时询问；使用者拒绝则中止 */
   private async _confirmIfNeeded(diff: Diff): Promise<void> {
     const { confirm } = this._options;
@@ -321,19 +340,32 @@ export class Migrator {
   ): Promise<T> {
     const lock = await acquireProcessLock(this._options.lockPath);
     let releaseDbLock: (() => Promise<void>) | undefined;
+    let result!: T;
+    let failed = false;
+    let failure: unknown;
     try {
       this._options.onProgress?.({ kind: "process-lock", path: this._options.lockPath });
       const key = this._options.lockKey ?? "ts-grm-migrate";
       releaseDbLock = await this._options.executor.acquireMigrationLock(key);
       this._options.onProgress?.({ kind: "database-lock", key });
       if (ensureHistory) await this._options.history.ensureTable();
-      return await fn();
-    } finally {
-      if (releaseDbLock != null) {
-        await releaseDbLock().catch(() => undefined);
-      }
-      await lock.release();
+      result = await fn();
+    } catch (error) {
+      failed = true;
+      failure = error;
     }
+    const cleanupErrors: Error[] = [];
+    if (releaseDbLock) {
+      try { await releaseDbLock(); } catch (error) { cleanupErrors.push(asError(error)); }
+    }
+    try { await lock.release(); } catch (error) { cleanupErrors.push(asError(error)); }
+    if (cleanupErrors.length) {
+      const cleanup = cleanupErrors.reduce((left, right) => new DiagnosticAggregateError([left, right], "lock_cleanup", [left, right]));
+      if (failed) throw new DiagnosticAggregateError([failure, cleanup], "lock_cleanup", [asError(failure), cleanup]);
+      throw cleanup;
+    }
+    if (failed) throw failure;
+    return result;
   }
 
   private async _applyOne(file: MigrationFile): Promise<void> {

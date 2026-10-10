@@ -30,7 +30,7 @@ SQLite cannot read constraint names, making content-based comparison essential. 
 
 ## Migrations and recovery
 
-`src/migrator.ts` manages `dev`, `deploy`, `push`, and `resolve`; `dev --create-only` generates files without applying them. `dev` and `deploy` share history integrity validation; pending files block new generation. PostgreSQL DDL orders dependency removal, table/column changes, keys/indexes, then foreign keys. Migration files are created exclusively, and checksums detect edits to applied files. An unfinished record is written before execution. After an interruption or history-recording failure, subsequent deployment will not replay automatically; inspect the database and use `resolve`.
+`src/migrator.ts` manages `dev`, `deploy`, `push`, and `resolve`; `dev --create-only` generates files without applying them. `dev`, `deploy` and `push` share history integrity and ordered-prefix validation; pending files block new generation. PostgreSQL DDL orders dependency removal, table/column changes, keys/indexes, then foreign keys. Migration files are created exclusively, and checksums detect edits to applied files. An unfinished record is written before execution. After an interruption or history-recording failure, subsequent deployment will not replay automatically; inspect the database and use `resolve`.
 
 `src/lock.ts` limits local concurrency within a project, and database locks limit concurrency across machines. PostgreSQL, SQLite, and SQL Server record migration SQL and success in one transaction. MySQL and Oracle DDL may commit implicitly; after failure, recovery must follow the actual database state.
 

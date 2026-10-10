@@ -1,5 +1,24 @@
 /** Paired diagnostic templates. Values such as paths, SQL and identifiers are not translated. */
 export const diagnostics = {
+  lock_lost: { en: 'Migration lease ownership changed: {0}. The replacement lease was not removed.', 'zh-CN': '迁移租约所有权已改变：{0}。未删除替代租约。' },
+
+  lock_cleanup: { en: 'Migration or lock cleanup failed: {0}; {1}', 'zh-CN': '迁移或锁清理失败：{0}；{1}' },
+
+  structure_table: { en: 'special table semantics cannot be synchronized', 'zh-CN': '无法同步该表的特殊语义' },
+  structure_column: { en: 'generated or hidden columns, or custom collations, cannot be synchronized', 'zh-CN': '无法同步生成列、隐藏列或自定义排序规则' },
+  structure_constraint: { en: 'unsupported constraint semantics', 'zh-CN': '无法同步该约束的特殊语义' },
+  structure_index: { en: 'special index cannot be safely modified ({0})', 'zh-CN': '无法安全修改特殊索引（{0}）' },
+  structure_deferred_fk: { en: 'deferrable foreign keys are unsupported in this dialect', 'zh-CN': '当前方言不支持同步可延迟外键' },
+  structure_missing_key: { en: 'referenced primary key could not be resolved', 'zh-CN': '无法解析外键引用的主键列' },
+
+  sqlite_check_parse: { en: 'Cannot read an unbalanced SQLite CHECK expression.', 'zh-CN': '无法读取括号不平衡的 SQLite CHECK 表达式。' },
+  executor_postgres_rollback: { en: 'Statement failed and rollback could not be confirmed: {0}; rollback error: {1}', 'zh-CN': '语句执行失败，且无法确认事务回滚：{0}；回滚错误：{1}' },
+
+  sqlite_cycle: { en: 'Cannot safely drop cyclic SQLite foreign keys involving {0}.', 'zh-CN': '无法安全删除包含 {0} 的 SQLite 循环外键。' },
+  history_order: { en: 'Applied migrations must form a continuous prefix; pending migration {0} precedes an applied migration.', 'zh-CN': '已应用迁移必须构成连续前缀；待应用迁移 {0} 排在已应用迁移之前。' },
+  unsupported_structure: { en: 'Unsupported database structure: {0}; {1}. Refusing to change it.', 'zh-CN': '不支持的数据库结构：{0}；{1}。拒绝修改。' },
+  lock_busy: { en: 'Migration lock is held: {0}. Retry after the holder exits or the stale lease expires.', 'zh-CN': '迁移锁已被占用：{0}。请在持有者退出或残留锁过期后重试。' },
+
   model_load: { en: 'Failed to load models: {0}', 'zh-CN': '加载模型失败：{0}' },
   model_module: {
     en: 'Failed to load models: {0}\nHint: migrations load model files through Node\'s native import. Use ESM (set "type": "module") or point models to compiled ESM .js files.',
@@ -160,15 +179,6 @@ export const diagnostics = {
   ddl_3: {
     en: 'SQLite requires AUTOINCREMENT on the single-column primary key ({0}.{1})',
     'zh-CN': 'SQLite 的 AUTOINCREMENT 列必须是单列主键（{0}.{1}）',
-  },
-  lock_1: {
-    en: 'Another migration process holds {0} (pid {1}, since {2}). If that process no longer exists, remove the lock file and retry.',
-    'zh-CN':
-      '另一个迁移进程持有锁 {0}（进程号 {1}，获取时间 {2}）。若该进程已不存在，请删除锁文件后重试。',
-  },
-  lock_2: {
-    en: 'Could not acquire migration lock {0} after {1} attempts; other processes may be competing',
-    'zh-CN': '尝试 {1} 次后仍无法获取迁移锁 {0}，可能有其他进程正在竞争',
   },
   ddl_mysql_1: {
     en: 'Cannot drop foreign key on {0} without its physical constraint name',

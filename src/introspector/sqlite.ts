@@ -1,3 +1,4 @@
+import { sqliteChecks, sqlTokens } from "../schema/checks.js";
 import { diagnostic, asError } from "../diagnostics/error.js";
 /**
  * SQLite 版 Introspector。
@@ -49,15 +50,24 @@ export class SqliteIntrospector implements Introspector {
       const tables: Array<Table> = [];
       for (const row of tableRows.rows) {
         const name = asString(row["name"]);
+        const definitionTokens = sqlTokens(asString(row["sql"])).filter(token => token !== ";");
+        const specialDeclaration = definitionTokens.some((token, i) =>
+          (token.toLowerCase() === "deferrable" && definitionTokens[i - 1]?.toLowerCase() !== "not") ||
+          token.toLowerCase() === "collate" ||
+          (token.toLowerCase() === "virtual" && definitionTokens[i + 1]?.toLowerCase() === "table")
+        );
+        if (specialDeclaration || definitionTokens.slice(-2).join(" ").toLowerCase() === "without rowid" || definitionTokens.at(-1)?.toLowerCase() === "strict") {
+          throw diagnostic("unsupported_structure", name, diagnostic("structure_table"));
+        }
         // AUTOINCREMENT 只存于建表原文；SQLite 只允许它出现在单列 INTEGER 主键上
-        const autoIncrement = /\bautoincrement\b/i.test(asString(row["sql"] ?? ""));
+        const autoIncrement = definitionTokens.some(token => token.toLowerCase() === "autoincrement");
         const { columns, primaryKey } = await this._columns(name, autoIncrement);
         const foreignKeys = await this._foreignKeys(name);
         const { uniques, indexes } = await this._indexes(name);
         tables.push({
           name,
           columns,
-          constraints: [...primaryKey, ...uniques, ...foreignKeys],
+          constraints: [...primaryKey, ...uniques, ...foreignKeys, ...sqliteChecks(asString(row["sql"])).map(expression => ({ kind: "CHECK" as const, name: undefined, expression, values: [], implicit: undefined }))],
           indexes,
         });
       }
@@ -76,7 +86,8 @@ export class SqliteIntrospector implements Introspector {
     table: string,
     autoIncrement: boolean,
   ): Promise<{ columns: Array<Column>; primaryKey: Array<Constraint> }> {
-    const { rows } = await this._options.query.query(`pragma table_info(${quoteForPragma(table)})`);
+    const { rows } = await this._options.query.query(`pragma table_xinfo(${quoteForPragma(table)})`);
+    if (rows.some(row => Number(row["hidden"] ?? 0) !== 0)) throw diagnostic("unsupported_structure", table, diagnostic("structure_column"));
     const pkColumns: Array<{ name: string; position: number }> = [];
     const columns = rows.map((row) => {
       const name = asString(row["name"]);
@@ -132,13 +143,21 @@ export class SqliteIntrospector implements Introspector {
     for (const group of byId.values()) {
       const ordered = [...group].sort((a, b) => Number(a["seq"]) - Number(b["seq"]));
       const onDelete = toOnDelete(asString(ordered[0]!["on_delete"]));
+      if (asString(ordered[0]!["on_update"]).toUpperCase() !== "NO ACTION") throw diagnostic("unsupported_structure", table, diagnostic("structure_constraint"));
+      let referencedColumns = ordered.map(r => asString(r["to"]));
+      if (ordered.every(r => r["to"] == null)) {
+        const parent = asString(ordered[0]!["table"]);
+        const primary = await this._options.query.query(`pragma table_xinfo(${quoteForPragma(parent)})`);
+        referencedColumns = primary.rows.filter(r => Number(r["pk"]) > 0).sort((a, b) => Number(a["pk"]) - Number(b["pk"])).map(r => asString(r["name"]));
+        if (referencedColumns.length !== ordered.length) throw diagnostic("unsupported_structure", table, diagnostic("structure_missing_key"));
+      }
       result.push({
         kind: "FOREIGN_KEY",
         name: undefined,
         columns: ordered.map((r) => asString(r["from"])),
         referencedTable: asString(ordered[0]!["table"]),
-        // to 为 null 时（引用对方主键）SQLite 不记录列名，此处原样返回空串
-        referencedColumns: ordered.map((r) => asString(r["to"])),
+        // An omitted reference column list denotes the parent primary key.
+        referencedColumns,
         onDelete,
         deferrable: false,
         // ORM 侧级联语义在数据库里不可见，由 ON DELETE 反推（与 PG 版同口径）
@@ -169,19 +188,27 @@ export class SqliteIntrospector implements Introspector {
       const name = asString(row["name"]);
       const origin = asString(row["origin"]);
       if (origin === "pk") {
+        const details = await this._options.query.query(`pragma index_xinfo(${quoteForPragma(name)})`);
+        if (details.rows.some(r => Number(r["key"]) === 1 && (Number(r["desc"]) !== 0 || asString(r["coll"]).toUpperCase() !== "BINARY"))) throw diagnostic("unsupported_structure", table, diagnostic("structure_constraint"));
         continue;
       }
       const columns = await this._indexColumns(name);
+      const definition = await this._options.query.query(`select sql from sqlite_master where type = 'index' and name = ${"'" + name.replaceAll("'", "''") + "'"}`);
+      const tokens = sqlTokens(asString(definition.rows[0]?.["sql"]));
+      const indexDetails = await this._options.query.query(`pragma index_xinfo(${quoteForPragma(name)})`);
+      const unsupported = indexDetails.rows.some(r => Number(r["key"]) === 1 && (Number(r["cid"]) < 0 || Number(r["desc"]) !== 0 || asString(r["coll"]).toUpperCase() !== "BINARY"));
+      const where = tokens.findIndex(t => t.toLowerCase() === "where");
       if (origin === "u") {
+        if (unsupported) throw diagnostic("unsupported_structure", `${table}.${name}`, diagnostic("structure_constraint"));
         uniques.push({ kind: "UNIQUE", name: undefined, columns, implicit: undefined });
       } else {
         indexes.push({
           name,
+          ...(unsupported ? { unsupported: "SQLITE_SPECIAL_INDEX" } : {}),
           columns,
           unique: Number(row["unique"]) === 1,
-          // 部分索引的谓词只存在于 sqlite_master.sql 里；ts-grm 不建部分索引，
-          // 模型侧也无来源，此处不读
-          predicate: undefined,
+          // Partial predicates are retained even when the model does not manage indexes.
+          predicate: where < 0 ? undefined : tokens.slice(where + 1).join(" "),
         });
       }
     }
@@ -228,8 +255,9 @@ export function normalizeSqliteType(raw: string): string {
   if (t.includes("real") || t.includes("floa") || t.includes("doub")) {
     return "real";
   }
-  // NUMERIC 亲和性等其余情况：ts-grm 无对应类型，落到 real（它的 NUM 也映射为 real）
-  return "real";
+  // @see https://www.sqlite.org/datatype3.html §3.1
+  // NUMERIC affinity differs from REAL and must remain observable.
+  return "numeric";
 }
 
 /** SQLite 的 on_delete 文本 → migrate 的 OnDelete */

@@ -30,7 +30,7 @@ SQLite 读取不到约束名，因此按内容比较尤其必要。部分 CHECK 
 
 ## 迁移与恢复
 
-`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`；`dev --create-only` 仅生成文件。`dev` 和 `deploy` 共用历史完整性校验，待应用文件阻止生成新迁移。PostgreSQL DDL 按解除依赖、表和列变更、键与索引、外键的阶段排序。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
+`src/migrator.ts` 管理 `dev`、`deploy`、`push` 和 `resolve`；`dev --create-only` 仅生成文件。`dev`、`deploy` 和 `push` 共用历史完整性与连续前缀校验，待应用文件阻止生成新迁移。PostgreSQL DDL 按解除依赖、表和列变更、键与索引、外键的阶段排序。迁移文件使用独占创建，并用 checksum 检查已应用文件是否被修改。执行前先写入未完成记录；进程中断或记账失败后，后续部署不会自动重放，需先检查数据库，再使用 `resolve`。
 
 同一项目的本地并发由 `src/lock.ts` 的进程锁限制，跨机器并发由数据库锁限制。PostgreSQL、SQLite 和 SQL Server 把迁移 SQL 与成功记录放在同一事务中。MySQL 和 Oracle 的 DDL 可能隐式提交，失败后必须根据实际数据库状态决定如何恢复。
 

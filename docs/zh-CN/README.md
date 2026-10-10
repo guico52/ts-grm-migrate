@@ -38,6 +38,14 @@ npm install -D ts-grm-migrate@next
 - `@next` 跟随预发布版本；需要固定版本时请写明版本号，例如 `ts-grm-migrate@0.1.0-alpha.0`。
 - 安装后使用 `npx tgm`，或通过包管理器运行 `tgm` / `ts-grm-migrate`。
 
+在依赖未提升到根目录的 workspace 中（例如 Bun 安装布局），npm 的 workspace 查找可能漏掉子项目中的 CLI，或启动根目录中的其他版本。在子项目目录中可使用：
+
+```bash
+npx --workspaces=false tgm dev --create-only -n init
+```
+
+这样 npm 会在当前项目中查找命令。如果 npm 报 `No versions available for tgm`，说明未找到本地可执行文件，正在查找名为 `tgm` 的 npm 包；应该安装的包是 `ts-grm-migrate`。请确认 `node_modules/.bin/tgm` 最终指向实际存在的 `dist/bin.mjs`；链接损坏时，使用项目原有的包管理器重新安装依赖。此时 CLI 尚未启动，不能由迁移工具修复 npm 的命令解析。[npm exec 的 workspace 行为](https://docs.npmjs.com/cli/npm-exec/)。
+
 ## 快速开始
 
 > **前置：项目需是 ESM** —— 给 `package.json` 加上 `"type": "module"`。
@@ -248,7 +256,7 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--create-only` 仅生成不应用（只用于 `dev`）、`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
+选项：`--dry-run` 只预览 SQL（只用于 `push`）、`--create-only` 仅生成不应用（只用于 `dev`）、`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
 
 普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
 例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`。
@@ -283,7 +291,7 @@ export const SYS_USER = model("SysUser", "id", class {
 
 - `dev` 和 `deploy` 都验证已应用文件的 checksum 及文件缺失；有待应用文件时 `dev` 会拒绝继续生成，需先执行 `deploy`。
 - 模型不管理独立索引和注释；自定义迁移的独立索引在列仍存在时保留。程序化 Schema 可显式管理索引，删除 unique index 会被标为破坏性变更。
-- `dev`、`deploy` 和 `push` 对账差异只给警告，成功执行仍返回 0；`check` 对差异返回 1，也包含无法证明等价的 CHECK 差异。
+- `dev`、`deploy` 对账差异只给警告；`push` 同步后仍有差异时返回 1，取消操作也返回 1；`check` 对差异返回 1，也包含无法证明等价的 CHECK 差异。
 
 - **迁移文件是人可读的 SQL**：`<migrationsDir>/<时间戳>_<名字>.sql`，可以手工编辑。
   但**已应用的迁移不能再改** —— 内容一旦变动，后续 `deploy` 会因 checksum 不匹配而拒绝继续

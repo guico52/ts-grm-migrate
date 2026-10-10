@@ -8,8 +8,8 @@
  * - 列按名字匹配（列名在表内唯一）；
  * - 约束/索引**按内容匹配而非名字**——自动生成的约束名（如 ts-grm 的
  *   `{table}_constraint_{n}`）不可靠；内容相同视为同一约束；
- * - CHECK 按表达式原文比较（现状 introspection 与目标适配器的表达式写法可能
- *   有格式差异，暂不做归一化，差异会表现为 drop+add——后续增强）；
+ * - CHECK compares supported literal membership forms across catalog formatting;
+ *   arbitrary expressions retain conservative token comparison.
  * - 列顺序差异忽略（PG/SQLite 都无法在 alter 里调列序）。
  *
  * 「不管理」语义（模型侧缺失字段）：
@@ -28,6 +28,8 @@
  */
 import type { Schema, Table, Column, Constraint, Index } from "./schema/model.js";
 import type { DialectName } from "./dialect.js";
+import { diagnostic } from "./diagnostics/error.js";
+import { checkKey } from "./schema/checks.js";
 import { sameDefault } from "./schema/defaults.js";
 import type {
   AlterTable,
@@ -47,6 +49,9 @@ export interface Differ {
 export class SchemaDiffer implements Differ {
   constructor(private readonly dialect: DialectName = "postgres") {}
   diff(from: Schema, to: Schema): Diff {
+    if (this.dialect !== "postgres") {
+      for (const table of to.tables) if (table.constraints.some(c => c.kind === "FOREIGN_KEY" && c.deferrable)) throw diagnostic("unsupported_structure", table.name, diagnostic("structure_deferred_fk"));
+    }
     const fromMap = new Map(from.tables.map((t) => [t.name, t]));
     const toMap = new Map(to.tables.map((t) => [t.name, t]));
 
@@ -90,6 +95,7 @@ export class SchemaDiffer implements Differ {
   /** 单表变更；无任何变化返回 null */
   private _alterTable(from: Table, to: Table): AlterTable | null {
     const columns = this._columnChanges(from, to);
+    if (columns.length && from.indexes.some(index => index.unsupported)) throw diagnostic("unsupported_structure", from.name, diagnostic("structure_index", from.indexes.filter(index => index.unsupported).map(index => index.unsupported).join(", ")));
     const constraints = this._constraintChanges(from, to);
     const indexes = this._indexChanges(from, to);
     if (columns.length === 0 && constraints.length === 0 && indexes.length === 0) {
@@ -162,15 +168,18 @@ export class SchemaDiffer implements Differ {
   /** 约束：内容匹配（kind + 列集合 [+ 引用/表达式]），名字不算内容；DROP 先于 ADD 执行 */
   private _constraintChanges(from: Table, to: Table): Array<ConstraintChange> {
     const changes: Array<ConstraintChange> = [];
-    const fromKeys = new Set(from.constraints.map(constraintKey));
-    const toKeys = new Set(to.constraints.map(constraintKey));
+    const key = (c: Constraint, table: Table): string => c.kind === "CHECK"
+      ? checkKey(c.comparisonExpression ?? c.expression, this.dialect, new Map(table.columns.map(col => [col.name, col.type])))
+      : constraintKey(c);
+    const fromKeys = new Set(from.constraints.map(c => key(c, from)));
+    const toKeys = new Set(to.constraints.map(c => key(c, to)));
     for (const constraint of from.constraints) {
-      if (!toKeys.has(constraintKey(constraint))) {
+      if (!toKeys.has(key(constraint, from))) {
         changes.push({ kind: "DROP_CONSTRAINT", constraint });
       }
     }
     for (const constraint of to.constraints) {
-      if (!fromKeys.has(constraintKey(constraint))) {
+      if (!fromKeys.has(key(constraint, to))) {
         changes.push({ kind: "ADD_CONSTRAINT", constraint });
       }
     }
@@ -180,17 +189,20 @@ export class SchemaDiffer implements Differ {
   /** 索引：内容匹配（唯一性 + 列集合 + 谓词），名字不算内容；DROP 先于 ADD 执行 */
   private _indexChanges(from: Table, to: Table): Array<IndexChange> {
     if (to.indexesManaged === false) return [];
+    const unsupported = [...from.indexes, ...to.indexes].find(index => index.unsupported);
+    if (unsupported) throw diagnostic("unsupported_structure", `${from.name}.${unsupported.name}`, diagnostic("structure_index", unsupported.unsupported));
     const changes: Array<IndexChange> = [];
     const managedFrom = from.indexes.filter((index) => !index.implicit);
-    const fromKeys = new Set(from.indexes.map(indexKey));
-    const toKeys = new Set(to.indexes.map(indexKey));
+    const key = (index: Index, table: Table) => indexKey(index, this.dialect, new Map(table.columns.map(column => [column.name, column.type])));
+    const fromKeys = new Set(from.indexes.map(index => key(index, from)));
+    const toKeys = new Set(to.indexes.map(index => key(index, to)));
     for (const index of managedFrom) {
-      if (!toKeys.has(indexKey(index))) {
+      if (!toKeys.has(key(index, from))) {
         changes.push({ kind: "DROP_INDEX", index });
       }
     }
     for (const index of to.indexes) {
-      if (!fromKeys.has(indexKey(index))) {
+      if (!fromKeys.has(key(index, to))) {
         changes.push({ kind: "ADD_INDEX", index });
       }
     }
@@ -229,19 +241,17 @@ export class SchemaDiffer implements Differ {
 function constraintKey(constraint: Constraint): string {
   switch (constraint.kind) {
     case "PRIMARY_KEY":
-      return `pk:${constraint.columns.join(",")}`;
+      return JSON.stringify(["pk", constraint.columns]);
     case "UNIQUE":
-      return `uq:${constraint.columns.join(",")}`;
+      return JSON.stringify(["uq", constraint.columns]);
     case "FOREIGN_KEY":
-      return `fk:${constraint.columns.join(",")}->${constraint.referencedTable}(${constraint.referencedColumns.join(",")})@${constraint.onDelete}`;
+      return JSON.stringify(["fk", constraint.columns, constraint.referencedTable, constraint.referencedColumns, constraint.onDelete, constraint.deferrable]);
     case "CHECK":
-      return `ck:${constraint.comparisonExpression ?? constraint.expression}`;
+      return constraint.expression; // CHECKs use dialect-aware keys in _constraintChanges.
   }
 }
 
 /** 索引的内容签名（匹配依据） */
-function indexKey(index: Index): string {
-  return `${index.unique ? "uniq" : "idx"}:${index.columns.join(",")}${
-    index.predicate != null ? `:${index.predicate}` : ""
-  }`;
+function indexKey(index: Index, dialect: DialectName, types: ReadonlyMap<string, string>): string {
+  return JSON.stringify([index.unique, index.columns, index.predicate === undefined ? undefined : checkKey(index.predicate, dialect, types)]);
 }
