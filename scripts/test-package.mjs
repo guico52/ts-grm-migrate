@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,8 +23,10 @@ try {
   const app = path.join(dir, 'consumer');
   await mkdir(app);
   await writeFile(path.join(app, 'package.json'), JSON.stringify({
-    private: true, type: 'module', dependencies: {
-      'ts-grm-migrate': `file:${archive}`, '@ts-grm/core': version, '@ts-grm/sql': version,
+    name: '@tgm-fixture/backend', private: true, type: 'module', devDependencies: {
+      'ts-grm-migrate': `file:${archive}`,
+    }, dependencies: {
+      '@ts-grm/core': version, '@ts-grm/sql': version,
       'better-sqlite3': '13.0.3',
     },
   }));
@@ -33,6 +35,7 @@ try {
   await writeFile(path.join(app, 'ts-grm-migrate.config.ts'), `import { defineConfig } from 'ts-grm-migrate';\nexport default defineConfig({ dialect: 'sqlite', database: { file: './app.db' }, models: ['./model.ts'], migrationsDir: './migrations' });\n`);
   const bin = path.join(app, 'node_modules/.bin/tgm');
   assert.match(run(process.execPath, [bin, '--help'], app), /deploy/);
+  assert.match(run('npx', ['--offline', '--no-install', 'tgm', '--help'], app), /--create-only/);
   assert.match(run(process.execPath, [bin, 'dev', '-n', 'init'], app), /Generated and applied migration/);
   const status = run(process.execPath, [bin, 'status'], app);
   assert.match(status, /init/);
@@ -52,5 +55,15 @@ try {
   run(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'consumer.mts'], app);
   const installed = JSON.parse(await readFile(path.join(app, 'node_modules/ts-grm-migrate/package.json'), 'utf8'));
   assert.equal(installed.license, 'MIT');
-  console.log(`PASS: clean tarball install, ESM/types, native TypeScript config/model, linked CLI and SQLite migration with ts-grm ${version}`);
+  // Mimic a non-hoisted workspace: the CLI exists only in consumer/node_modules.
+  // npm 11.12.1 derives the workspace bin path from the package name, not its directory.
+  // @see https://github.com/npm/cli/blob/v11.12.1/lib/commands/exec.js
+  await writeFile(path.join(dir, 'package.json'), JSON.stringify({private: true, workspaces: ['consumer']}));
+  assert.match(run('npx', ['--offline', '--no-install', '--workspaces=false', 'tgm', '--help'], app), /--create-only/);
+  assert.match(run('npx', ['--offline', '--no-install', '--workspaces=false', 'tgm', 'dev', '--create-only'], app), /no migration needed/);
+  // In an npm-style workspace, the root package-name link makes bare npx work too.
+  await mkdir(path.join(dir, 'node_modules/@tgm-fixture'), {recursive: true});
+  await symlink(app, path.join(dir, 'node_modules/@tgm-fixture/backend'), 'dir');
+  assert.match(run('npx', ['--offline', '--no-install', 'tgm', '--help'], app), /--create-only/);
+  console.log(`PASS: clean devDependency install, npx (standalone/workspace), ESM/types, native TypeScript config/model and SQLite migration with ts-grm ${version}`);
 } finally { await rm(dir, { recursive: true, force: true }); }
