@@ -2,6 +2,11 @@
 
 English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
+## 0.1.0-alpha.6 (pending publication)
+
+- Add explicit `tgm seed` with executable/argument configuration, literal argument forwarding after `--`, local binary lookup, inherited environment and terminal I/O, exit-code propagation and interruption handling.
+- Keep seeding independent of migration runtime, schema changes and history; add bilingual examples and subprocess/SQLite integration tests.
+
 ## 0.1.0-alpha.4 (pending publication)
 
 - Localize configuration, history, locking, DDL, transaction and drift explanations throughout the CLI; preserve technical identifiers and expose original external diagnostics with `--detail`.

@@ -44,6 +44,23 @@ export interface DatabaseConfig {
   readonly file?: string;
 }
 
+/** Executable and arguments for an explicit `tgm seed` invocation; no shell expansion. */
+export interface SeedConfig {
+  readonly command: string;
+  readonly args?: ReadonlyArray<string>;
+}
+
+export function validateSeedConfig(value: unknown): asserts value is SeedConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw diagnostic("seed_config");
+  }
+  const seed = value as Partial<SeedConfig>;
+  if (typeof seed.command !== "string" || seed.command.trim() === "" || seed.command.includes("\0") ||
+      (seed.args !== undefined && (!Array.isArray(seed.args) || seed.args.some(arg => typeof arg !== "string" || arg.includes("\0"))))) {
+    throw diagnostic("seed_config");
+  }
+}
+
 export interface MigrateConfig {
   /**
    * 方言，默认 "postgres"。
@@ -69,6 +86,8 @@ export interface MigrateConfig {
   readonly schema?: string;
   /** 进程锁文件（相对项目根），默认 `./.ts-grm-migrate.lock` */
   readonly lockPath?: string;
+  /** User script run only by `tgm seed`; paths are relative to the CLI working directory. */
+  readonly seed?: SeedConfig;
 }
 
 /** 配置辅助函数：仅用于类型提示与自动补全 */
@@ -158,6 +177,7 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
   if (config.language != null && config.language !== "en" && config.language !== "zh-CN") {
     throw diagnostic("config_6", file, String(config.language));
   }
+  if (config.seed !== undefined) validateSeedConfig(config.seed);
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
   // （那里的提示能带上 ts-grm 驱动名与实现进度）
   if (config.dialect != null) {

@@ -7,6 +7,7 @@ Usage: tgm <command> [options]
 
 Commands:
   dev [-n <name>]              Generate and apply a migration
+  seed [-- <args...>]          Run the configured seed script
   deploy                       Apply pending migrations
   push                         Sync the database without migration history
   status                       Show migration status
@@ -27,6 +28,11 @@ Options:
 Configuration files:
   ${CONFIG_FILENAMES.join("\n  ")}
 `,
+  seedMissing: 'No seed configured. Add seed: { command: "node", args: ["./src/ts-grm/seed.ts"] } to your configuration.',
+  seedOption: (flag: string) => `Unsupported seed option --${flag}. Pass script arguments after --.`,
+  seedStarted: "Running seed script...",
+  seedCompleted: "Seed completed.",
+  seedFailed: (code: number) => `Seed failed (exit code ${code}).`,
   dataCondition: (table: string) => `Existing data in ${table} must satisfy the new NOT NULL, key or CHECK constraints. SQL may fail; non-transactional DDL may partially apply.`,
   dryRunPush: "Option --dry-run is only supported by push.",
   invalidLanguage: (value: string) => `Unsupported language "${value}". Use en or zh-CN.`,
@@ -78,6 +84,11 @@ Configuration files:
 export type CliMessages = typeof en;
 
 const zhCN = {
+  seedMissing: '未配置 seed。请在配置中添加 seed: { command: "node", args: ["./src/ts-grm/seed.ts"] }。',
+  seedOption: (flag: string) => `seed 不支持选项 --${flag}。脚本参数请放在 -- 之后。`,
+  seedStarted: "正在运行 seed 脚本……",
+  seedCompleted: "Seed 执行完成。",
+  seedFailed: (code: number) => `Seed 执行失败（退出码 ${code}）。`,
   dataCondition: (table: string) => `${table} 的已有数据必须满足新的非空、键或 CHECK 约束。SQL 可能失败；非事务型 DDL 可能部分生效。`,
   dryRunPush: "--dry-run 仅支持 push。",
   usage: `ts-grm-migrate — ts-grm 的数据库迁移工具
@@ -86,6 +97,7 @@ const zhCN = {
 
 命令:
   dev [-n <name>]              生成并应用迁移
+  seed [-- <参数...>]          运行配置的 seed 脚本
   deploy                       应用待处理迁移
   push                         同步数据库，不记录迁移历史
   status                       查看迁移状态

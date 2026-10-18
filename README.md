@@ -81,8 +81,57 @@ npx tgm status           # Inspect applied and pending migrations
 - `migrationsDir`: migration file directory; defaults to `./src/ts-grm`.
 - `schema`: target schema; defaults to `public` on PostgreSQL, `dbo` on SQL Server, and the login user's schema on Oracle.
 - `lockPath`: process lock file; defaults to `./.ts-grm-migrate.lock`.
+- `seed`: optional `{ command: string, args?: string[] }` executable for `tgm seed`; see below.
 
 The CLI searches the project root for a `.ts`, `.mts`, `.mjs`, or `.js` configuration file. Use `--config <path>` to choose one explicitly. A `.ts` file follows the project's module type; in a CommonJS project, use `.mts` or set `"type": "module"`.
+
+## Database seeding
+
+Add an optional `seed` executable and argument array to your existing configuration:
+
+```ts
+seed: {
+  command: "node",
+  args: ["./src/ts-grm/seed.ts"],
+},
+```
+
+Run it explicitly after deploying the schema:
+
+```sh
+npx tgm deploy && npx tgm seed
+npx tgm seed -- --environment development
+```
+
+The script can use your application's ts-grm client factory or a database driver. Reuse the same connection settings and target schema as the application. For example, with the PostgreSQL quick-start configuration and an `app_role(code, label)` table created by a migration in `public`:
+
+```ts
+// src/ts-grm/seed.ts
+import { Pool } from "pg";
+import config from "../../ts-grm-migrate.config.ts";
+
+const pool = new Pool(config.database);
+try {
+  await pool.query(
+    `insert into app_role(code, label) values ($1, $2)
+     on conflict(code) do update set label = excluded.label`,
+    ["reader", "Reader"],
+  );
+} finally {
+  await pool.end();
+}
+```
+
+- `command` is an executable, not a shell command string. Put each argument in `args`; quotes, spaces and shell characters are passed literally. Local `node_modules/.bin` directories in the project and its ancestors are searched before the inherited PATH. On Windows, use a native executable such as `node` with the runner's JavaScript entry point rather than a `.cmd`/`.bat` wrapper.
+- All relative paths use the CLI working directory, including when `--config` selects a file elsewhere. The script inherits environment variables and terminal input/output. The CLI does not load `.env` automatically; load it in the configuration/script or launch with your environment configured.
+- Node runs TypeScript supported by native type stripping; use a compiled ESM script or your installed TypeScript runner when additional transformations or path aliases are needed.
+- Arguments after `--` are appended verbatim to the configured arguments. The script chooses how to parse them, including environment or dataset selection.
+- Every invocation runs the script. Migration commands do not seed automatically; seed creates no migration history or locks. The script owns connection cleanup, transactions, dependency order and idempotency. Concurrent seed runs and runs overlapping migrations must be coordinated by the application or deployment workflow.
+- A missing seed configuration, startup error or interruption fails the command. Numeric script exit codes are retained; SIGINT/SIGTERM return 130/143. On POSIX, these signals reach the seed process group; a process that does not exit is killed after five seconds. On Windows, interruption terminates the immediate seed process; descendant cleanup depends on the runner.
+
+Use migration SQL for one-time data changes tied to a schema version. Use seed for repeatable initialization. This separation follows [Prisma's explicit seeding workflow](https://docs.prisma.io/docs/orm/v7/prisma-migrate/workflows/seeding).
+
+Programmatic callers can use `runSeed(seed, cwd, args?)`, which returns the exit code, inherits process I/O and temporarily handles SIGINT/SIGTERM. It does not create a migration runtime.
 
 ## Defaults and auto-increment (optional)
 

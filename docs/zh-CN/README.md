@@ -88,9 +88,58 @@ npx tgm status           # 看看应用了哪些、还剩哪些
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
 - `schema`：目标 schema，PostgreSQL 默认 `public`，SQL Server 默认 `dbo`，Oracle 默认登录用户
 - `lockPath`：进程锁文件，默认 `./.ts-grm-migrate.lock`
+- `seed`：可选的 `{ command: string, args?: string[] }`，供 `tgm seed` 执行，见下文
 
 配置文件在项目根自动查找（`.ts` / `.mts` / `.mjs` / `.js`），也可以用 `--config <path>` 指定。
 `.ts` 的模块类型跟随项目：CommonJS 项目请用 `.mts`，或给 `package.json` 加 `"type": "module"`。
+
+## 数据初始化（seed）
+
+在现有配置中添加可选的 `seed` 可执行文件及参数数组：
+
+```ts
+seed: {
+  command: "node",
+  args: ["./src/ts-grm/seed.ts"],
+},
+```
+
+部署 schema 后显式执行：
+
+```sh
+npx tgm deploy && npx tgm seed
+npx tgm seed -- --environment development
+```
+
+脚本可以使用应用自身的 ts-grm client 工厂或数据库驱动。连接配置与目标 schema 应复用应用的设置。例如，使用快速开始中的 PostgreSQL 配置，且迁移已在 `public` 中创建 `app_role(code, label)` 表时：
+
+```ts
+// src/ts-grm/seed.ts
+import { Pool } from "pg";
+import config from "../../ts-grm-migrate.config.ts";
+
+const pool = new Pool(config.database);
+try {
+  await pool.query(
+    `insert into app_role(code, label) values ($1, $2)
+     on conflict(code) do update set label = excluded.label`,
+    ["reader", "Reader"],
+  );
+} finally {
+  await pool.end();
+}
+```
+
+- `command` 是可执行文件，不是 shell 命令字符串。每个参数分别放入 `args`；引号、空格及 shell 字符按字面量传入。项目及其祖先目录的 `node_modules/.bin` 优先于继承的 PATH。Windows 请使用 `node` 等原生可执行文件并传入 runner 的 JavaScript 入口，不要直接执行 `.cmd` / `.bat` 包装脚本。
+- 相对路径均以 CLI 工作目录解析，即使 `--config` 指定了其他目录的配置文件。脚本继承环境变量及终端输入输出。CLI 不自动加载 `.env`，请在配置或脚本中加载，或在启动时提供环境变量。
+- Node 可以运行原生类型剥离支持的 TypeScript；需要额外转换或路径别名时，使用编译后的 ESM 脚本或项目已安装的 TypeScript runner。
+- `--` 后的参数原样追加到配置参数之后，由脚本自行解析环境、数据集等业务选项。
+- 每次调用都执行脚本。迁移命令不自动 seed，seed 不创建迁移历史或锁。连接关闭、事务、依赖顺序及幂等性由脚本负责。并发 seed 或 seed 与迁移重叠执行，由应用或部署流程协调。
+- 未配置 seed、启动失败或中断均视为失败；保留脚本的数字退出码，SIGINT / SIGTERM 对应 130 / 143。POSIX 下会向 seed 进程组转发信号，五秒内未退出则强制结束。Windows 中断会结束直接子进程，后代进程的清理由 runner 负责。
+
+随 schema 版本执行一次的数据变更放入 migration SQL，可重复初始化的数据放入 seed。这一划分参考 [Prisma 的显式 seed 工作流](https://docs.prisma.io/docs/orm/v7/prisma-migrate/workflows/seeding)。
+
+程序化调用可使用 `runSeed(seed, cwd, args?)`，返回退出码、继承进程输入输出，并在执行期间临时处理 SIGINT / SIGTERM；不创建 migration runtime。
 
 ## 默认值与自增（可选）
 

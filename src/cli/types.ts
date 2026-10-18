@@ -8,6 +8,8 @@ import type { CliLanguage } from "./messages.js";
 export interface ParsedArgs {
   /** 第一个位置参数（命令名） */
   readonly command: string | undefined;
+  /** Arguments after `--`, preserved verbatim for seed. */
+  readonly passthrough: ReadonlyArray<string>;
   /** `--key value` / `--key=value` / `-h` 形式的选项 */
   readonly flags: ReadonlyMap<string, string | true>;
 }

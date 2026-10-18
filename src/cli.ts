@@ -9,6 +9,7 @@
  * 配置文件在项目根自动查找（见 `src/config.ts` 的候选名）。
  */
 import { createInterface } from "node:readline/promises";
+import { runSeed } from "./seed.js";
 import { loadConfig } from "./config.js";
 import { messages, type CliLanguage, type CliMessages } from "./cli/messages.js";
 import { abnormalDrift } from "./drift.js";
@@ -35,9 +36,14 @@ const SHORT_FLAG_ALIASES: Record<string, string> = { n: "name" };
 export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   const flags = new Map<string, string | true>();
   let command: string | undefined;
+  let passthrough: ReadonlyArray<string> = [];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
+    if (arg === "--") {
+      passthrough = argv.slice(i + 1);
+      break;
+    }
     if (arg.startsWith("--")) {
       const eq = arg.indexOf("=");
       if (eq >= 0) {
@@ -72,7 +78,7 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
       command = arg;
     }
   }
-  return { command, flags };
+  return { command, flags, passthrough };
 }
 
 /**
@@ -87,7 +93,7 @@ export async function run(
 ): Promise<number> {
   const log = options.log ?? ((message: string) => console.log(message));
   const errorLog = options.errorLog ?? ((message: string) => console.error(message));
-  const { command, flags } = parseArgs(argv);
+  const { command, flags, passthrough } = parseArgs(argv);
   const lang = flags.get("lang");
   const initialLanguage: CliLanguage = lang === "zh-CN" ? "zh-CN" : "en";
   let m = messages(initialLanguage);
@@ -101,7 +107,7 @@ export async function run(
     log(m.usage);
     return 0;
   }
-  if (!["dev", "deploy", "push", "status", "resolve", "check"].includes(command)) {
+  if (!["dev", "deploy", "push", "status", "resolve", "check", "seed"].includes(command)) {
     errorLog(m.unknownCommand(command));
     log(m.usage);
     return 1;
@@ -134,6 +140,25 @@ export async function run(
   }
 
   if (flags.has("dry-run") && command !== "push") { errorLog(m.dryRunPush); return 1; }
+
+  if (command === "seed") {
+    for (const flag of flags.keys()) {
+      if (!["config", "lang", "detail"].includes(flag)) {
+        errorLog(m.seedOption(flag));
+        return 1;
+      }
+    }
+    if (config.seed === undefined) {
+      errorLog(m.seedMissing);
+      return 1;
+    }
+    if (detail) log(m.config(configFile));
+    log(m.seedStarted);
+    const code = await runSeed(config.seed, cwd, passthrough);
+    if (code === 0) log(m.seedCompleted);
+    else errorLog(m.seedFailed(code));
+    return code;
+  }
 
   const runtime = await createRuntime(config, cwd, {
     confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),

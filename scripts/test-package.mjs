@@ -32,11 +32,14 @@ try {
   }));
   console.log(run('npm', ['install', '--omit=optional', '--no-audit', '--no-fund'], app));
   await writeFile(path.join(app, 'model.ts'), `import { model, prop } from '@ts-grm/core';\nexport const ITEM = model('Item', 'id', class { id = prop.i32(); name = prop.str(80); });\n`);
-  await writeFile(path.join(app, 'ts-grm-migrate.config.ts'), `import { defineConfig } from 'ts-grm-migrate';\nexport default defineConfig({ dialect: 'sqlite', database: { file: './app.db' }, models: ['./model.ts'], migrationsDir: './migrations' });\n`);
+  await writeFile(path.join(app, 'ts-grm-migrate.config.ts'), `import { defineConfig } from 'ts-grm-migrate';\nexport default defineConfig({ dialect: 'sqlite', database: { file: './app.db' }, models: ['./model.ts'], migrationsDir: './migrations', seed: { command: process.execPath, args: ['./seed.mts'] } });\n`);
   const bin = path.join(app, 'node_modules/.bin/tgm');
   assert.match(run(process.execPath, [bin, '--help'], app), /deploy/);
   assert.match(run('npx', ['--offline', '--no-install', 'tgm', '--help'], app), /--create-only/);
   assert.match(run(process.execPath, [bin, 'dev', '-n', 'init'], app), /Generated and applied migration/);
+  await writeFile(path.join(app, 'seed.mts'), `import { writeFileSync } from 'node:fs';\nconst args: string[] = process.argv.slice(2);\nwriteFileSync('seed-result.json', JSON.stringify(args));\n`);
+  assert.match(run(process.execPath, [bin, 'seed', '--', '--environment', 'package test'], app), /Seed completed/);
+  assert.deepEqual(JSON.parse(await readFile(path.join(app, 'seed-result.json'), 'utf8')), ['--environment', 'package test']);
   const status = run(process.execPath, [bin, 'status'], app);
   assert.match(status, /init/);
   assert.match(run(process.execPath, [bin, 'dev'], app), /no migration needed/);
@@ -51,7 +54,7 @@ try {
     assert.match(run(process.execPath, [bin, 'check', '--config', 'patched.config.mts'], app), /matches the model/);
   }
   run(process.execPath, ['--input-type=module', '-e', `import { defineConfig } from 'ts-grm-migrate'; if (typeof defineConfig !== 'function') process.exit(1);`], app);
-  await writeFile(path.join(app, 'consumer.mts'), `import { defineConfig, type Schema } from 'ts-grm-migrate';\nconst schema: Schema = { tables: [] };\ndefineConfig({dialect:'sqlite',database:{file:':memory:'},models:[]});\nconsole.log(schema);\n`);
+  await writeFile(path.join(app, 'consumer.mts'), `import { defineConfig, runSeed, type SeedConfig, type Schema } from 'ts-grm-migrate';\nconst schema: Schema = { tables: [] };\ndefineConfig({dialect:'sqlite',database:{file:':memory:'},models:[],seed:{command:'node',args:['seed.mts']}});\nconst seed: SeedConfig = {command:'node'};\nconst runner: (config: SeedConfig, cwd: string) => Promise<number> = runSeed;\nvoid seed; void runner;\nconsole.log(schema);\n`);
   run(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', 'consumer.mts'], app);
   const installed = JSON.parse(await readFile(path.join(app, 'node_modules/ts-grm-migrate/package.json'), 'utf8'));
   assert.equal(installed.license, 'MIT');
@@ -65,5 +68,5 @@ try {
   await mkdir(path.join(dir, 'node_modules/@tgm-fixture'), {recursive: true});
   await symlink(app, path.join(dir, 'node_modules/@tgm-fixture/backend'), 'dir');
   assert.match(run('npx', ['--offline', '--no-install', 'tgm', '--help'], app), /--create-only/);
-  console.log(`PASS: clean devDependency install, npx (standalone/workspace), ESM/types, native TypeScript config/model and SQLite migration with ts-grm ${version}`);
+  console.log(`PASS: clean devDependency install, npx (standalone/workspace), ESM/types, native TypeScript config/model/seed and SQLite migration with ts-grm ${version}`);
 } finally { await rm(dir, { recursive: true, force: true }); }

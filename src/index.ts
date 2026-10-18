@@ -95,6 +95,7 @@ export type {
   DialectName,
   LoadedConfig,
   MigrateConfig,
+  SeedConfig,
   OutputLanguage,
 } from "./config.js";
 export { createRuntime, DEFAULT_LOCK_PATH, DEFAULT_MIGRATIONS_DIR } from "./runtime.js";
@@ -126,3 +127,5 @@ export { ServerSql } from "./server/sql.js";
 
 export type { SqlServerSession, SqlServerRequestLike } from "./executor/sqlserver.js";
 export type { OracleSession } from "./executor/oracle.js";
+
+export { runSeed } from "./seed.js";

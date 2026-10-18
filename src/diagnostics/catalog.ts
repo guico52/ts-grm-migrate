@@ -1,5 +1,7 @@
 /** Paired diagnostic templates. Values such as paths, SQL and identifiers are not translated. */
 export const diagnostics = {
+  seed_config: { en: 'Invalid seed configuration. Expected { command: "node", args: ["./src/ts-grm/seed.ts"] }: command must be non-empty and args must be strings without null bytes.', 'zh-CN': 'seed 配置无效。应为 { command: "node", args: ["./src/ts-grm/seed.ts"] }：command 必须为非空字符串，args 必须为字符串数组，且不能包含空字符。' },
+  seed_start: { en: 'Cannot start seed executable "{0}": {1}. Check the executable, working directory and installed dependencies.', 'zh-CN': '无法启动 seed 可执行文件 "{0}"：{1}。请检查可执行文件、工作目录及已安装的依赖。' },
   lock_lost: { en: 'Migration lease ownership changed: {0}. The replacement lease was not removed.', 'zh-CN': '迁移租约所有权已改变：{0}。未删除替代租约。' },
 
   lock_cleanup: { en: 'Migration or lock cleanup failed: {0}; {1}', 'zh-CN': '迁移或锁清理失败：{0}；{1}' },
