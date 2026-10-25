@@ -23,7 +23,7 @@ import type { Diff } from './diff/types.js';
 import { SchemaDiffer } from './differ.js';
 import type { SchemaDrift } from './drift.js';
 import { describeDiff } from './drift.js';
-import type { SqlExecutor } from './executor.js';
+import { isConfirmedRollback, type SqlExecutor } from './executor.js';
 import type { Introspector } from './introspector.js';
 import { acquireProcessLock } from './lock.js';
 import type { Schema } from './schema/model.js';
@@ -59,7 +59,11 @@ export interface MigratorOptions {
   readonly lockKey?: string;
   /**
    * 破坏性变更的确认钩子。返回 false 则中止（抛 `MigrationAbortedError`）。
-   * 不传 = 总是允许（程序化调用 / CI）。CLI 在这里做交互确认。
+   * CLI 在这里做交互确认。
+   *
+   * **不传 = 总是允许**：`dev()` 与 `push()` 会直接执行删表、删列、改列类型等破坏性变更，
+   * 不做任何询问。程序化调用若不能确定模型变更是安全的，应传入此钩子，
+   * 或先用 `push({ dryRun: true })` / `dev({ createOnly: true })` 审核 SQL。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
   /** 可选的进度事件，供 CLI 诊断使用。使用方默认不得暴露 SQL。 */
@@ -203,7 +207,12 @@ export class Migrator {
     });
   }
 
-  /** 无历史快速同步：diff 后直接应用，不写文件、不记历史（push 路径） */
+  /**
+   * 无历史快速同步：diff 后直接应用，不写文件、不记历史（push 路径）。
+   *
+   * 没有迁移文件可供事后审核或重放；未传 `confirm` 时破坏性变更会被直接执行。
+   * `dryRun` 只返回将要执行的 SQL，不修改数据库。
+   */
   async push(options: { readonly dryRun?: boolean } = {}): Promise<PushResult> {
     return await this._withLocks(false, async () => {
       const { pending } = await this._validatedHistory();
@@ -426,12 +435,7 @@ export class Migrator {
         await this._options.history.markFailed(
           file.id,
           message,
-          failureLogs(
-            file,
-            formatError(error, language, true),
-            language,
-            error.message.includes('rolled back'),
-          ),
+          failureLogs(file, formatError(error, language, true), language, isConfirmedRollback(e)),
         );
       } catch (historyError) {
         throw new DiagnosticAggregateError([e, historyError], 'migrator_record_failure', [

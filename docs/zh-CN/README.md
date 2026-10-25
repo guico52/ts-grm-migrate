@@ -344,7 +344,7 @@ export const SYS_USER = model("SysUser", "id", class {
 
 - **迁移文件是人可读的 SQL**：`<migrationsDir>/<时间戳>_<名字>.sql`，可以手工编辑。
   但**已应用的迁移不能再改** —— 内容一旦变动，后续 `deploy` 会因 checksum 不匹配而拒绝继续
-- **破坏性变更会先问**：模型同步时删表 / 删列 / 改列类型及显式删除 unique index 会要求确认，非交互同步需加 `--force`。`deploy` 直接应用已审核文件，不进行交互确认。
+- **破坏性变更会先问**：模型同步时删表 / 删列 / 改列类型及显式删除 unique index 会要求确认，非交互同步需加 `--force`。`deploy` 直接应用已审核文件，不进行交互确认。程序化调用 `Migrator` 时只有传入 `confirm` 钩子才会询问；不传时 `dev()` 和 `push()` 会直接执行破坏性变更。请传入 `confirm`，或先用 `push({ dryRun: true })`、`dev({ createOnly: true })` 审核 SQL。
 - **迁移后自动对账**：`dev` / `deploy` / `push` 完成后会再读一次数据库与模型比对，
   仍有差异就报出具体位置，例如：
 

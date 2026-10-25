@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DdlGenerator } from '../src/ddl';
+import { diagnostic } from '../src/diagnostics/error';
 import type { Diff } from '../src/diff/types';
 import type { MigrationCompletion, SqlExecutor } from '../src/executor';
 import type { Dialect, Introspector } from '../src/introspector';
@@ -230,6 +231,20 @@ describe('Migrator', () => {
     await expect(makeMigrator().deploy()).rejects.toThrow(/recording the failure also failed/);
     await expect(makeMigrator().deploy()).rejects.toThrow(/attempts failed/);
     expect(executor.executed).toHaveLength(1);
+  });
+
+  it('failure logs claim a rollback only for executor-confirmed rollback diagnostics', async () => {
+    await writeMigration('first', 'select 1;');
+    const run = vi.spyOn(executor, 'executeStatements');
+    run.mockRejectedValueOnce(diagnostic('executor_postgres_1', new Error('boom')));
+    await expect(makeMigrator().deploy()).rejects.toThrow(/first/);
+    expect(history.failures.at(-1)?.logs).toContain('rolled back the transaction');
+
+    // 文案里带 "rolled back" 的普通错误不能被当作已确认回滚
+    await makeMigrator().resolve({ migration: 'first', action: 'rolled-back' });
+    run.mockRejectedValueOnce(new Error('Statement failed (transaction rolled back): boom'));
+    await expect(makeMigrator().deploy()).rejects.toThrow(/first/);
+    expect(history.failures.at(-1)?.logs).toContain('may have partially applied');
   });
 
   it('does not execute SQL if the durable guard cannot be written', async () => {

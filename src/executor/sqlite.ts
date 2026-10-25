@@ -70,8 +70,9 @@ export class SqliteSqlExecutor implements SqlExecutor {
     } catch (e) {
       try {
         this._database.exec('rollback');
-      } catch {
-        // 回滚失败不掩盖主流程真正的错误
+      } catch (rollbackError) {
+        // 回滚失败时不能声称事务已回滚；原始错误与回滚错误一并报告
+        throw diagnostic('executor_rollback_unconfirmed', asError(e), asError(rollbackError));
       }
       throw diagnostic('executor_sqlite_1', asError(e));
     }

@@ -65,7 +65,7 @@ export interface RuntimeOptions {
   readonly readOnly?: boolean;
   /**
    * 破坏性变更确认钩子（CLI 传交互式确认）。
-   * 不传 = 总是允许（CI / 程序化调用，「我知道在做什么」的默认）。
+   * 不传 = 总是允许：`dev` / `push` 会直接执行破坏性变更，详见 `MigratorOptions.confirm`。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
   /** 可选的诊断事件；SQL 中可能包含字面量数据。 */

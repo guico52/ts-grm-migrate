@@ -56,7 +56,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
         await client.query('rollback');
       } catch (rollbackError) {
         broken = asError(rollbackError);
-        throw diagnostic('executor_postgres_rollback', asError(e), broken);
+        throw diagnostic('executor_rollback_unconfirmed', asError(e), broken);
       }
       throw diagnostic('executor_postgres_1', asError(e));
     } finally {

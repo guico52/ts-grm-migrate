@@ -4,6 +4,8 @@
  * 在 `SqlQueryable`（只读查询）之上补两件事：事务内执行语句、迁移互斥锁。
  * 方言实现见 `src/executor/`。
  */
+import type { DiagnosticKey } from './diagnostics/catalog.js';
+import { DiagnosticError } from './diagnostics/error.js';
 import type { SqlQueryable } from './sql.js';
 
 export type MigrationCompletion = (connection: SqlQueryable) => Promise<void>;
@@ -27,4 +29,16 @@ export interface SqlExecutor extends SqlQueryable {
    * （多机部署时进程锁无效）。
    */
   acquireMigrationLock(key: string): Promise<() => Promise<void>>;
+}
+
+/** 执行器已确认事务回滚时抛出的诊断；其余失败一律按「可能已部分生效」处理。 */
+const CONFIRMED_ROLLBACK: ReadonlySet<DiagnosticKey> = new Set([
+  'executor_postgres_1',
+  'executor_sqlite_1',
+  'executor_sqlserver_2',
+]);
+
+/** 判断 `executeStatements` 抛出的错误是否已确认事务回滚。自定义执行器的错误一律视为未确认。 */
+export function isConfirmedRollback(error: unknown): boolean {
+  return error instanceof DiagnosticError && CONFIRMED_ROLLBACK.has(error.key);
 }

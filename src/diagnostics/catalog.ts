@@ -48,7 +48,7 @@ export const diagnostics = {
     en: 'Cannot read an unbalanced SQLite CHECK expression.',
     'zh-CN': '无法读取括号不平衡的 SQLite CHECK 表达式。',
   },
-  executor_postgres_rollback: {
+  executor_rollback_unconfirmed: {
     en: 'Statement failed and rollback could not be confirmed: {0}; rollback error: {1}',
     'zh-CN': '语句执行失败，且无法确认事务回滚：{0}；回滚错误：{1}',
   },

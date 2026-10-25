@@ -6,6 +6,7 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { SqliteDdlGenerator } from '../src';
+import { isConfirmedRollback } from '../src/executor';
 import { SqliteSqlExecutor } from '../src/executor/sqlite';
 import { normalizeSqliteType, SqliteIntrospector } from '../src/introspector/sqlite';
 import type { Schema } from '../src/schema/model';
@@ -151,6 +152,22 @@ describe('SqliteIntrospector', () => {
 });
 
 describe('SqliteSqlExecutor', () => {
+  it('回滚本身失败时报告无法确认回滚，而不是声称已回滚', async () => {
+    const db = {
+      prepare: () => {
+        throw new Error('unused');
+      },
+      exec(sql: string) {
+        if (sql === 'boom') throw new Error('statement failed');
+        if (sql === 'rollback') throw new Error('rollback failed');
+      },
+    };
+    const error = await new SqliteSqlExecutor(db).executeStatements(['boom']).catch((e) => e);
+    expect(error.key).toBe('executor_rollback_unconfirmed');
+    expect(error.message).toMatch(/rollback could not be confirmed.*rollback failed/);
+    expect(isConfirmedRollback(error)).toBe(false);
+  });
+
   it('executeStatements 失败时整体回滚', async () => {
     const db = memoryDb();
     try {
