@@ -3,7 +3,7 @@ import type { SqlQueryable } from '../sql.js';
 import type { AppliedMigration, MigrationFile, MigrationHistoryStore } from '../store.js';
 import type { ServerSql } from './sql.js';
 
-/** Named columns are deliberately quoted consistently on Oracle (case-sensitive catalog names). */
+/** Oracle 上的列名统一加引号（catalog 名称区分大小写）。 */
 export class ServerMigrationHistoryStore implements MigrationHistoryStore {
   constructor(
     private readonly executor: SqlExecutor,
@@ -61,8 +61,8 @@ export class ServerMigrationHistoryStore implements MigrationHistoryStore {
       const e = error as { number?: number; errorNum?: number };
       if (this.sql.dialect === 'mssql' && e.number === 208) return [];
       if (this.sql.dialect === 'oracle' && e.errorNum === 942) {
-        // ORA-00942 also means lack of access to another user's table. Only the
-        // owner's catalog can prove absence; otherwise retain the original error.
+        // ORA-00942 也可能表示无权访问其他用户的表。只有
+        // 属主的 catalog 能证明表不存在；否则保留原始错误。
         const { rows: owner } = await this.executor.query(
           `select sys_context('USERENV', 'SESSION_USER') as "owner" from dual`,
         );
@@ -104,7 +104,7 @@ export class ServerMigrationHistoryStore implements MigrationHistoryStore {
     logs: string | null,
     connection: SqlQueryable = this.executor,
   ): Promise<void> {
-    // Migrator holds the database lock for the entire read/update pair.
+    // Migrator 在整个「读 + 更新」期间持有数据库锁。
     const p = (i: number): string => this.sql.param(i);
     const c = (name: string): string => this.column(name);
     const exists = await connection.query(

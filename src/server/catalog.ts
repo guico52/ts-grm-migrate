@@ -14,7 +14,7 @@ export function groupRows(
   return groups;
 }
 
-/** Conservative formatting normalization; never rewrite the content of string literals. */
+/** 保守的格式规范化；绝不改写字符串字面量的内容。 */
 export function normalizeServerExpression(expression: string): string {
   const tokens =
     expression.match(

@@ -1,4 +1,4 @@
-/** Paired diagnostic templates. Values such as paths, SQL and identifiers are not translated. */
+/** 成对的中英诊断模板。路径、SQL、标识符等取值不做翻译。 */
 export const diagnostics = {
   seed_config: {
     en: 'Invalid seed configuration. Expected { command: "node", args: ["./src/ts-grm/seed.ts"] }: command must be non-empty and args must be strings without null bytes.',

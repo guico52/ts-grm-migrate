@@ -21,7 +21,7 @@ import { dialectInfo } from './dialect.js';
 // 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
 export type { DialectName } from './dialect.js';
 
-/** CLI output language; the command-line --lang flag may override it. */
+/** CLI 输出语言；命令行的 --lang 参数可覆盖它。 */
 export type OutputLanguage = 'en' | 'zh-CN';
 
 /**
@@ -31,7 +31,7 @@ export type OutputLanguage = 'en' | 'zh-CN';
  * - sqlite：用 `file` 指定库文件（相对项目根；`:memory:` 为内存库），其余字段忽略。
  */
 export interface DatabaseConfig {
-  /** SQL Server TLS options. Defaults: encrypt=true, trustServerCertificate=false. */
+  /** SQL Server 的 TLS 选项。默认 encrypt=true、trustServerCertificate=false。 */
   readonly encrypt?: boolean;
   readonly trustServerCertificate?: boolean;
   readonly host?: string;
@@ -44,7 +44,7 @@ export interface DatabaseConfig {
   readonly file?: string;
 }
 
-/** Executable and arguments for an explicit `tgm seed` invocation; no shell expansion. */
+/** 显式执行 `tgm seed` 时使用的可执行文件与参数；不做 shell 展开。 */
 export interface SeedConfig {
   readonly command: string;
   readonly args?: ReadonlyArray<string>;
@@ -77,7 +77,7 @@ export interface MigrateConfig {
    * 且**不能**配 `schema`（SQLite 没有 schema 概念，配了会报错）。
    */
   readonly dialect?: import('./dialect.js').DialectName;
-  /** CLI output language for this project. Defaults to English. */
+  /** 本项目的 CLI 输出语言，默认英文。 */
   readonly language?: OutputLanguage;
   /** 数据库连接 */
   readonly database: DatabaseConfig;
@@ -92,7 +92,7 @@ export interface MigrateConfig {
   readonly schema?: string;
   /** 进程锁文件（相对项目根），默认 `./.ts-grm-migrate.lock` */
   readonly lockPath?: string;
-  /** User script run only by `tgm seed`; paths are relative to the CLI working directory. */
+  /** 仅由 `tgm seed` 运行的用户脚本；路径相对于 CLI 的工作目录。 */
   readonly seed?: SeedConfig;
 }
 

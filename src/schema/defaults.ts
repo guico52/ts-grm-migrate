@@ -1,6 +1,6 @@
 import type { DialectName } from '../dialect.js';
 
-/** Compare catalog forms conservatively: casts inside expressions retain their semantics. */
+/** 保守地比较 catalog 中的默认值形式：表达式内部的类型转换保留其语义。 */
 export function sameDefault(
   left: string,
   right: string | undefined,
@@ -66,7 +66,7 @@ function canonical(value: string, type: string, dialect: DialectName): string {
     .replace(/^([+-]) /, '$1');
 }
 
-/** Decimal coefficient/exponent representation, without floating point or expanded exponents. */
+/** 十进制「系数/指数」表示，不经过浮点数，也不展开指数。 */
 function numeric(value: string): string | undefined {
   const raw = value.startsWith("'") && value.endsWith("'") ? value.slice(1, -1) : value;
   const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/.exec(raw);

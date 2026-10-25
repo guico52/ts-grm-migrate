@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 export type ServerDialect = 'mssql' | 'oracle';
 
-/** Names and namespaces are shared by introspection, history and DDL rendering. */
+/** 名称与命名空间由 introspect、历史表和 DDL 生成共用。 */
 export class ServerSql {
   constructor(
     readonly dialect: ServerDialect,

@@ -36,7 +36,7 @@ export interface Table
   readonly constraints: ReadonlyArray<Constraint>;
   /** migrate 扩展：索引。ts-grm 模型无此概念，来源：补充声明 / introspection */
   readonly indexes: ReadonlyArray<Index>;
-  /** false means independent indexes are outside this target's management scope. */
+  /** false 表示独立索引不在该目标的管理范围内。 */
   readonly indexesManaged?: boolean;
 }
 
@@ -62,10 +62,10 @@ export interface Column
   /** 列在表中的序号（从 1 开始），方言重建表时需要，diff 时忽略 */
   readonly ordinal: number;
   readonly comment: string | undefined;
-  /** SQL Server named DEFAULT constraint, retained for ALTER/DROP COLUMN. */
+  /** SQL Server 的具名 DEFAULT 约束，ALTER/DROP COLUMN 时需要用到。 */
   readonly defaultConstraint?: string;
   readonly collation?: string;
-  /** MySQL attributes retained when MODIFY restates a whole column definition. */
+  /** MODIFY 重写整列定义时需要保留的 MySQL 列属性。 */
   readonly mysql?: {
     readonly charset?: string;
     readonly collation?: string;
@@ -124,14 +124,14 @@ export interface CheckConstraint
   readonly name: string | undefined;
   /** 条件表达式原文（如 `"TYPE" in ('Book', 'PaperBook')`） */
   readonly expression: string;
-  /** Dialect-normalized comparison form; expression remains executable SQL. */
+  /** 按方言规范化后的比较形式；expression 仍是可执行的 SQL。 */
   readonly comparisonExpression?: string;
 }
 
 export interface Index {
-  /** Catalog feature that cannot be safely represented or regenerated. */
+  /** 无法安全表示或重新生成的 catalog 特性。 */
   readonly unsupported?: string;
-  /** Database-required supporting index, not an independently managed model index. */
+  /** 数据库必需的支撑索引，不是独立管理的模型索引。 */
   readonly implicit?: boolean;
   readonly name: string;
   readonly columns: ReadonlyArray<string>;

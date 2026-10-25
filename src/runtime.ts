@@ -61,14 +61,14 @@ export interface Runtime {
 }
 
 export interface RuntimeOptions {
-  /** Inspect without initializing schemas or writing the SQLite database. */
+  /** 只做检查：不初始化 schema，也不写 SQLite 数据库。 */
   readonly readOnly?: boolean;
   /**
    * 破坏性变更确认钩子（CLI 传交互式确认）。
    * 不传 = 总是允许（CI / 程序化调用，「我知道在做什么」的默认）。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
-  /** Optional diagnostic events; SQL can contain literal data. */
+  /** 可选的诊断事件；SQL 中可能包含字面量数据。 */
   readonly onProgress?: (event: MigrationProgress) => void;
   readonly driftLanguage?: 'en' | 'zh-CN';
 }

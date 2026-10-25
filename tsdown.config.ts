@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown';
 
-// Same build tool as ts-grm. Keep peers external so model registration uses the host's ESM instance.
+// 与 ts-grm 使用同一构建工具。peer 依赖保持 external，确保模型注册到宿主的同一个 ESM 实例。
 export default defineConfig({
   entry: ['src/index.ts', 'src/bin.ts'],
   format: ['esm'],

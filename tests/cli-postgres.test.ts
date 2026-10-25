@@ -176,7 +176,7 @@ describePg('CLI 端到端（真实数据库）', () => {
     errors.length = 0;
     const refused = await runCli(['push', '--config', configPath]);
 
-    expect(refused).toBe(1); // Cancellation did not complete synchronization
+    expect(refused).toBe(1); // 取消后同步没有完成
     expect(errors.join('\n')).toContain('Drop table temp_extra');
     expect(await tables()).toContain('temp_extra'); // 未被执行
 

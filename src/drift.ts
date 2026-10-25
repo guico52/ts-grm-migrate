@@ -18,7 +18,7 @@ export interface SchemaDrift {
   readonly table: string;
   /** 人类可读的说明，如「缺少列 EMAIL」 */
   readonly summary: string;
-  /** Reserved for differences whose harmless equivalence has actually been proven. */
+  /** 仅用于已被证明等价、无害的差异。 */
   readonly known: boolean;
 }
 

@@ -101,7 +101,7 @@ export class OracleIntrospector implements Introspector {
               }
               case 'C': {
                 const expression = s(c.SEARCH_CONDITION_VC);
-                // Oracle represents NOT NULL as a CHECK; nullability already expresses it.
+                // Oracle 把 NOT NULL 表示为 CHECK；可空性已经表达了这一点。
                 if (
                   /^"(?:""|[^"])+" IS NOT NULL$/i.test(expression.trim()) &&
                   names.length === 1 &&
@@ -127,7 +127,7 @@ export class OracleIntrospector implements Introspector {
           const tableIndexes: Index[] = [];
           for (const [indexName, rows] of groupRows(forTable(indexes), 'INDEX_NAME')) {
             if (constraintIndexes.has(indexName)) continue;
-            // LOB storage indexes are internal implementation details.
+            // LOB 存储索引属于内部实现细节。
             if (rows[0]!.INDEX_TYPE === 'LOB') continue;
             if (
               rows.some(

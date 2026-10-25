@@ -5,8 +5,8 @@ import { SqlServerSqlExecutor } from '../executor/sqlserver.js';
 import { ServerSql } from './sql.js';
 
 /**
- * mssql exposes acquire/release for pinning connections. Keep this boundary in one place.
- * A Request's parent delegates acquisition to the reserved physical session, never the pool.
+ * mssql 通过 acquire/release 固定连接；这个边界只在这里处理。
+ * Request 的 parent 把获取连接委托给预留的物理会话，绝不交给连接池。
  * @see https://github.com/tediousjs/node-mssql/blob/master/lib/base/connection-pool.js
  * @see https://github.com/tediousjs/node-mssql/blob/master/lib/base/transaction.js
  */
@@ -33,7 +33,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
     },
   );
   pool.on('error', () => {
-    /* Requests retain the original connection error. */
+    /* Request 会保留原始的连接错误。 */
   });
   const pinnedPool = pool as unknown as {
     config: unknown;

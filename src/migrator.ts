@@ -62,7 +62,7 @@ export interface MigratorOptions {
    * 不传 = 总是允许（程序化调用 / CI）。CLI 在这里做交互确认。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
-  /** Optional progress events for CLI diagnostics. Consumers must not expose SQL by default. */
+  /** 可选的进度事件，供 CLI 诊断使用。使用方默认不得暴露 SQL。 */
   readonly onProgress?: (event: MigrationProgress) => void;
   readonly driftLanguage?: 'en' | 'zh-CN';
 }
@@ -175,7 +175,7 @@ export class Migrator {
       const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
       this._warnDataConditions(diff);
       if (!options.createOnly) await this._confirmIfNeeded(diff);
-      // Allocate after all existing generated timestamps, even if the clock moves backwards.
+      // 新 id 要排在所有已有时间戳之后，即使系统时钟回拨。
       let time = Date.now();
       for (const file of existing) {
         const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})?(?:_|$)/.exec(file.id);
@@ -189,7 +189,7 @@ export class Migrator {
             +match[6]!,
             +(match[7] ?? 0),
           );
-          // A legacy seconds-only ID must sort before the new ID, including its slug.
+          // 旧的只到秒的 id（含 slug）必须排在新 id 之前。
           time = Math.max(time, previous + (match[7] ? 1 : 1000));
         }
       }
@@ -400,8 +400,8 @@ export class Migrator {
   }
 
   private async _applyOne(file: MigrationFile): Promise<void> {
-    // A durable guard survives process death, connection loss and implicit DDL commits.
-    // failed also represents an unfinished attempt: only resolve may unblock it.
+    // 持久化的标记能挺过进程退出、连接丢失和 DDL 隐式提交。
+    // failed 同时表示未完成的尝试：只有 resolve 能解除阻塞。
     const language = this._options.driftLanguage ?? 'en';
     await this._options.history.markFailed(
       file.id,

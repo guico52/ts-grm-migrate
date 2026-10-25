@@ -24,7 +24,7 @@ export class OracleSqlExecutor implements SqlExecutor {
     sql: string,
     params: ReadonlyArray<unknown> = [],
   ): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
-    // OUT_FORMAT_OBJECT=4002. Runtime enables CLOB-to-string fetching on this connection's queries.
+    // OUT_FORMAT_OBJECT=4002。runtime 为该连接的查询开启 CLOB 转字符串。
     const result = await this.session.execute(
       sql,
       Object.fromEntries(params.map((value, index) => [String(index + 1), value])),
@@ -36,7 +36,7 @@ export class OracleSqlExecutor implements SqlExecutor {
     statements: ReadonlyArray<string>,
     complete?: MigrationCompletion,
   ): Promise<void> {
-    // Parse the whole input first: unsupported PL/SQL must not leave a half-executed file.
+    // 先解析完整输入：遇到不支持的 PL/SQL 时，不能留下执行了一半的文件。
     const parsed = statements.flatMap(splitOracleSql);
     try {
       for (const sql of parsed) await this.query(sql);
@@ -47,7 +47,7 @@ export class OracleSqlExecutor implements SqlExecutor {
   }
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
     if (this.locked) throw diagnostic('executor_oracle_2');
-    // A deterministic numeric ID avoids ALLOCATE_UNIQUE's implicit commit and extra catalog writes.
+    // 使用确定的数字 ID，避免 ALLOCATE_UNIQUE 的隐式提交和额外的 catalog 写入。
     const id =
       createHash('sha256').update(`ts-grm:${this.schema}`).digest().readUInt32BE(0) % 1073741824;
     await this.query(`declare result integer; begin result := dbms_lock.request(${id}, 6, ${this.lockTimeout}, false);
@@ -63,8 +63,8 @@ export class OracleSqlExecutor implements SqlExecutor {
 }
 
 /**
- * SQL-only migration files: semicolons in strings, quoted identifiers and comments are data.
- * PL/SQL and SQL*Plus commands are explicitly rejected before execution; no naive split(';').
+ * 迁移文件只能包含 SQL：字符串、带引号标识符和注释中的分号都视为数据。
+ * PL/SQL 和 SQL*Plus 命令在执行前明确拒绝；不使用简单的 split(';')。
  * @see https://node-oracledb.readthedocs.io/en/latest/user_guide/sql_execution.html
  */
 export function splitOracleSql(source: string): string[] {

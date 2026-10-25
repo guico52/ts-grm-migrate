@@ -4,8 +4,8 @@ import path from 'node:path';
 import { type SeedConfig, validateSeedConfig } from './config.js';
 import { asError, diagnostic } from './diagnostics/error.js';
 
-/** Run a user-owned seed process without creating a migration runtime.
- * The script owns its connections, transactions and idempotency. Output is inherited.
+/** 运行用户自己的 seed 进程，不创建迁移 runtime。
+ * 连接、事务和幂等性由脚本自己负责；输出直接继承终端。
  */
 export async function runSeed(
   seed: SeedConfig,
@@ -14,7 +14,7 @@ export async function runSeed(
 ): Promise<number> {
   validateSeedConfig(seed);
   const root = path.resolve(cwd);
-  // Match package-manager lookup: project-local binaries take precedence, then ancestors.
+  // 与包管理器的查找规则一致：优先项目本地的可执行文件，再逐级向上查找。
   const bins: string[] = [];
   for (let dir = root; ; dir = path.dirname(dir)) {
     bins.push(path.join(dir, 'node_modules', '.bin'));
@@ -31,7 +31,7 @@ export async function runSeed(
       env,
       stdio: 'inherit',
       shell: false,
-      // POSIX process groups let interruption reach wrappers and their children too.
+      // POSIX 进程组让中断信号也能到达包装脚本及其子进程。
       detached: grouped,
     });
     let interrupted: NodeJS.Signals | undefined;
@@ -69,7 +69,7 @@ export async function runSeed(
       reject(diagnostic('seed_start', seed.command, asError(error)));
     });
     child.once('close', (code, signal) => {
-      // A wrapper may exit before descendants that ignored the forwarded signal.
+      // 包装进程可能先于忽略了转发信号的子孙进程退出。
       if (interrupted && grouped) terminate('SIGKILL');
       cleanup();
       const termination = interrupted ?? signal;

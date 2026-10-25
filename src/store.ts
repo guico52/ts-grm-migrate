@@ -150,7 +150,7 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
       readonly table?: string;
       /** 方言，默认 postgres（用于时间类型、now() 与占位符） */
       readonly dialect?: DialectName;
-      /** SQL Server defaults to dbo; Oracle requires an explicit schema. */
+      /** SQL Server 默认 dbo；Oracle 必须显式指定 schema。 */
       readonly schema?: string;
     },
   ) {

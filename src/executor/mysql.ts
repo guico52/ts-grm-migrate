@@ -13,9 +13,9 @@ export interface MysqlPoolLike {
 }
 
 /**
- * DDL implicitly commits in MySQL. Never report that a failed migration was rolled back.
- * Keep the advisory lock and all migration work on the same session: loss of the session
- * must abort the migration instead of continuing on another pooled connection.
+ * MySQL 的 DDL 会隐式提交，因此绝不能报告失败的迁移「已回滚」。
+ * advisory lock 与全部迁移工作必须在同一个会话上：会话丢失时
+ * 必须中止迁移，而不是换一个连接池里的连接继续执行。
  * @see https://dev.mysql.com/doc/refman/8.4/en/implicit-commit.html
  * @see https://dev.mysql.com/doc/refman/8.4/en/locking-functions.html
  */
@@ -27,7 +27,7 @@ export class MysqlSqlExecutor implements SqlExecutor {
   ) {}
 
   private async _prepare(connection: MysqlConnectionLike): Promise<void> {
-    // Preserve server modes (especially STRICT_TRANS_TABLES) and make string escaping deterministic.
+    // 保留服务器的 sql_mode（尤其是 STRICT_TRANS_TABLES），并让字符串转义规则确定。
     await connection.query(
       "set session sql_mode = concat_ws(',', nullif(@@sql_mode, ''), 'NO_BACKSLASH_ESCAPES')",
     );
@@ -90,7 +90,7 @@ export class MysqlSqlExecutor implements SqlExecutor {
       const [result] = await connection.query('select database() as db');
       const db = (result as Array<{ db: string | null }>)[0]?.db;
       if (!db) throw diagnostic('executor_mysql_3');
-      // Lock identity is the database, not a machine-local path.
+      // 锁的标识是数据库，而不是本机路径。
       name = `tgm:${createHash('sha256').update(db).digest('hex').slice(0, 60)}`;
       const [rows] = await connection.query(
         `select get_lock('${name}', ${this._lockTimeout}) as acquired`,

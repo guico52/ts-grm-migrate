@@ -1,4 +1,4 @@
-// Isolated historical dependency checks; never rewrites the working tree or lockfile.
+// 隔离环境下的历史依赖版本检查；绝不改写工作区或 lockfile。
 
 import { spawnSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
@@ -31,7 +31,7 @@ try {
       path.join(cwd, 'package.json'),
       JSON.stringify({ private: true, type: 'module' }),
     );
-    const patches = version === '0.0.13'; // Companion package's published peer range.
+    const patches = version === '0.0.13'; // 配套包已发布版本的 peer 范围。
     const install = run(
       'npm',
       [
@@ -51,7 +51,7 @@ try {
       results.push({ version, install });
       continue;
     }
-    // npm may install a different nested core for historical SQL releases. Record that fact.
+    // 历史版本的 @ts-grm/sql 可能被 npm 装上另一份嵌套的 core，这里如实记录。
     const sql = JSON.parse(
       await readFile(path.join(cwd, 'node_modules/@ts-grm/sql/package.json'), 'utf8'),
     );
@@ -62,7 +62,7 @@ try {
         await readFile(path.join(cwd, 'node_modules', entry, 'package.json'));
         continue;
       } catch {
-        /* Link only missing test tools. */
+        /* 只链接缺失的测试工具。 */
       }
       try {
         await symlink(

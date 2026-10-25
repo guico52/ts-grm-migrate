@@ -1,18 +1,18 @@
-/** MySQL SQL primitives shared by schema adaptation, introspection and rendering. */
+/** schema 适配、introspect 和 SQL 生成共用的 MySQL 基础工具。 */
 import { createHash } from 'node:crypto';
 
 export function quoteMysqlIdentifier(name: string): string {
   return `\`${name.replaceAll('`', '``')}\``;
 }
 
-/** Runtime uses NO_BACKSLASH_ESCAPES so literals have one unambiguous encoding. */
+/** runtime 启用 NO_BACKSLASH_ESCAPES，字面量只有一种无歧义的编码。 */
 export function quoteMysqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-/** Integer display widths are not storage types; preserve unsigned / zerofill. */
+/** 整数显示宽度不属于存储类型；保留 unsigned / zerofill。 */
 export function normalizeMysqlType(type: string): string {
-  // enum/set values are case-sensitive data, not type keywords.
+  // enum/set 的取值是区分大小写的数据，不是类型关键字。
   if (/^(enum|set)\(/i.test(type)) return type;
   return type
     .toLowerCase()
@@ -23,20 +23,20 @@ export function normalizeMysqlType(type: string): string {
     .trim();
 }
 
-/** MySQL identifiers are limited to 64 characters; suffix keeps long names distinct. */
+/** MySQL 标识符最长 64 个字符；用后缀区分被截断的长名称。 */
 export function mysqlName(name: string): string {
   return name.length <= 64
     ? name
     : `${name.slice(0, 47)}_${createHash('sha256').update(name).digest('hex').slice(0, 16)}`;
 }
 
-/** Tokenize expressions without rewriting quoted data or identifier contents. */
+/** 对表达式分词，不改写引号内的数据和标识符内容。 */
 export function normalizeMysqlCheck(expression: string): string {
   const tokens =
     expression.match(
       /'(?:''|[^'])*'|`(?:``|[^`])*`|[A-Za-z_$][\w$]*|\d+(?:\.\d+)?|<>|!=|<=|>=|[^\s]/g,
     ) ?? [];
-  // The server adds outer parentheses and charset introducers to CHECK literals.
+  // 服务器会给 CHECK 字面量加外层括号和字符集前缀。
   while (tokens[0] === '(' && tokens.at(-1) === ')') {
     let depth = 0;
     const wraps = tokens.every((t, i) => {

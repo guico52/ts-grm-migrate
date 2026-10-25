@@ -17,8 +17,8 @@ import type {
 } from '../schema/model.js';
 
 /**
- * Phase ordering: drop dependent FKs/indexes/constraints, alter columns, add keys, add FKs.
- * CREATE foreign keys are deferred so table order and cyclic references are harmless.
+ * 阶段顺序：删除依赖的外键/索引/约束 → 修改列 → 添加键 → 添加外键。
+ * 建外键放到最后，因此表的顺序和循环引用都不会出问题。
  * @see https://github.com/prisma/prisma-engines/blob/main/schema-engine/connectors/sql-schema-connector/src/flavour/mysql/renderer.rs
  */
 export class MysqlDdlGenerator implements DdlGenerator {

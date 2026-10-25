@@ -142,7 +142,7 @@ export async function createSchema(client: SqlClient): Promise<ReadonlyArray<Tab
   return tableDefs;
 }
 
-/** Upstream 0.0.13 spells FLOAT as flat. Keep the correction at the upstream boundary.
+/** 上游 0.0.13 把 FLOAT 拼成了 flat；修正只放在上游适配边界这一处。
  * @see https://github.com/babyfish-ct/ts-grm/blob/main/packages/sql/src/driver/mysql_driver.ts
  */
 export class MySqlDriver extends UpstreamMySqlDriver {

@@ -127,8 +127,8 @@ try {
     await readFile(path.join(app, 'node_modules/ts-grm-migrate/package.json'), 'utf8'),
   );
   assert.equal(installed.license, 'MIT');
-  // Mimic a non-hoisted workspace: the CLI exists only in consumer/node_modules.
-  // npm 11.12.1 derives the workspace bin path from the package name, not its directory.
+  // 模拟未提升依赖的 workspace：CLI 只存在于 consumer/node_modules 中。
+  // npm 11.12.1 按包名而不是目录名推导 workspace 的 bin 路径。
   // @see https://github.com/npm/cli/blob/v11.12.1/lib/commands/exec.js
   await writeFile(
     path.join(dir, 'package.json'),
@@ -146,7 +146,7 @@ try {
     ),
     /no migration needed/,
   );
-  // In an npm-style workspace, the root package-name link makes bare npx work too.
+  // npm 风格的 workspace 中，根目录下按包名建立的链接让直接 npx 也能工作。
   await mkdir(path.join(dir, 'node_modules/@tgm-fixture'), { recursive: true });
   await symlink(app, path.join(dir, 'node_modules/@tgm-fixture/backend'), 'dir');
   assert.match(run('npx', ['--offline', '--no-install', 'tgm', '--help'], app), /--create-only/);

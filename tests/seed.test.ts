@@ -25,7 +25,7 @@ afterEach(async () => {
 });
 
 async function config(seed?: unknown, language = 'en', name = 'ts-grm-migrate.config.mjs') {
-  // Invalid connection and missing models prove that seed bypasses migration assembly.
+  // 连接无效且缺少 models 仍能运行，证明 seed 不经过迁移组装流程。
   await writeFile(
     path.join(dir, name),
     `export default ${JSON.stringify({

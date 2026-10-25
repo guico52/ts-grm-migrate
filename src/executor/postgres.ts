@@ -67,7 +67,7 @@ export class PostgresSqlExecutor implements SqlExecutor {
   async acquireMigrationLock(key: string): Promise<() => Promise<void>> {
     if (this._locked || this._acquiring) throw diagnostic('lock_busy', key);
     this._acquiring = true;
-    // The same session owns the lock and all migration work.
+    // 锁和全部迁移工作都归同一个会话所有。
     let client: PgClientLike;
     try {
       client = await this._pool.connect();

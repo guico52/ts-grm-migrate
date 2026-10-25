@@ -14,7 +14,7 @@ type Row = Record<string, unknown>;
 const str = (value: unknown): string => String(value ?? '');
 
 /**
- * MySQL 8.0.16+ / InnoDB catalog reader. Catalog names are bound, never interpolated.
+ * MySQL 8.0.16+ / InnoDB 的 catalog 读取器。catalog 名称一律参数绑定，绝不拼接。
  * @see https://dev.mysql.com/doc/refman/8.4/en/information-schema.html
  */
 export class MysqlIntrospector implements Introspector {
@@ -98,7 +98,7 @@ export class MysqlIntrospector implements Introspector {
       autoIncrement: /auto_increment/i.test(extra),
       ordinal: Number(row.ORDINAL_POSITION),
       comment: str(row.COLUMN_COMMENT) || undefined,
-      // MODIFY must retain attributes the model does not manage.
+      // MODIFY 必须保留模型不管理的列属性。
       mysql: {
         charset: row.CHARACTER_SET_NAME == null ? undefined : str(row.CHARACTER_SET_NAME),
         collation: row.COLLATION_NAME == null ? undefined : str(row.COLLATION_NAME),
@@ -176,7 +176,7 @@ export class MysqlIntrospector implements Introspector {
         columns,
         unique: false,
         predicate: undefined,
-        // InnoDB creates/supports FK indexes; they are not user-model drift.
+        // 外键索引由 InnoDB 创建或依赖，不算用户模型的漂移。
         implicit: foreignKeys.some((fk) => fk.columns.every((c, i) => columns[i] === c)),
       });
     }

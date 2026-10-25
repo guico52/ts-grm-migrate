@@ -25,5 +25,5 @@ async function main(): Promise<void> {
   }
 }
 
-// Keep the executable separate from library exports; no config/import cycle.
+// 可执行入口与库导出分离，避免 config 与 import 形成循环。
 void main();

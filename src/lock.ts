@@ -8,8 +8,8 @@ export interface ProcessLock {
   release(): Promise<void>;
 }
 
-/** Atomic directory acquisition and renewable leases avoid partially written PID files.
- * A crashed holder is reclaimable after 10 seconds. Never manually remove a live lease.
+/** 以原子方式创建目录加锁并定期续租，避免写了一半的 PID 文件。
+ * 持有者崩溃 10 秒后锁可被回收。不要手工删除仍在续租的锁。
  * @see https://github.com/moxystudio/node-proper-lockfile#design
  */
 export async function acquireProcessLock(lockPath: string): Promise<ProcessLock> {

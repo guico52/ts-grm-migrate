@@ -21,7 +21,7 @@ import type {
 } from './schema/model.js';
 import type { TableDef } from './vendor/ts-grm.js';
 
-/** Both states from the same introspection/diff pass, needed by whole-column DDL. */
+/** 同一次 introspect/diff 得到的前后两份状态，整列重写的 DDL 需要用到。 */
 export interface DdlContext {
   readonly from: Schema;
   readonly to: Schema;
@@ -179,7 +179,7 @@ export function constraintSql(constraint: Constraint, name: string): string {
   }
 }
 
-/** Independent index DDL for PostgreSQL and SQLite. */
+/** PostgreSQL 与 SQLite 的独立索引 DDL。 */
 export function indexSql(table: string, index: Index): string {
   return `create ${index.unique ? 'unique ' : ''}index ${quoteIdentifier(index.name)} on ${quoteIdentifier(table)} (${index.columns.map(quoteIdentifier).join(', ')})${index.predicate ? ` where ${index.predicate}` : ''}`;
 }

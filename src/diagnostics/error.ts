@@ -5,7 +5,7 @@ export function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-/** Keep structured parameters and causes until the output language is selected. */
+/** 保留结构化参数与 cause，直到确定输出语言再格式化。 */
 export class DiagnosticError extends Error {
   constructor(
     readonly key: DiagnosticKey,
@@ -63,7 +63,7 @@ function describe(error: unknown, language: OutputLanguage, seen: Set<unknown>):
 
 function describeExternal(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  // Upstream validates PascalCase, but 0.0.13 incorrectly prints the property-name regex.
+  // 上游校验的是 PascalCase，但 0.0.13 错误地打印了属性名的正则。
   // @see https://github.com/babyfish-ct/ts-grm/blob/fe78eb6c323bf335ff23650a414856eb36bfbce7/packages/core/src/impl/entity.ts
   const model = message.match(
     /^\[Illegal model "([^"]+)"\]: Must follow PascalCase naming convention:/,
@@ -127,7 +127,7 @@ function describeExternal(error: unknown): string {
     ER_ACCESS_DENIED_ERROR: '数据库身份验证失败',
     ELOGIN: '数据库身份验证失败',
   };
-  // SQL Server and Oracle also expose numeric database error codes.
+  // SQL Server 和 Oracle 还会暴露数字形式的数据库错误码。
   const serverDescriptions: Record<number, string> = {
     2601: '违反唯一性约束',
     2627: '违反唯一性约束',
@@ -163,7 +163,7 @@ function describeExternal(error: unknown): string {
   return `${description}${codes ? `（错误码 ${codes}）` : ''}${context ? `：${context}` : ''}。请使用 --detail 查看原始诊断。`;
 }
 
-/** Unknown third-party prose is kept in explicit diagnostics, not mixed into Chinese output. */
+/** 未知的第三方英文描述只在显式诊断中保留，不混入中文输出。 */
 export function formatError(error: unknown, language: OutputLanguage, detail = false): string {
   const message = describe(error, language, new Set());
   if (!detail || language === 'en') return message;

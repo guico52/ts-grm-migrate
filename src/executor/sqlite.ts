@@ -10,16 +10,16 @@ import { asError, diagnostic } from '../diagnostics/error.js';
  * 与 Postgres 版有两处差异：
  *
  * 1. better-sqlite3 是**同步 API**，这里包装成异步以满足 `SqlExecutor`。
- * 2. File databases use a canonical-path process lease for the whole operation,
- *    including introspection and planning. Memory databases need no external lock.
- *    Programmatic callers should pass the file path as the second constructor argument.
+ * 2. 文件数据库在整个操作期间（包括 introspect 和生成计划）持有一个
+ *    按规范化路径的进程租约；内存数据库不需要外部锁。
+ *    程序化调用时应把文件路径作为构造函数的第二个参数传入。
  */
 import type { MigrationCompletion, SqlExecutor } from '../executor.js';
 import { acquireProcessLock } from '../lock.js';
 
 /** better-sqlite3 的 Database（只声明用到的部分） */
 export interface SqliteDatabaseLike {
-  /** Native better-sqlite3 exposes its database filename. */
+  /** 原生 better-sqlite3 会暴露数据库文件名。 */
   readonly name?: string;
   prepare(sql: string): SqliteStatementLike;
   /** 执行（可含多条语句的）SQL 文本，不返回行 */

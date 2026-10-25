@@ -1,9 +1,9 @@
 import type { DdlContext, DdlGenerator, DdlGeneratorOptions } from '../ddl.js';
 import { columnSql, createTableSql, indexSql, quoteIdentifier } from '../ddl.js';
 import { diagnostic } from '../diagnostics/error.js';
-/** SQLite supports ordinary CREATE TABLE, ADD COLUMN, and independent indexes.
- * Column/constraint changes requiring a rebuild fail explicitly until safe data,
- * foreign-key, index and trigger preservation is implemented.
+/** SQLite 支持普通的 CREATE TABLE、ADD COLUMN 和独立索引。
+ * 需要重建表的列/约束变更会明确报错，直到能安全保留数据、
+ * 外键、索引和触发器为止。
  */
 import type { AlterTable, ColumnChange, Diff, IndexChange } from '../diff/types.js';
 import type { Dialect } from '../introspector.js';
@@ -42,7 +42,7 @@ export class SqliteDdlGenerator implements DdlGenerator {
           sql.push(...this._createTable(change.table));
           break;
         case 'DROP_TABLE':
-          // DROP TABLE is deferred until referencing tables have been removed.
+          // DROP TABLE 推迟到引用它的表都删除之后。
           // @see https://www.sqlite.org/lang_droptable.html
           break;
         case 'ALTER_TABLE':

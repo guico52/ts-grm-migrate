@@ -4,7 +4,7 @@ import type { AlterTable, Diff } from '../diff/types.js';
 import type { Column, Constraint, Index, Schema, Table } from '../schema/model.js';
 import { type ServerDialect, ServerSql } from './sql.js';
 
-/** Dependency ordering shared by SQL Server and Oracle; syntax stays dialect-specific. */
+/** SQL Server 与 Oracle 共用的依赖排序；具体语法仍按方言区分。 */
 export class ServerDdlGenerator implements DdlGenerator {
   readonly sql: ServerSql;
   constructor(
@@ -60,7 +60,7 @@ export class ServerDdlGenerator implements DdlGenerator {
       addKeys.set(`${name}\0index:${index.name}`, this.index(name, index));
     };
 
-    // The same before/after snapshot drives all dependency decisions, including incoming FKs.
+    // 所有依赖判断（包括入向外键）都基于同一份前后快照。
     if (context)
       for (const before of context.from.tables) {
         const after = context.to.tables.find((t) => t.name === before.name);

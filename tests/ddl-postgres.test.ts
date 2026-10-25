@@ -99,7 +99,7 @@ describePg('DDL 执行（真实数据库）', () => {
         fk('book_tag_mapping_tag_id_fkey', ['tag_id'], 'tag', ['id']),
       ],
     );
-    // Deliberately create the referencing table first.
+    // 故意先创建引用方的表。
     const buildOrder: Schema = { tables: [mappingTable, bookTable, tagTable] };
     // 删除按 introspection 的字母序给出（book 排在中间表之前），正是触发 bug 的顺序
     const from: Schema = { tables: [bookTable, mappingTable, tagTable] };

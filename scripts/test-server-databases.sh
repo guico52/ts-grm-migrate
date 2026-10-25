@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Isolated, disposable test services; existing containers/databases are never reused.
+# 隔离的一次性测试服务；绝不复用已有的容器或数据库。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 runtime="${CONTAINER_RUNTIME:-podman}"
@@ -40,7 +40,7 @@ if [[ "$ready" != true ]]; then
   "$runtime" logs --tail 30 "$oracle_name"
   exit 1
 fi
-# Only this disposable container's SYSTEM account may grant DBMS_LOCK to test users.
+# 只有这个一次性容器的 SYSTEM 账号才能给测试用户授予 DBMS_LOCK。
 "$runtime" exec -i "$oracle_name" sqlplus -s / as sysdba <<'SQL'
 whenever sqlerror exit failure
 alter session set container=FREEPDB1;

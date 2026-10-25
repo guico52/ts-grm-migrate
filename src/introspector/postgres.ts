@@ -27,8 +27,8 @@ import type { Column, Constraint, Index, OnDelete, Schema } from '../schema/mode
  *    会被原样返回成 `"{A,B}"` 字符串（实测）。SQL 里统一 `::text` 转型规避，
  *    `asStringArray` 再兜一层（见该函数注释）。
  *
- * CHECK comparison normalizes supported literal membership forms conservatively.
- * Unsupported generated/partitioned structures and constraint semantics are rejected.
+ * CHECK 比较时，对已支持的字面量成员判断形式做保守的规范化。
+ * 不支持的生成列、分区表结构和约束语义会被拒绝。
  */
 import type { CascadeType } from '../vendor/ts-grm.js';
 
@@ -99,7 +99,7 @@ export class PostgresIntrospector implements Introspector {
 
 // ---- SQL -------------------------------------------------------------------
 
-/** Include partitioned tables to reject them explicitly; views are outside model management. */
+/** 查询包含分区表以便明确拒绝；视图不在模型管理范围内。 */
 const TABLES_SQL = `
 select c.relname as name, c.relkind as kind,
        exists (select 1 from pg_inherits inh where inh.inhrelid = c.oid or inh.inhparent = c.oid) as inherited

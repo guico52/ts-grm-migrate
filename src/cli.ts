@@ -212,7 +212,7 @@ export async function run(
     }
   } catch (e) {
     if (e instanceof MigrationAbortedError) {
-      // Cancellation did not complete the requested operation.
+      // 取消意味着请求的操作没有完成。
       log(m.cancelled);
       return 1;
     }
@@ -344,7 +344,7 @@ function describeDatabase(config: MigrateConfig, m: CliMessages): string {
 }
 
 /**
- * Report managed differences without hiding unproven CHECK equivalence.
+ * 报告受管理的差异，不隐藏尚未证明等价的 CHECK 差异。
  */
 function reportDrift(
   drift: ReadonlyArray<SchemaDrift>,

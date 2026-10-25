@@ -26,7 +26,7 @@ run.sequential('MySQL 端到端迁移', () => {
   beforeEach(async () => {
     created = false;
     dir = await mkdtemp(path.join(tmpdir(), 'tgm-mysql-'));
-    // MYSQL_DATABASE is intentionally not used: only a database created by this test is owned.
+    // 有意不使用 MYSQL_DATABASE：测试只操作自己创建的数据库。
     database = `tgm_test_${randomUUID().replaceAll('-', '')}`;
     admin = await mysql.createConnection(connection);
     await admin.query(`create database \`${database}\``);

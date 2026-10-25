@@ -1,9 +1,9 @@
 import { asError, diagnostic } from './diagnostics/error.js';
 
-/** Add advice only when the upstream failure identifies an actionable cause. */
+/** 只有当上游错误能指出可操作的原因时才附加建议。 */
 export function modelLoadError(error: unknown): Error {
   const original = error instanceof Error ? error.message : String(error);
-  // Preserve thrown values as Error causes, rather than losing their diagnostic text.
+  // 把抛出的值保留为 Error 的 cause，避免丢失诊断信息。
   const cause = asError(error);
   if (/^\[Illegal model "[^"]+"\]: Must follow PascalCase naming convention:/.test(original)) {
     return diagnostic('model_naming', cause);

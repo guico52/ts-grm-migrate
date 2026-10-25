@@ -194,7 +194,7 @@ export class SqliteIntrospector implements Introspector {
         name: undefined,
         columns: ordered.map((r) => asString(r['from'])),
         referencedTable: asString(ordered[0]!['table']),
-        // An omitted reference column list denotes the parent primary key.
+        // 省略引用列时表示引用父表主键。
         referencedColumns,
         onDelete,
         deferrable: false,
@@ -267,7 +267,7 @@ export class SqliteIntrospector implements Introspector {
           ...(unsupported ? { unsupported: 'SQLITE_SPECIAL_INDEX' } : {}),
           columns,
           unique: Number(row['unique']) === 1,
-          // Partial predicates are retained even when the model does not manage indexes.
+          // 即使模型不管理索引，也保留部分索引的谓词。
           predicate: where < 0 ? undefined : tokens.slice(where + 1).join(' '),
         });
       }
@@ -314,7 +314,7 @@ export function normalizeSqliteType(raw: string): string {
     return 'real';
   }
   // @see https://www.sqlite.org/datatype3.html §3.1
-  // NUMERIC affinity differs from REAL and must remain observable.
+  // NUMERIC 亲和性不同于 REAL，必须保持可区分。
   return 'numeric';
 }
 

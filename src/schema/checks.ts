@@ -1,7 +1,7 @@
 import { diagnostic } from '../diagnostics/error.js';
 import type { DialectName } from '../dialect.js';
 
-/** SQL tokens retain quoted contents; comments never participate in comparison. */
+/** SQL token 保留引号内的内容；注释不参与比较。 */
 export function sqlTokens(sql: string, dialect?: DialectName): string[] {
   const brackets = dialect === 'postgres' ? '' : String.raw`\[(?:\]\]|[^\]])*\]|`;
   const pattern = new RegExp(
@@ -33,7 +33,7 @@ function identifier(token: string, dialect: DialectName): string {
   return dialect === 'postgres' ? token.toLowerCase() : token;
 }
 
-/** Only normalize proven literal membership forms, never arbitrary casts or expressions. */
+/** 只规范化已证明等价的字面量成员判断形式，绝不处理任意的类型转换或表达式。 */
 export function checkKey(
   expression: string,
   dialect: DialectName,
@@ -124,7 +124,7 @@ export function checkKey(
   );
 }
 
-/** Extract CHECK bodies with balanced tokens, including nested expressions and quoted delimiters. */
+/** 按括号配对提取 CHECK 表达式，正确处理嵌套表达式和引号内的分隔符。 */
 export function sqliteChecks(sql: string): string[] {
   const tokens = sqlTokens(sql),
     result: string[] = [];

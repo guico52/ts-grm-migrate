@@ -7,13 +7,13 @@ export interface SqlServerRequestLike {
   batch(sql: string): Promise<{ readonly recordset?: ReadonlyArray<Record<string, unknown>> }>;
   query(sql: string): Promise<{ readonly recordset?: ReadonlyArray<Record<string, unknown>> }>;
 }
-/** Request factory bound to one physical session, never to the unpinned pool. */
+/** 绑定到单个物理会话的 Request 工厂，绝不绑定未固定的连接池。 */
 export interface SqlServerSession {
   request(): SqlServerRequestLike;
 }
 
 /**
- * Transactional DDL and session-owned application locks use the same pinned connection.
+ * 事务性 DDL 和会话级 application lock 使用同一个固定连接。
  * @see https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-getapplock-transact-sql
  */
 export class SqlServerSqlExecutor implements SqlExecutor {
@@ -54,7 +54,7 @@ export class SqlServerSqlExecutor implements SqlExecutor {
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
     if (this._lockHeld) throw diagnostic('executor_sqlserver_3');
-    // App locks are database-scoped. The schema, not a local filesystem path, identifies the resource.
+    // app lock 的作用域是数据库；用 schema 而不是本地文件路径标识资源。
     const name = `ts-grm:${createHash('sha256').update(this._schema).digest('hex')}`;
     const { rows } = await this.query(
       `declare @r int;

@@ -74,7 +74,7 @@ for (const dialect of ['mssql', 'oracle'] as const) {
     });
     afterEach(async () => {
       if (dialect === 'mssql' && executor) {
-        // Cleanup is restricted to the randomly created schema of this test.
+        // 清理只限于本测试随机创建的 schema。
         const { rows: fks } = await executor.query(
           'select t.name as t,f.name as f from sys.foreign_keys f join sys.tables t on f.parent_object_id=t.object_id join sys.schemas s on s.schema_id=t.schema_id where s.name=@p1',
           [schema],
@@ -189,7 +189,7 @@ for (const dialect of ['mssql', 'oracle'] as const) {
       } finally {
         await runtime.close();
       }
-      // Reapply the generated SQL to an empty schema, independent of the dev execution.
+      // 把生成的 SQL 在空 schema 上重新执行一遍，与 dev 的执行过程无关。
       await migrate({ tables: [] });
       const deployed = await createRuntime(config, process.cwd());
       try {

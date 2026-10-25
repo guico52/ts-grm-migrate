@@ -8,8 +8,8 @@
  * - 列按名字匹配（列名在表内唯一）；
  * - 约束/索引**按内容匹配而非名字**——自动生成的约束名（如 ts-grm 的
  *   `{table}_constraint_{n}`）不可靠；内容相同视为同一约束；
- * - CHECK compares supported literal membership forms across catalog formatting;
- *   arbitrary expressions retain conservative token comparison.
+ * - CHECK 对已支持的字面量成员判断形式做跨 catalog 格式的比较；
+ *   其他任意表达式保持保守的 token 比较。
  * - 列顺序差异忽略（PG/SQLite 都无法在 alter 里调列序）。
  *
  * 「不管理」语义（模型侧缺失字段）：
@@ -291,7 +291,7 @@ function constraintKey(constraint: Constraint): string {
         constraint.deferrable,
       ]);
     case 'CHECK':
-      return constraint.expression; // CHECKs use dialect-aware keys in _constraintChanges.
+      return constraint.expression; // CHECK 在 _constraintChanges 中使用区分方言的 key。
   }
 }
 

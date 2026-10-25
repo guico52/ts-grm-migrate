@@ -8,7 +8,7 @@ import type { CliLanguage } from './messages.js';
 export interface ParsedArgs {
   /** 第一个位置参数（命令名） */
   readonly command: string | undefined;
-  /** Arguments after `--`, preserved verbatim for seed. */
+  /** `--` 之后的参数，原样转交给 seed。 */
   readonly passthrough: ReadonlyArray<string>;
   /** `--key value` / `--key=value` / `-h` 形式的选项 */
   readonly flags: ReadonlyMap<string, string | true>;
@@ -20,6 +20,6 @@ export interface RunOptions {
   readonly confirm?: (diff: Diff) => Promise<boolean>;
   readonly log?: (message: string) => void;
   readonly errorLog?: (message: string) => void;
-  /** Receive the active language, including a default read from the project config. */
+  /** 接收当前生效的语言，包括从项目配置读到的默认值。 */
   readonly onLanguage?: (language: CliLanguage) => void;
 }

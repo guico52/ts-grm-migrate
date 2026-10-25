@@ -7,8 +7,8 @@ import {
   quoteIdentifier,
 } from '../ddl.js';
 import { diagnostic } from '../diagnostics/error.js';
-/** PostgreSQL DDL uses physical quoted names and defers foreign keys until all keys exist.
- * Dependency removal precedes column/table changes; keys and indexes precede foreign keys.
+/** PostgreSQL DDL 使用加引号的物理名，并把外键推迟到所有键建好之后。
+ * 先移除依赖，再改列/表；键和索引先于外键。
  */
 import type { ColumnChange, ConstraintChange, Diff, IndexChange } from '../diff/types.js';
 import type { Dialect } from '../introspector.js';
@@ -45,7 +45,7 @@ export class PostgresDdlGenerator implements DdlGenerator {
         this._constraintChange(q(table), table, { kind: 'ADD_CONSTRAINT', constraint: c }, seq)[0]!,
       );
     };
-    // Unchanged incoming FKs also depend on keys being replaced and columns changing type.
+    // 未变更的入向外键同样依赖于被替换的键和改类型的列。
     // @see https://github.com/prisma/prisma-engines/tree/main/schema-engine/connectors/sql-schema-connector/src/sql_schema_differ
     const affected = (table: string, columns: ReadonlyArray<string>): boolean =>
       diff.changes.some(
