@@ -1,4 +1,3 @@
-import { diagnostic, asError } from "./diagnostics/error.js";
 /**
  * 迁移存储 —— 磁盘上的迁移文件 + 数据库中的应用历史。
  *
@@ -12,16 +11,17 @@ import { diagnostic, asError } from "./diagnostics/error.js";
  * 校验和（checksum）对**迁移 SQL 全文**计算，用于漂移检测：已应用的迁移若被事后
  * 修改，`deploy` 会拒绝继续（见 `src/migrator.ts`）。
  */
-import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { ServerMigrationHistoryStore } from "./server/history.js";
-import { ServerSql } from "./server/sql.js";
-import { quoteMysqlIdentifier } from "./mysql/sql.js";
-import { quoteIdentifier } from "./ddl.js";
-import type { SqlQueryable } from "./sql.js";
-import type { SqlExecutor } from "./executor.js";
-import type { DialectName } from "./dialect.js";
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { quoteIdentifier } from './ddl.js';
+import { asError, diagnostic } from './diagnostics/error.js';
+import type { DialectName } from './dialect.js';
+import type { SqlExecutor } from './executor.js';
+import { quoteMysqlIdentifier } from './mysql/sql.js';
+import { ServerMigrationHistoryStore } from './server/history.js';
+import { ServerSql } from './server/sql.js';
+import type { SqlQueryable } from './sql.js';
 
 /** 磁盘上的一个迁移文件（`<id>.sql`） */
 export interface MigrationFile {
@@ -82,7 +82,7 @@ export interface MigrationHistoryStore {
 
 /** 对迁移 SQL 全文计算校验和 */
 export function checksumOf(sql: string): string {
-  return createHash("sha256").update(sql, "utf8").digest("hex");
+  return createHash('sha256').update(sql, 'utf8').digest('hex');
 }
 
 /**
@@ -99,33 +99,36 @@ export class FileMigrationStore implements MigrationFileStore {
     try {
       entries = await readdir(this._dir);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
         // 目录尚不存在 = 还没有迁移
         return [];
       }
-      throw diagnostic("store_1", this._dir, asError(e));
+      throw diagnostic('store_1', this._dir, asError(e));
     }
 
     const files: Array<MigrationFile> = [];
     for (const name of entries) {
-      if (!name.endsWith(".sql")) {
+      if (!name.endsWith('.sql')) {
         continue;
       }
-      const sql = await readFile(path.join(this._dir, name), "utf8");
-      const id = name.slice(0, -".sql".length);
+      const sql = await readFile(path.join(this._dir, name), 'utf8');
+      const id = name.slice(0, -'.sql'.length);
       files.push({ id, sql, checksum: checksumOf(sql), sortKey: id });
     }
-    return files.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
+    return files.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
   }
 
   async write(file: MigrationFile): Promise<void> {
     await mkdir(this._dir, { recursive: true });
-    await writeFile(path.join(this._dir, `${file.id}.sql`), file.sql, { encoding: "utf8", flag: "wx" });
+    await writeFile(path.join(this._dir, `${file.id}.sql`), file.sql, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
   }
 }
 
 /** 默认历史表名（对应 prisma 的 `_prisma_migrations`） */
-export const DEFAULT_HISTORY_TABLE = "_migrations";
+export const DEFAULT_HISTORY_TABLE = '_migrations';
 
 /**
  * 基于数据库的迁移历史存储。
@@ -152,30 +155,46 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
     },
   ) {
     this.tableName = _options.table ?? DEFAULT_HISTORY_TABLE;
-    this._dialect = _options.dialect ?? "postgres";
-    if (this._dialect === "mssql" || this._dialect === "oracle") {
-      if (this._dialect === "oracle" && !_options.schema) throw diagnostic("store_2");
-      this._server = new ServerMigrationHistoryStore(_options.executor, new ServerSql(this._dialect, _options.schema ?? "dbo"), this.tableName);
+    this._dialect = _options.dialect ?? 'postgres';
+    if (this._dialect === 'mssql' || this._dialect === 'oracle') {
+      if (this._dialect === 'oracle' && !_options.schema) throw diagnostic('store_2');
+      this._server = new ServerMigrationHistoryStore(
+        _options.executor,
+        new ServerSql(this._dialect, _options.schema ?? 'dbo'),
+        this.tableName,
+      );
     }
-    this._table = this._dialect === "mysql" ? quoteMysqlIdentifier(this.tableName) : quoteIdentifier(this.tableName);
+    this._table =
+      this._dialect === 'mysql'
+        ? quoteMysqlIdentifier(this.tableName)
+        : quoteIdentifier(this.tableName);
   }
 
   /** 当前时间表达式：PG 用 now()，SQLite 用 current_timestamp */
   private get _now(): string {
-    return this._dialect === "postgres" ? "now()" : this._dialect === "mysql" ? "current_timestamp(3)" : "current_timestamp";
+    return this._dialect === 'postgres'
+      ? 'now()'
+      : this._dialect === 'mysql'
+        ? 'current_timestamp(3)'
+        : 'current_timestamp';
   }
 
   /** 参数占位符：PG 是 $n，SQLite 是 ?（位置绑定，顺序一致） */
   private _ph(index: number): string {
-    return this._dialect === "postgres" ? `$${index}` : "?";
+    return this._dialect === 'postgres' ? `$${index}` : '?';
   }
 
   async ensureTable(): Promise<void> {
     if (this._server) return this._server.ensureTable();
-    const ts = this._dialect === "postgres" ? "timestamptz" : this._dialect === "mysql" ? "datetime(3)" : "text";
+    const ts =
+      this._dialect === 'postgres'
+        ? 'timestamptz'
+        : this._dialect === 'mysql'
+          ? 'datetime(3)'
+          : 'text';
     await this._options.executor.executeStatements([
       `create table if not exists ${this._table} (
-  id ${this._dialect === "mysql" ? "varchar(255) collate utf8mb4_bin" : "text"} primary key,
+  id ${this._dialect === 'mysql' ? 'varchar(255) collate utf8mb4_bin' : 'text'} primary key,
   checksum text not null,
   applied_at ${ts} not null default ${this._now},
   rolled_back_at ${ts},
@@ -186,7 +205,7 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
     ]);
     // 历史表自己的演进：`create table if not exists` 不会给已存在的表加列，
     // 所以显式幂等地补上后加的列。
-    await this._addColumnIfMissing("logs", "text");
+    await this._addColumnIfMissing('logs', 'text');
   }
 
   /**
@@ -195,17 +214,22 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
    * （`pragma_table_info` 表值函数，SQLite 3.16+）。
    */
   private async _addColumnIfMissing(column: string, definition: string): Promise<void> {
-    if (this._dialect === "postgres") {
+    if (this._dialect === 'postgres') {
       await this._options.executor.executeStatements([
         `alter table ${this._table} add column if not exists ${column} ${definition}`,
       ]);
       return;
     }
-    const { rows } = this._dialect === "mysql"
-      ? await this._options.executor.query(
-          "select COLUMN_NAME as name from information_schema.COLUMNS where TABLE_SCHEMA = database() and TABLE_NAME = ?", [this.tableName])
-      : await this._options.executor.query(`select name from pragma_table_info(${quoteLiteral(this.tableName)})`);
-    if (rows.some((r) => asString(r["name"]) === column)) {
+    const { rows } =
+      this._dialect === 'mysql'
+        ? await this._options.executor.query(
+            'select COLUMN_NAME as name from information_schema.COLUMNS where TABLE_SCHEMA = database() and TABLE_NAME = ?',
+            [this.tableName],
+          )
+        : await this._options.executor.query(
+            `select name from pragma_table_info(${quoteLiteral(this.tableName)})`,
+          );
+    if (rows.some((r) => asString(r['name']) === column)) {
       return;
     }
     await this._options.executor.executeStatements([
@@ -223,22 +247,32 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
       ));
     } catch (error) {
       const e = error as { code?: string; message?: string };
-      if ((this._dialect === "postgres" && e.code === "42P01") ||
-          (this._dialect === "mysql" && e.code === "ER_NO_SUCH_TABLE") ||
-          (this._dialect === "sqlite" && e.code === "SQLITE_ERROR" && e.message === `no such table: ${this.tableName}`)) return [];
+      if (
+        (this._dialect === 'postgres' && e.code === '42P01') ||
+        (this._dialect === 'mysql' && e.code === 'ER_NO_SUCH_TABLE') ||
+        (this._dialect === 'sqlite' &&
+          e.code === 'SQLITE_ERROR' &&
+          e.message === `no such table: ${this.tableName}`)
+      )
+        return [];
       throw error;
     }
     return rows.map(toAppliedMigration);
   }
 
-  async recordApplied(migration: MigrationFile, connection: SqlQueryable = this._options.executor): Promise<void> {
+  async recordApplied(
+    migration: MigrationFile,
+    connection: SqlQueryable = this._options.executor,
+  ): Promise<void> {
     if (this._server) return this._server.recordApplied(migration, connection);
     await connection.query(
       `insert into ${this._table} (id, checksum, applied_at, rolled_back_at, failed, error, logs)
        values (${this._ph(1)}, ${this._ph(2)}, ${this._now}, null, false, null, null)
-       ${this._dialect === "mysql"
-         ? "on duplicate key update checksum = values(checksum),"
-         : "on conflict (id) do update set checksum = excluded.checksum,"}
+       ${
+         this._dialect === 'mysql'
+           ? 'on duplicate key update checksum = values(checksum),'
+           : 'on conflict (id) do update set checksum = excluded.checksum,'
+       }
              applied_at = ${this._now},
              rolled_back_at = null,
              failed = false,
@@ -253,19 +287,27 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
     await this._options.executor.query(
       `insert into ${this._table} (id, checksum, applied_at, failed, error, logs)
        values (${this._ph(1)}, '', ${this._now}, true, ${this._ph(2)}, ${this._ph(3)})
-       ${this._dialect === "mysql"
-         ? "on duplicate key update failed = true, rolled_back_at = null, error = values(error), logs = values(logs)"
-         : "on conflict (id) do update set failed = true, rolled_back_at = null, error = excluded.error, logs = excluded.logs"}`,
+       ${
+         this._dialect === 'mysql'
+           ? 'on duplicate key update failed = true, rolled_back_at = null, error = values(error), logs = values(logs)'
+           : 'on conflict (id) do update set failed = true, rolled_back_at = null, error = excluded.error, logs = excluded.logs'
+       }`,
       [id, error, logs ?? null],
     );
   }
 
   async markRolledBack(id: string): Promise<boolean> {
     if (this._server) return this._server.markRolledBack(id);
-    if (this._dialect === "mysql") {
-      const { rows } = await this._options.executor.query(`select id from ${this._table} where id = ?`, [id]);
+    if (this._dialect === 'mysql') {
+      const { rows } = await this._options.executor.query(
+        `select id from ${this._table} where id = ?`,
+        [id],
+      );
       if (rows.length === 0) return false;
-      await this._options.executor.query(`update ${this._table} set rolled_back_at = ${this._now}, failed = false where id = ?`, [id]);
+      await this._options.executor.query(
+        `update ${this._table} set rolled_back_at = ${this._now}, failed = false where id = ?`,
+        [id],
+      );
       return true;
     }
     const { rows } = await this._options.executor.query(
@@ -282,14 +324,14 @@ export class DatabaseMigrationHistoryStore implements MigrationHistoryStore {
 
 function toAppliedMigration(row: Record<string, unknown>): AppliedMigration {
   return {
-    id: asString(row["id"]),
-    checksum: asString(row["checksum"]),
-    appliedAt: toDate(row["applied_at"]),
-    rolledBackAt: row["rolled_back_at"] == null ? undefined : toDate(row["rolled_back_at"]),
+    id: asString(row['id']),
+    checksum: asString(row['checksum']),
+    appliedAt: toDate(row['applied_at']),
+    rolledBackAt: row['rolled_back_at'] == null ? undefined : toDate(row['rolled_back_at']),
     // SQLite 没有布尔类型，存的是 1/0；PG 返回 boolean
-    failed: row["failed"] === true || Number(row["failed"]) === 1,
-    error: row["error"] == null ? undefined : asString(row["error"]),
-    logs: row["logs"] == null ? undefined : asString(row["logs"]),
+    failed: row['failed'] === true || Number(row['failed']) === 1,
+    error: row['error'] == null ? undefined : asString(row['error']),
+    logs: row['logs'] == null ? undefined : asString(row['logs']),
   };
 }
 
@@ -299,7 +341,7 @@ function quoteLiteral(value: string): string {
 }
 
 function asString(value: unknown): string {
-  return typeof value === "string" ? value : String(value ?? "");
+  return typeof value === 'string' ? value : String(value ?? '');
 }
 
 function toDate(value: unknown): Date {

@@ -1,4 +1,4 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
 /**
  * 列级扩展元数据（`autoIncrement` / `default`）的适配层。
  *
@@ -74,13 +74,13 @@ function readMember(target: object, key: string): unknown {
   try {
     return (target as Record<string, unknown>)[key];
   } catch (error) {
-    throw diagnostic("schema_patches_1", key, asError(error));
+    throw diagnostic('schema_patches_1', key, asError(error));
   }
 }
 
 function readBoolean(target: object, key: string): boolean {
   const value = readMember(target, key);
-  if (typeof value !== 'boolean') throw diagnostic("schema_patches_2", key);
+  if (typeof value !== 'boolean') throw diagnostic('schema_patches_2', key);
   return value;
 }
 
@@ -113,7 +113,7 @@ export function renderColumnDefault(value: unknown, context: RenderDefaultContex
     const sql = renderNativeParts(value.parts, context);
     return context.dialect === 'sqlite' || context.dialect === 'mysql' ? `(${sql})` : sql;
   }
-  throw diagnostic("schema_patches_3", context.table, context.column);
+  throw diagnostic('schema_patches_3', context.table, context.column);
 }
 
 function isLiteral(value: unknown): value is string | number | boolean | bigint {
@@ -166,7 +166,7 @@ function renderNativeParts(parts: ReadonlyArray<unknown>, context: RenderDefault
       sql += renderInterpolated(part.value, context);
       continue;
     }
-    throw diagnostic("schema_patches_4", context.table, context.column);
+    throw diagnostic('schema_patches_4', context.table, context.column);
   }
   return sql;
 }
@@ -183,7 +183,7 @@ function renderInterpolated(value: unknown, context: RenderDefaultContext): stri
     return quoteStringLiteral(value.toISOString());
   }
   if (Array.isArray(value)) {
-    throw diagnostic("schema_patches_5", context.table, context.column);
+    throw diagnostic('schema_patches_5', context.table, context.column);
   }
   if (isLiteral(value)) {
     return renderLiteral(value, context);
@@ -191,7 +191,7 @@ function renderInterpolated(value: unknown, context: RenderDefaultContext): stri
   if (isNativeExpression(value)) {
     return renderNativeParts(value.parts, context);
   }
-  throw diagnostic("schema_patches_6", context.table, context.column);
+  throw diagnostic('schema_patches_6', context.table, context.column);
 }
 
 /** 字面量 → 方言 SQL 片段 */

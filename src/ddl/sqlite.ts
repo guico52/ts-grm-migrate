@@ -1,54 +1,56 @@
-import { diagnostic } from "../diagnostics/error.js";
+import type { DdlContext, DdlGenerator, DdlGeneratorOptions } from '../ddl.js';
+import { columnSql, createTableSql, indexSql, quoteIdentifier } from '../ddl.js';
+import { diagnostic } from '../diagnostics/error.js';
 /** SQLite supports ordinary CREATE TABLE, ADD COLUMN, and independent indexes.
  * Column/constraint changes requiring a rebuild fail explicitly until safe data,
  * foreign-key, index and trigger preservation is implemented.
  */
-import type { AlterTable, ColumnChange, ConstraintChange, IndexChange } from "../diff/types.js";
-import type { Diff } from "../diff/types.js";
-import type { Schema, Table as SchemaTable } from "../schema/model.js";
-import type { SchemaDriver } from "../schema/adapter.js";
-import type { TableDef } from "../vendor/ts-grm.js";
-import { columnSql, createTableSql, indexSql, quoteIdentifier } from "../ddl.js";
-import type { DdlContext, DdlGenerator, DdlGeneratorOptions } from "../ddl.js";
-import type { Dialect } from "../introspector.js";
+import type { AlterTable, ColumnChange, Diff, IndexChange } from '../diff/types.js';
+import type { Dialect } from '../introspector.js';
+import type { Schema, Table as SchemaTable } from '../schema/model.js';
 
 const q = quoteIdentifier;
 
 export class SqliteDdlGenerator implements DdlGenerator {
-  readonly dialect: Dialect = "sqlite";
+  readonly dialect: Dialect = 'sqlite';
 
   constructor(private readonly _options: DdlGeneratorOptions = {}) {}
 
   statements(diff: Diff, context?: DdlContext): ReadonlyArray<string> {
     const sql: Array<string> = [];
-    const drops = diff.changes.filter(c => c.kind === "DROP_TABLE");
+    const drops = diff.changes.filter((c) => c.kind === 'DROP_TABLE');
     const ordered = new Set<string>();
     const visiting = new Set<string>();
     const visit = (name: string): void => {
       if (ordered.has(name)) return;
-      if (visiting.has(name)) throw diagnostic("sqlite_cycle", name);
+      if (visiting.has(name)) throw diagnostic('sqlite_cycle', name);
       visiting.add(name);
       for (const table of context?.from.tables ?? []) {
-        if (drops.some(d => d.table === table.name) && table.constraints.some(c => c.kind === "FOREIGN_KEY" && c.referencedTable === name)) visit(table.name);
+        if (
+          drops.some((d) => d.table === table.name) &&
+          table.constraints.some((c) => c.kind === 'FOREIGN_KEY' && c.referencedTable === name)
+        )
+          visit(table.name);
       }
-      visiting.delete(name); ordered.add(name);
+      visiting.delete(name);
+      ordered.add(name);
     };
     for (const drop of drops) visit(drop.table);
     for (const change of diff.changes) {
       switch (change.kind) {
-        case "CREATE_TABLE":
+        case 'CREATE_TABLE':
           sql.push(...this._createTable(change.table));
           break;
-        case "DROP_TABLE":
+        case 'DROP_TABLE':
           // DROP TABLE is deferred until referencing tables have been removed.
           // @see https://www.sqlite.org/lang_droptable.html
           break;
-        case "ALTER_TABLE":
+        case 'ALTER_TABLE':
           sql.push(...this._alterTable(change));
           break;
       }
     }
-    sql.push(...[...ordered].map(name => `drop table ${q(name)}`));
+    sql.push(...[...ordered].map((name) => `drop table ${q(name)}`));
     return sql;
   }
 
@@ -61,29 +63,38 @@ export class SqliteDdlGenerator implements DdlGenerator {
   }
 
   private _createTable(table: SchemaTable): ReadonlyArray<string> {
-    if (table.constraints.some(c => c.kind === "FOREIGN_KEY" && c.deferrable)) {
-      throw diagnostic("unsupported_structure", table.name, diagnostic("structure_deferred_fk"));
+    if (table.constraints.some((c) => c.kind === 'FOREIGN_KEY' && c.deferrable)) {
+      throw diagnostic('unsupported_structure', table.name, diagnostic('structure_deferred_fk'));
     }
     // 模型侧声明了 default / autoIncrement（`ts-grm-patches`，见 src/schema/patches.ts）时
     // 不能复用 ts-grm 原生建表：原生 toCreationStatements 不表达这两个能力，会静默丢掉它们。
     // 自建路径的 SQLite 细节（AUTOINCREMENT 必须内联在主键上）见 src/ddl.ts。
     if (this._requiresSelfBuiltTable(table)) {
-      return [createTableSql(table, "sqlite"), ...table.indexes.map(index => indexSql(table.name, index))];
+      return [
+        createTableSql(table, 'sqlite'),
+        ...table.indexes.map((index) => indexSql(table.name, index)),
+      ];
     }
     const tableDef = this._options.tableDefs?.get(table.name);
     if (tableDef != null) {
       if (this._options.driver == null) {
-        throw diagnostic("ddl_sqlite_1", table.name);
+        throw diagnostic('ddl_sqlite_1', table.name);
       }
-      return [...tableDef.toCreationStatements(this._options.driver), ...table.indexes.map(index => indexSql(table.name, index))];
+      return [
+        ...tableDef.toCreationStatements(this._options.driver),
+        ...table.indexes.map((index) => indexSql(table.name, index)),
+      ];
     }
-    return [createTableSql(table, "sqlite"), ...table.indexes.map(index => indexSql(table.name, index))];
+    return [
+      createTableSql(table, 'sqlite'),
+      ...table.indexes.map((index) => indexSql(table.name, index)),
+    ];
   }
 
   /** 表里是否有模型侧声明、而原生建表表达不了的列属性 */
   private _requiresSelfBuiltTable(table: SchemaTable): boolean {
     return table.columns.some(
-      (c) => c.autoIncrement || (c.default !== undefined && c.default !== ""),
+      (c) => c.autoIncrement || (c.default !== undefined && c.default !== ''),
     );
   }
 
@@ -92,12 +103,12 @@ export class SqliteDdlGenerator implements DdlGenerator {
     const sql: Array<string> = [...this._indexChanges(q(change.table), change.indexes)];
 
     const needRebuild =
-      change.columns.some((c) => c.kind !== "ADD_COLUMN") || change.constraints.length > 0;
+      change.columns.some((c) => c.kind !== 'ADD_COLUMN') || change.constraints.length > 0;
     if (needRebuild) {
       sql.push(...this._rebuildTable(change.table));
     } else {
       for (const col of change.columns) {
-        if (col.kind === "ADD_COLUMN") {
+        if (col.kind === 'ADD_COLUMN') {
           sql.push(...this._addColumn(q(change.table), col));
         }
       }
@@ -106,17 +117,20 @@ export class SqliteDdlGenerator implements DdlGenerator {
   }
 
   /** 纯 ADD_COLUMN 原地执行（SQLite 对 not null / unique 有额外限制，注释提示） */
-  private _addColumn(table: string, col: Extract<ColumnChange, { readonly kind: "ADD_COLUMN" }>): ReadonlyArray<string> {
+  private _addColumn(
+    table: string,
+    col: Extract<ColumnChange, { readonly kind: 'ADD_COLUMN' }>,
+  ): ReadonlyArray<string> {
     const column = col.column;
     if (column.autoIncrement) {
-      throw diagnostic("ddl_sqlite_2", table, column.name);
+      throw diagnostic('ddl_sqlite_2', table, column.name);
     }
-    const sql = `alter table ${table} add column ${columnSql(column, "sqlite")}`;
+    const sql = `alter table ${table} add column ${columnSql(column, 'sqlite')}`;
     return column.nullable
       ? [sql]
       : [
           sql,
-          "-- Note: SQLite cannot add a NOT NULL column without a default; rebuild the table if this fails",
+          '-- Note: SQLite cannot add a NOT NULL column without a default; rebuild the table if this fails',
         ];
   }
 
@@ -133,19 +147,19 @@ export class SqliteDdlGenerator implements DdlGenerator {
    * 后者只会在真实库里安静地把表清空。这是刻意的取舍，不是遗漏。
    */
   private _rebuildTable(tableName: string): ReadonlyArray<string> {
-    throw diagnostic("ddl_sqlite_3", tableName);
+    throw diagnostic('ddl_sqlite_3', tableName);
   }
 
   private _indexChanges(table: string, indexes: ReadonlyArray<IndexChange>): ReadonlyArray<string> {
     const sql: Array<string> = [];
     for (const idx of indexes) {
       switch (idx.kind) {
-        case "ADD_INDEX":
+        case 'ADD_INDEX':
           sql.push(
-            `create ${idx.index.unique ? "unique " : ""}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(", ")})${idx.index.predicate ? ` where ${idx.index.predicate}` : ""}`,
+            `create ${idx.index.unique ? 'unique ' : ''}index ${q(idx.index.name)} on ${table} (${idx.index.columns.map(q).join(', ')})${idx.index.predicate ? ` where ${idx.index.predicate}` : ''}`,
           );
           break;
-        case "DROP_INDEX":
+        case 'DROP_INDEX':
           sql.push(`drop index ${q(idx.index.name)}`);
           break;
       }

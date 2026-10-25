@@ -1,15 +1,15 @@
-import { it, expect, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { SqliteIntrospector } from '../src/introspector/sqlite';
-import { SqliteSqlExecutor } from '../src/executor/sqlite';
-import { PostgresSqlExecutor } from '../src/executor/postgres';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import { expect, it, vi } from 'vitest';
 import { SqliteDdlGenerator } from '../src/ddl/sqlite';
 import { SchemaDiffer } from '../src/differ';
+import { PostgresSqlExecutor } from '../src/executor/postgres';
+import { SqliteSqlExecutor } from '../src/executor/sqlite';
+import { SqliteIntrospector } from '../src/introspector/sqlite';
 import { checkKey } from '../src/schema/checks';
-import type { Schema, Table, ForeignKeyConstraint } from '../src/schema/model';
+import type { ForeignKeyConstraint, Schema, Table } from '../src/schema/model';
 
 const table = (name = 't'): Table => ({
   name,

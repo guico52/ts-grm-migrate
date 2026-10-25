@@ -1,8 +1,8 @@
 /**
  * CLI 的公共类型（单独放一处，避免 cli.ts ↔ 各命令模块循环依赖）。
  */
-import type { Diff } from "../diff/types.js";
-import type { CliLanguage } from "./messages.js";
+import type { Diff } from '../diff/types.js';
+import type { CliLanguage } from './messages.js';
 
 /** `parseArgs` 结果 */
 export interface ParsedArgs {

@@ -1,4 +1,3 @@
-import { diagnostic } from "./diagnostics/error.js";
 /**
  * 运行时组装 —— 从 `MigrateConfig` 造出一个可用的 `Migrator`。
  *
@@ -13,46 +12,47 @@ import { diagnostic } from "./diagnostics/error.js";
  * 方言差异集中在 `createConnection` 与 `assembleRuntime` 的两处分支里；
  * 哪些方言可用由 `src/dialect.ts` 的注册表决定（未实现在装配前就拒掉）。
  */
-import path from "node:path";
-import { MysqlDdlGenerator } from "./ddl/mysql.js";
-import { MysqlSqlExecutor } from "./executor/mysql.js";
-import { SqlServerDdlGenerator } from "./ddl/sqlserver.js";
-import { openSqlServer, openOracle } from "./server/connections.js";
-import { OracleDdlGenerator } from "./ddl/oracle.js";
-import { OracleIntrospector } from "./introspector/oracle.js";
-import { SqlServerIntrospector } from "./introspector/sqlserver.js";
-import { MysqlIntrospector } from "./introspector/mysql.js";
+import path from 'node:path';
+import type { DialectName, MigrateConfig } from './config.js';
+import { MysqlDdlGenerator } from './ddl/mysql.js';
+import { OracleDdlGenerator } from './ddl/oracle.js';
+import { PostgresDdlGenerator } from './ddl/postgres.js';
+import { SqliteDdlGenerator } from './ddl/sqlite.js';
+import { SqlServerDdlGenerator } from './ddl/sqlserver.js';
+import type { DdlGenerator, DdlGeneratorOptions } from './ddl.js';
+import { quoteIdentifier } from './ddl.js';
+import { diagnostic } from './diagnostics/error.js';
+import { dialectInfo, IMPLEMENTED_DIALECT_NAMES } from './dialect.js';
+import type { Diff } from './diff/types.js';
+import { MysqlSqlExecutor } from './executor/mysql.js';
+import type { PgPoolLike } from './executor/postgres.js';
+import { PostgresSqlExecutor } from './executor/postgres.js';
+import { type SqliteDatabaseLike, SqliteSqlExecutor } from './executor/sqlite.js';
+import type { SqlExecutor } from './executor.js';
+import { MysqlIntrospector } from './introspector/mysql.js';
+import { OracleIntrospector } from './introspector/oracle.js';
+import { PostgresIntrospector } from './introspector/postgres.js';
+import { SqliteIntrospector } from './introspector/sqlite.js';
+import { SqlServerIntrospector } from './introspector/sqlserver.js';
+import type { Introspector } from './introspector.js';
+import { type MigrationProgress, Migrator } from './migrator.js';
+import { modelLoadError } from './model-load-error.js';
+import { tableDefsToSchema } from './schema/adapter.js';
+import { openOracle, openSqlServer } from './server/connections.js';
+import { DatabaseMigrationHistoryStore, FileMigrationStore } from './store.js';
 import {
   createSchema,
   EntityManager,
-  newSqlClient,
-  PostgresDriver,
   MySqlDriver,
-  SqlServerDriver,
+  newSqlClient,
   OracleDriver,
   OraclePool,
-  SqlServerPool,
-  SqliteDriver,
+  PostgresDriver,
   type SqlClientImplementor,
-} from "./vendor/ts-grm.js";
-import { PostgresDdlGenerator } from "./ddl/postgres.js";
-import { SqliteDdlGenerator } from "./ddl/sqlite.js";
-import { PostgresSqlExecutor } from "./executor/postgres.js";
-import { SqliteSqlExecutor, type SqliteDatabaseLike } from "./executor/sqlite.js";
-import { PostgresIntrospector } from "./introspector/postgres.js";
-import { SqliteIntrospector } from "./introspector/sqlite.js";
-import { Migrator, type MigrationProgress } from "./migrator.js";
-import { tableDefsToSchema } from "./schema/adapter.js";
-import { DatabaseMigrationHistoryStore, FileMigrationStore } from "./store.js";
-import { quoteIdentifier } from "./ddl.js";
-import type { DdlGenerator, DdlGeneratorOptions } from "./ddl.js";
-import type { SqlExecutor } from "./executor.js";
-import type { Diff } from "./diff/types.js";
-import type { Introspector } from "./introspector.js";
-import type { PgPoolLike } from "./executor/postgres.js";
-import type { DialectName, MigrateConfig } from "./config.js";
-import { dialectInfo, IMPLEMENTED_DIALECT_NAMES } from "./dialect.js";
-import { modelLoadError } from "./model-load-error.js";
+  SqliteDriver,
+  SqlServerDriver,
+  SqlServerPool,
+} from './vendor/ts-grm.js';
 
 export interface Runtime {
   readonly migrator: Migrator;
@@ -70,12 +70,12 @@ export interface RuntimeOptions {
   readonly confirm?: (diff: Diff) => Promise<boolean>;
   /** Optional diagnostic events; SQL can contain literal data. */
   readonly onProgress?: (event: MigrationProgress) => void;
-  readonly driftLanguage?: "en" | "zh-CN";
+  readonly driftLanguage?: 'en' | 'zh-CN';
 }
 
 /** 默认迁移目录 / 锁文件（相对项目根） */
-export const DEFAULT_MIGRATIONS_DIR = "./src/ts-grm";
-export const DEFAULT_LOCK_PATH = "./.ts-grm-migrate.lock";
+export const DEFAULT_MIGRATIONS_DIR = './src/ts-grm';
+export const DEFAULT_LOCK_PATH = './.ts-grm-migrate.lock';
 
 /**
  * 从配置组装运行时。
@@ -89,10 +89,15 @@ export async function createRuntime(
 ): Promise<Runtime> {
   // 方言在装配之前就定死：未实现的直接拒掉，并说清楚上游由谁提供，
   // 而不是等运行到 introspection/执行阶段才炸（见 src/dialect.ts）
-  const dialect = config.dialect ?? "postgres";
+  const dialect = config.dialect ?? 'postgres';
   const dialectSupport = dialectInfo(dialect);
   if (!dialectSupport.implemented) {
-    throw diagnostic("runtime_1", dialect, dialectSupport.tsGrmDrivers.join(" / "), IMPLEMENTED_DIALECT_NAMES.join(" / "));
+    throw diagnostic(
+      'runtime_1',
+      dialect,
+      dialectSupport.tsGrmDrivers.join(' / '),
+      IMPLEMENTED_DIALECT_NAMES.join(' / '),
+    );
   }
 
   const connection = await createConnection(dialect, config, cwd, options.readOnly ?? false);
@@ -126,9 +131,14 @@ async function createConnection(
   cwd: string,
   readOnly: boolean,
 ): Promise<DialectConnection> {
-  if (dialect === "sqlite") {
+  if (dialect === 'sqlite') {
     const database = await openSqlite(config, cwd, readOnly);
-    const executor = new SqliteSqlExecutor(database, config.database.file === ":memory:" || !config.database.file ? undefined : path.resolve(cwd, config.database.file));
+    const executor = new SqliteSqlExecutor(
+      database,
+      config.database.file === ':memory:' || !config.database.file
+        ? undefined
+        : path.resolve(cwd, config.database.file),
+    );
     return {
       executor,
       introspector: new SqliteIntrospector({ query: executor }),
@@ -139,46 +149,83 @@ async function createConnection(
     };
   }
 
-  if (dialect === "mysql") {
-    if (config.schema != null) throw diagnostic("runtime_2");
-    let mysql: typeof import("mysql2/promise");
-    try { mysql = await import("mysql2/promise"); }
-    catch { throw diagnostic("runtime_3"); }
+  if (dialect === 'mysql') {
+    if (config.schema != null) throw diagnostic('runtime_2');
+    let mysql: typeof import('mysql2/promise');
+    try {
+      mysql = await import('mysql2/promise');
+    } catch {
+      throw diagnostic('runtime_3');
+    }
     const { connectionString, file: _file, ...settings } = config.database;
-    const pool = mysql.createPool(connectionString
-      ? { uri: connectionString, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS }
-      : { ...settings, multipleStatements: true, timezone: "Z", supportBigNumbers: true, bigNumberStrings: true, connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS });
+    const pool = mysql.createPool(
+      connectionString
+        ? {
+            uri: connectionString,
+            multipleStatements: true,
+            timezone: 'Z',
+            supportBigNumbers: true,
+            bigNumberStrings: true,
+            connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS,
+          }
+        : {
+            ...settings,
+            multipleStatements: true,
+            timezone: 'Z',
+            supportBigNumbers: true,
+            bigNumberStrings: true,
+            connectTimeout: DEFAULT_CONNECTION_TIMEOUT_MS,
+          },
+    );
     const executor = new MysqlSqlExecutor(pool as never);
     try {
-      const { rows } = await executor.query("select version() as version, database() as db, @@lower_case_table_names as folding");
-      const version = String(rows[0]?.version ?? "");
-      const [major = 0, minor = 0, patch = 0] = version.split(".").map(Number);
+      const { rows } = await executor.query(
+        'select version() as version, database() as db, @@lower_case_table_names as folding',
+      );
+      const version = String(rows[0]?.version ?? '');
+      const [major = 0, minor = 0, patch = 0] = version.split('.').map(Number);
       if (/mariadb/i.test(version) || major < 8 || (major === 8 && minor === 0 && patch < 16)) {
-        throw diagnostic("runtime_4", version);
+        throw diagnostic('runtime_4', version);
       }
-      if (!rows[0]?.db) throw diagnostic("runtime_5");
-      if (Number(rows[0]?.folding) !== 0) throw diagnostic("runtime_6");
-      return { executor, introspector: new MysqlIntrospector({ query: executor }),
+      if (!rows[0]?.db) throw diagnostic('runtime_5');
+      if (Number(rows[0]?.folding) !== 0) throw diagnostic('runtime_6');
+      return {
+        executor,
+        introspector: new MysqlIntrospector({ query: executor }),
         driver: new MySqlDriver(pool as unknown as ConstructorParameters<typeof MySqlDriver>[0]),
-        close: () => pool.end() };
-    } catch (error) { await pool.end(); throw error; }
+        close: () => pool.end(),
+      };
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
   }
-  if (dialect === "mssql") {
-    const schema = config.schema ?? "dbo";
+  if (dialect === 'mssql') {
+    const schema = config.schema ?? 'dbo';
     const connection = await openSqlServer(config.database, schema, readOnly);
-    return { ...connection,
-      introspector: new SqlServerIntrospector({ query: connection.executor, schema: connection.schema }),
-      driver: new SqlServerDriver(new SqlServerPool({ server: config.database.host ?? "localhost" })),
+    return {
+      ...connection,
+      introspector: new SqlServerIntrospector({
+        query: connection.executor,
+        schema: connection.schema,
+      }),
+      driver: new SqlServerDriver(
+        new SqlServerPool({ server: config.database.host ?? 'localhost' }),
+      ),
     };
   }
-  if (dialect === "oracle") {
+  if (dialect === 'oracle') {
     const connection = await openOracle(config.database, config.schema);
-    return { ...connection,
-      introspector: new OracleIntrospector({ query: connection.executor, schema: connection.schema }),
+    return {
+      ...connection,
+      introspector: new OracleIntrospector({
+        query: connection.executor,
+        schema: connection.schema,
+      }),
       driver: new OracleDriver(new OraclePool({ user: config.database.user })),
     };
   }
-  if (dialect !== "postgres") throw diagnostic("runtime_7", dialect);
+  if (dialect !== 'postgres') throw diagnostic('runtime_7', dialect);
 
   // postgres
   const pool = await createPool(config);
@@ -187,11 +234,9 @@ async function createConnection(
     executor,
     introspector: new PostgresIntrospector({
       query: executor,
-      schema: config.schema ?? "public",
+      schema: config.schema ?? 'public',
     }),
-    driver: new PostgresDriver(
-      pool as unknown as ConstructorParameters<typeof PostgresDriver>[0],
-    ),
+    driver: new PostgresDriver(pool as unknown as ConstructorParameters<typeof PostgresDriver>[0]),
     close: async () => {
       await pool.end();
     },
@@ -209,38 +254,40 @@ async function assembleRuntime(
   const { executor, introspector, driver } = connection;
   const migrationsDir = path.resolve(cwd, config.migrationsDir ?? DEFAULT_MIGRATIONS_DIR);
   const lockPath = path.resolve(cwd, config.lockPath ?? DEFAULT_LOCK_PATH);
-  const schema = connection.schema ?? config.schema ?? "public";
+  const schema = connection.schema ?? config.schema ?? 'public';
 
-  if (dialect === "postgres") {
+  if (dialect === 'postgres') {
     // 非 public 时确保目标 schema 存在（幂等）：search_path 指向不存在的 schema
     // 会让后续每一条未限定表名的语句都失败
-    if (schema !== "public" && !options.readOnly) {
-      await executor.executeStatements([
-        `create schema if not exists ${quoteIdentifier(schema)}`,
-      ]);
+    if (schema !== 'public' && !options.readOnly) {
+      await executor.executeStatements([`create schema if not exists ${quoteIdentifier(schema)}`]);
     }
-  } else if (dialect !== "mssql" && dialect !== "oracle" && schema !== "public") {
+  } else if (dialect !== 'mssql' && dialect !== 'oracle' && schema !== 'public') {
     // SQLite 没有 schema 概念（只有 main / attached）。显式配了别的名字说明
     // 使用者的预期与方言不符，宁可报错也不要静默忽略。
-    throw diagnostic("runtime_8", dialect, schema);
+    throw diagnostic('runtime_8', dialect, schema);
   }
 
   // EntityManager.of 要求至少一个路径（AtLeastOne），配置校验已保证非空
-  const entityManager = EntityManager.of(
-    cwd,
-    ...(config.models as [string, ...Array<string>]),
-  );
-  const sqlClient = newSqlClient(driver as never, { entityManager }) as unknown as SqlClientImplementor;
+  const entityManager = EntityManager.of(cwd, ...(config.models as [string, ...Array<string>]));
+  const sqlClient = newSqlClient(driver as never, {
+    entityManager,
+  }) as unknown as SqlClientImplementor;
 
   // SQLite 重建表需要**目标态** TableDef 与 driver（diff 反推不出完整表结构），
   // 而它们只在 targetSchema() 里才拿得到 —— 所以把这个 options 对象交给生成器
   // 持有，在那里回填。Postgres 不需要，留空即可。
   const ddlOptions: DdlGeneratorOptions = {};
   const ddl: DdlGenerator =
-    dialect === "sqlite" ? new SqliteDdlGenerator(ddlOptions)
-      : dialect === "mysql" ? new MysqlDdlGenerator()
-      : dialect === "mssql" ? new SqlServerDdlGenerator(schema)
-      : dialect === "oracle" ? new OracleDdlGenerator(schema) : new PostgresDdlGenerator();
+    dialect === 'sqlite'
+      ? new SqliteDdlGenerator(ddlOptions)
+      : dialect === 'mysql'
+        ? new MysqlDdlGenerator()
+        : dialect === 'mssql'
+          ? new SqlServerDdlGenerator(schema)
+          : dialect === 'oracle'
+            ? new OracleDdlGenerator(schema)
+            : new PostgresDdlGenerator();
 
   const migrator = new Migrator({
     files: new FileMigrationStore(migrationsDir),
@@ -249,7 +296,7 @@ async function assembleRuntime(
     introspector,
     ddl,
     targetSchema: async () => {
-      let tableDefs;
+      let tableDefs: Awaited<ReturnType<typeof createSchema>>;
       try {
         tableDefs = await createSchema(sqlClient);
       } catch (e) {
@@ -290,12 +337,12 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
 async function createPool(config: MigrateConfig): Promise<ManagedPool> {
   let Pool: new (config: unknown) => ManagedPool;
   try {
-    const pg = (await import("pg")) as unknown as {
+    const pg = (await import('pg')) as unknown as {
       Pool: new (config: unknown) => ManagedPool;
     };
     Pool = pg.Pool;
   } catch {
-    throw diagnostic("runtime_9");
+    throw diagnostic('runtime_9');
   }
 
   const poolConfig: Record<string, unknown> = {
@@ -306,12 +353,12 @@ async function createPool(config: MigrateConfig): Promise<ManagedPool> {
     ...config.database,
   };
   const schema = config.schema;
-  if (schema != null && schema !== "public") {
+  if (schema != null && schema !== 'public') {
     // 让整个会话默认落在目标 schema。迁移 SQL 不带 schema 前缀，
     // 因此只把 schema 告诉 introspector 而不作用于执行侧，会导致
     // 「读 A schema、写 B schema」（实测踩过）。
-    const existing = typeof poolConfig["options"] === "string" ? `${poolConfig["options"]} ` : "";
-    poolConfig["options"] = `${existing}-c search_path=${schema}`;
+    const existing = typeof poolConfig['options'] === 'string' ? `${poolConfig['options']} ` : '';
+    poolConfig['options'] = `${existing}-c search_path=${schema}`;
   }
   return new Pool(poolConfig);
 }
@@ -325,16 +372,25 @@ async function openSqlite(
   cwd: string,
   readOnly: boolean,
 ): Promise<SqliteDatabaseLike & { close(): void }> {
-  let Database: new (file: string, options?: { readonly: boolean; fileMustExist: boolean }) => SqliteDatabaseLike & { close(): void };
+  let Database: new (
+    file: string,
+    options?: { readonly: boolean; fileMustExist: boolean },
+  ) => SqliteDatabaseLike & { close(): void };
   try {
-    const mod = (await import("better-sqlite3")) as unknown as {
-      default: new (file: string, options?: { readonly: boolean; fileMustExist: boolean }) => SqliteDatabaseLike & { close(): void };
+    const mod = (await import('better-sqlite3')) as unknown as {
+      default: new (
+        file: string,
+        options?: { readonly: boolean; fileMustExist: boolean },
+      ) => SqliteDatabaseLike & { close(): void };
     };
     Database = mod.default;
   } catch {
-    throw diagnostic("runtime_10");
+    throw diagnostic('runtime_10');
   }
   // 相对项目根解析（":memory:" 这类特殊值原样传）
-  const file = config.database.file ?? ":memory:";
-  return new Database(file === ":memory:" ? file : path.resolve(cwd, file), readOnly && file !== ":memory:" ? { readonly: true, fileMustExist: true } : undefined);
+  const file = config.database.file ?? ':memory:';
+  return new Database(
+    file === ':memory:' ? file : path.resolve(cwd, file),
+    readOnly && file !== ':memory:' ? { readonly: true, fileMustExist: true } : undefined,
+  );
 }

@@ -1,4 +1,6 @@
-import { diagnostic, DiagnosticAggregateError, asError, formatError } from "./diagnostics/error.js";
+import type { DdlGenerator } from './ddl.js';
+import { asError, DiagnosticAggregateError, diagnostic, formatError } from './diagnostics/error.js';
+import type { Diff } from './diff/types.js';
 /**
  * Migrator —— 迁移应用器：文件扫描 → 与历史比对 → 按序执行 → 记录。
  *
@@ -18,25 +20,23 @@ import { diagnostic, DiagnosticAggregateError, asError, formatError } from "./di
  *
  * 交互层（破坏性操作确认）不在这里 —— `Diff.destructive` 由 CLI 层使用。
  */
-import { SchemaDiffer } from "./differ.js";
-import { describeDiff } from "./drift.js";
-import { acquireProcessLock } from "./lock.js";
-import { checksumOf } from "./store.js";
-import type { DdlGenerator } from "./ddl.js";
-import type { Diff } from "./diff/types.js";
-import type { SqlExecutor } from "./executor.js";
-import type { Introspector } from "./introspector.js";
-import type { Schema } from "./schema/model.js";
-import type { SchemaDrift } from "./drift.js";
+import { SchemaDiffer } from './differ.js';
+import type { SchemaDrift } from './drift.js';
+import { describeDiff } from './drift.js';
+import type { SqlExecutor } from './executor.js';
+import type { Introspector } from './introspector.js';
+import { acquireProcessLock } from './lock.js';
+import type { Schema } from './schema/model.js';
 import type {
   AppliedMigration,
   MigrationFile,
   MigrationFileStore,
   MigrationHistoryStore,
-} from "./store.js";
+} from './store.js';
+import { checksumOf } from './store.js';
 
-export type { SqlExecutor } from "./executor.js";
-export type { MigrationFile } from "./store.js";
+export type { SqlExecutor } from './executor.js';
+export type { MigrationFile } from './store.js';
 
 export interface MigratorOptions {
   /** 磁盘迁移文件 */
@@ -64,21 +64,21 @@ export interface MigratorOptions {
   readonly confirm?: (diff: Diff) => Promise<boolean>;
   /** Optional progress events for CLI diagnostics. Consumers must not expose SQL by default. */
   readonly onProgress?: (event: MigrationProgress) => void;
-  readonly driftLanguage?: "en" | "zh-CN";
+  readonly driftLanguage?: 'en' | 'zh-CN';
 }
 
 export type MigrationProgress =
-  | { readonly kind: "process-lock"; readonly path: string }
-  | { readonly kind: "database-lock"; readonly key: string }
-  | { readonly kind: "sql"; readonly sql: string }
-  | { readonly kind: "data-condition"; readonly table: string }
-  | { readonly kind: "migration-start" | "migration-applied"; readonly id: string };
+  | { readonly kind: 'process-lock'; readonly path: string }
+  | { readonly kind: 'database-lock'; readonly key: string }
+  | { readonly kind: 'sql'; readonly sql: string }
+  | { readonly kind: 'data-condition'; readonly table: string }
+  | { readonly kind: 'migration-start' | 'migration-applied'; readonly id: string };
 
 /** 使用者在确认破坏性变更时选择中止 */
 export class MigrationAbortedError extends Error {
   constructor() {
-    super("Aborted: destructive change was not confirmed");
-    this.name = "MigrationAbortedError";
+    super('Aborted: destructive change was not confirmed');
+    this.name = 'MigrationAbortedError';
   }
 }
 
@@ -121,9 +121,9 @@ export interface MigrationStatus {
 /** `resolve()` 的动作 */
 export type ResolveAction =
   /** 标记为已应用（SQL 已经手工执行过） */
-  | "applied"
+  | 'applied'
   /** 清除失败记录（影响已回退，想重新应用） */
-  | "rolled-back";
+  | 'rolled-back';
 
 export interface ResolveOptions {
   readonly migration: string;
@@ -159,11 +159,14 @@ export class Migrator {
    * 与数据库无差异时不产生文件；破坏性变更的确认交给 CLI 层（`Diff.destructive`）。
    * `name` 可省略，省略时迁移只用时间戳命名。
    */
-  async dev(options: { readonly name?: string; readonly createOnly?: boolean }): Promise<DevResult> {
+  async dev(options: {
+    readonly name?: string;
+    readonly createOnly?: boolean;
+  }): Promise<DevResult> {
     return await this._withLocks(!options.createOnly, async () => {
       const { files: existing, pending } = await this._validatedHistory();
       if (pending.length > 0) {
-        throw diagnostic("migrator_1", pending.map(f => f.id).join(", "));
+        throw diagnostic('migrator_1', pending.map((f) => f.id).join(', '));
       }
       const { diff, from, to } = await this._diffAgainstDatabase();
       if (diff.changes.length === 0) {
@@ -178,14 +181,19 @@ export class Migrator {
         const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{3})?(?:_|$)/.exec(file.id);
         if (match) {
           const previous = Date.UTC(
-            +match[1]!, +match[2]! - 1, +match[3]!,
-            +match[4]!, +match[5]!, +match[6]!, +(match[7] ?? 0),
+            +match[1]!,
+            +match[2]! - 1,
+            +match[3]!,
+            +match[4]!,
+            +match[5]!,
+            +match[6]!,
+            +(match[7] ?? 0),
           );
           // A legacy seconds-only ID must sort before the new ID, including its slug.
           time = Math.max(time, previous + (match[7] ? 1 : 1000));
         }
       }
-      const id = generateMigrationId(new Date(time), options.name ?? "");
+      const id = generateMigrationId(new Date(time), options.name ?? '');
       const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
 
       await this._options.files.write(file);
@@ -199,14 +207,15 @@ export class Migrator {
   async push(options: { readonly dryRun?: boolean } = {}): Promise<PushResult> {
     return await this._withLocks(false, async () => {
       const { pending } = await this._validatedHistory();
-      if (pending.length) throw diagnostic("migrator_1", pending.map(f => f.id).join(", "));
+      if (pending.length) throw diagnostic('migrator_1', pending.map((f) => f.id).join(', '));
       const { diff, from, to } = await this._diffAgainstDatabase();
       const statements = this._options.ddl.statements(diff, { from, to });
       this._warnDataConditions(diff);
-      if (options.dryRun) return { diff, statements, drift: describeDiff(diff, this._options.driftLanguage) };
+      if (options.dryRun)
+        return { diff, statements, drift: describeDiff(diff, this._options.driftLanguage) };
       await this._confirmIfNeeded(diff);
       if (statements.length > 0) {
-        for (const sql of statements) this._options.onProgress?.({ kind: "sql", sql });
+        for (const sql of statements) this._options.onProgress?.({ kind: 'sql', sql });
         await this._options.executor.executeStatements(statements);
       }
       return { diff, statements, drift: await this._describeDrift() };
@@ -242,16 +251,16 @@ export class Migrator {
       const files = await this._options.files.listFiles();
       const file = files.find((f) => f.id === options.migration);
       if (file == null) {
-        throw diagnostic("migrator_2", options.migration, this._options.migrationsDir);
+        throw diagnostic('migrator_2', options.migration, this._options.migrationsDir);
       }
-      if (options.action === "applied") {
+      if (options.action === 'applied') {
         await this._options.history.recordApplied(file);
         return;
       }
 
       const updated = await this._options.history.markRolledBack(options.migration);
       if (!updated) {
-        throw diagnostic("migrator_3", options.migration);
+        throw diagnostic('migrator_3', options.migration);
       }
     });
   }
@@ -266,7 +275,10 @@ export class Migrator {
 
   // ---- 内部 ----------------------------------------------------------------
 
-  private async _validatedHistory(): Promise<{ files: ReadonlyArray<MigrationFile>; pending: ReadonlyArray<MigrationFile> }> {
+  private async _validatedHistory(): Promise<{
+    files: ReadonlyArray<MigrationFile>;
+    pending: ReadonlyArray<MigrationFile>;
+  }> {
     const files = await this._options.files.listFiles();
     const applied = await this._effectiveApplied();
     this._assertNoFailed(applied);
@@ -276,7 +288,7 @@ export class Migrator {
     for (const file of files) {
       const record = appliedById.get(file.id);
       if (record != null && record.checksum !== file.checksum) {
-        throw diagnostic("migrator_4", file.id, short(record.checksum), short(file.checksum));
+        throw diagnostic('migrator_4', file.id, short(record.checksum), short(file.checksum));
       }
     }
 
@@ -284,13 +296,13 @@ export class Migrator {
     const fileIds = new Set(files.map((f) => f.id));
     const missing = applied.filter((a) => !fileIds.has(a.id));
     if (missing.length > 0) {
-      throw diagnostic("migrator_5", missing.map((m) => m.id).join(", "));
+      throw diagnostic('migrator_5', missing.map((m) => m.id).join(', '));
     }
 
     let gap: string | undefined;
     for (const file of files) {
       if (!appliedById.has(file.id)) gap ??= file.id;
-      else if (gap !== undefined) throw diagnostic("history_order", gap);
+      else if (gap !== undefined) throw diagnostic('history_order', gap);
     }
     const pending = files.filter((f) => !appliedById.has(f.id));
     return { files, pending };
@@ -310,14 +322,22 @@ export class Migrator {
     if (failed.length === 0) {
       return;
     }
-    throw diagnostic("migrator_6", failed.map((f) => f.id).join(", "));
+    throw diagnostic('migrator_6', failed.map((f) => f.id).join(', '));
   }
 
   private _warnDataConditions(diff: Diff): void {
     for (const change of diff.changes) {
-      if (change.kind !== "ALTER_TABLE") continue;
-      if (change.columns.some(c => c.kind === "ADD_COLUMN" ? !c.column.nullable : c.kind === "ALTER_COLUMN" && c.nullable === false) || change.constraints.some(c => c.kind === "ADD_CONSTRAINT") || change.indexes.some(c => c.kind === "ADD_INDEX" && c.index.unique)) {
-        this._options.onProgress?.({ kind: "data-condition", table: change.table });
+      if (change.kind !== 'ALTER_TABLE') continue;
+      if (
+        change.columns.some((c) =>
+          c.kind === 'ADD_COLUMN'
+            ? !c.column.nullable
+            : c.kind === 'ALTER_COLUMN' && c.nullable === false,
+        ) ||
+        change.constraints.some((c) => c.kind === 'ADD_CONSTRAINT') ||
+        change.indexes.some((c) => c.kind === 'ADD_INDEX' && c.index.unique)
+      ) {
+        this._options.onProgress?.({ kind: 'data-condition', table: change.table });
       }
     }
   }
@@ -334,20 +354,17 @@ export class Migrator {
   }
 
   /** 包一层进程锁 + 数据库锁 */
-  private async _withLocks<T>(
-    ensureHistory: boolean,
-    fn: () => Promise<T>,
-  ): Promise<T> {
+  private async _withLocks<T>(ensureHistory: boolean, fn: () => Promise<T>): Promise<T> {
     const lock = await acquireProcessLock(this._options.lockPath);
     let releaseDbLock: (() => Promise<void>) | undefined;
     let result!: T;
     let failed = false;
     let failure: unknown;
     try {
-      this._options.onProgress?.({ kind: "process-lock", path: this._options.lockPath });
-      const key = this._options.lockKey ?? "ts-grm-migrate";
+      this._options.onProgress?.({ kind: 'process-lock', path: this._options.lockPath });
+      const key = this._options.lockKey ?? 'ts-grm-migrate';
       releaseDbLock = await this._options.executor.acquireMigrationLock(key);
-      this._options.onProgress?.({ kind: "database-lock", key });
+      this._options.onProgress?.({ kind: 'database-lock', key });
       if (ensureHistory) await this._options.history.ensureTable();
       result = await fn();
     } catch (error) {
@@ -356,12 +373,26 @@ export class Migrator {
     }
     const cleanupErrors: Error[] = [];
     if (releaseDbLock) {
-      try { await releaseDbLock(); } catch (error) { cleanupErrors.push(asError(error)); }
+      try {
+        await releaseDbLock();
+      } catch (error) {
+        cleanupErrors.push(asError(error));
+      }
     }
-    try { await lock.release(); } catch (error) { cleanupErrors.push(asError(error)); }
+    try {
+      await lock.release();
+    } catch (error) {
+      cleanupErrors.push(asError(error));
+    }
     if (cleanupErrors.length) {
-      const cleanup = cleanupErrors.reduce((left, right) => new DiagnosticAggregateError([left, right], "lock_cleanup", [left, right]));
-      if (failed) throw new DiagnosticAggregateError([failure, cleanup], "lock_cleanup", [asError(failure), cleanup]);
+      const cleanup = cleanupErrors.reduce(
+        (left, right) => new DiagnosticAggregateError([left, right], 'lock_cleanup', [left, right]),
+      );
+      if (failed)
+        throw new DiagnosticAggregateError([failure, cleanup], 'lock_cleanup', [
+          asError(failure),
+          cleanup,
+        ]);
       throw cleanup;
     }
     if (failed) throw failure;
@@ -371,28 +402,45 @@ export class Migrator {
   private async _applyOne(file: MigrationFile): Promise<void> {
     // A durable guard survives process death, connection loss and implicit DDL commits.
     // failed also represents an unfinished attempt: only resolve may unblock it.
-    const language = this._options.driftLanguage ?? "en";
-    await this._options.history.markFailed(file.id, formatError(diagnostic("migrator_started"), language), file.sql);
-    this._options.onProgress?.({ kind: "migration-start", id: file.id });
-    this._options.onProgress?.({ kind: "sql", sql: file.sql });
+    const language = this._options.driftLanguage ?? 'en';
+    await this._options.history.markFailed(
+      file.id,
+      formatError(diagnostic('migrator_started'), language),
+      file.sql,
+    );
+    this._options.onProgress?.({ kind: 'migration-start', id: file.id });
+    this._options.onProgress?.({ kind: 'sql', sql: file.sql });
     try {
       let completed = false;
       await this._options.executor.executeStatements([file.sql], async (connection) => {
         await this._options.history.recordApplied(file, connection);
         completed = true;
       });
-      if (!completed) throw diagnostic("migrator_7");
-      this._options.onProgress?.({ kind: "migration-applied", id: file.id });
+      if (!completed) throw diagnostic('migrator_7');
+      this._options.onProgress?.({ kind: 'migration-applied', id: file.id });
     } catch (e) {
       const error = asError(e);
       const message = formatError(error, language);
       // 失败要留在历史里：否则下次 deploy 会以为这是全新迁移而重试
       try {
-        await this._options.history.markFailed(file.id, message, failureLogs(file, formatError(error, language, true), language, error.message.includes("rolled back")));
+        await this._options.history.markFailed(
+          file.id,
+          message,
+          failureLogs(
+            file,
+            formatError(error, language, true),
+            language,
+            error.message.includes('rolled back'),
+          ),
+        );
       } catch (historyError) {
-        throw new DiagnosticAggregateError([e, historyError], "migrator_record_failure", [file.id, error, asError(historyError)]);
+        throw new DiagnosticAggregateError([e, historyError], 'migrator_record_failure', [
+          file.id,
+          error,
+          asError(historyError),
+        ]);
       }
-      throw diagnostic("migrator_8", file.id, error);
+      throw diagnostic('migrator_8', file.id, error);
     }
   }
 
@@ -427,16 +475,16 @@ export class Migrator {
  * 时间戳前缀保证**字典序即时间序**，`sortKey` 直接复用它。
  */
 export function generateMigrationId(now: Date, name: string): string {
-  const pad = (n: number): string => n.toString().padStart(2, "0");
+  const pad = (n: number): string => n.toString().padStart(2, '0');
   const stamp =
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
-    `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}${now.getUTCMilliseconds().toString().padStart(3, "0")}`;
+    `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}${now.getUTCMilliseconds().toString().padStart(3, '0')}`;
   const slug = name
     .trim()
     .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "_")
-    .replaceAll(/^_+|_+$/g, "");
-  return slug === "" ? stamp : `${stamp}_${slug}`;
+    .replaceAll(/[^a-z0-9]+/g, '_')
+    .replaceAll(/^_+|_+$/g, '');
+  return slug === '' ? stamp : `${stamp}_${slug}`;
 }
 
 /** 语句数组 → 迁移文件内容（语句间空行分隔，统一以分号结尾） */
@@ -444,9 +492,9 @@ export function toSqlFile(statements: ReadonlyArray<string>): string {
   const body = statements
     .map((s) => {
       const trimmed = s.trimEnd();
-      return trimmed.endsWith(";") ? trimmed : `${trimmed};`;
+      return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
     })
-    .join("\n\n");
+    .join('\n\n');
   return `${body}\n`;
 }
 
@@ -455,19 +503,28 @@ function short(checksum: string): string {
 }
 
 /** 失败时写进历史的可读日志（`error` 是摘要，`logs` 是详情） */
-function failureLogs(file: MigrationFile, message: string, language: "en" | "zh-CN", rolledBack: boolean): string {
-  if (language === "zh-CN") {
+function failureLogs(
+  file: MigrationFile,
+  message: string,
+  language: 'en' | 'zh-CN',
+  rolledBack: boolean,
+): string {
+  if (language === 'zh-CN') {
     return [
       `迁移 ${file.id} 执行失败`,
       `时间：${new Date().toISOString()}`,
       `错误：${message}`,
-      rolledBack ? "执行器已回滚事务。" : "非事务型 DDL 可能已部分生效；修正迁移状态前请检查数据库。",
-    ].join("\n");
+      rolledBack
+        ? '执行器已回滚事务。'
+        : '非事务型 DDL 可能已部分生效；修正迁移状态前请检查数据库。',
+    ].join('\n');
   }
   return [
     `Migration ${file.id} failed`,
     `Time: ${new Date().toISOString()}`,
     `Error: ${message}`,
-    rolledBack ? "The executor rolled back the transaction." : "Non-transactional DDL may have partially applied; inspect the database before resolving the migration.",
-  ].join("\n");
+    rolledBack
+      ? 'The executor rolled back the transaction.'
+      : 'Non-transactional DDL may have partially applied; inspect the database before resolving the migration.',
+  ].join('\n');
 }

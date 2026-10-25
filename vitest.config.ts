@@ -1,15 +1,15 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     coverage: {
-      provider: "v8",
-      include: ["src/**/*.ts"],
-      reporter: ["text", "lcov"],
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      reporter: ['text', 'lcov'],
     },
     globals: true,
-    environment: "node",
-    include: ["tests/**/*.test.ts"],
+    environment: 'node',
+    include: ['tests/**/*.test.ts'],
     // 含真实数据库的集成测试（*-postgres）要建 schema / 跑迁移，
     // 多套件并发时超过默认 5s 属于网络 + DDL 的固有开销，不是死循环
     testTimeout: 30_000,

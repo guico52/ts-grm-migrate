@@ -18,11 +18,7 @@
  *
  * 序列化：本形状是纯数据（无方法、无循环引用），快照直接 JSON（见 src/snapshot.ts）。
  */
-import type {
-  TableDef,
-  ColumnDef,
-  ConstraintDef,
-} from "../vendor/ts-grm.js";
+import type { ColumnDef, ConstraintDef, TableDef } from '../vendor/ts-grm.js';
 
 /** 数据库 schema（一个数据库连接的完整结构） */
 export interface Schema {
@@ -31,15 +27,11 @@ export interface Schema {
 }
 
 /** 表：继承原生 TableDef，去掉模型语义与建表方法，约束/索引为迁移扩展后的形态 */
-export interface Table extends Omit<
-  TableDef,
-  | "entity"
-  | "prop"
-  | "columns"
-  | "constraints"
-  | "toCreationStatements"
-  | "toDeletionStatements"
-> {
+export interface Table
+  extends Omit<
+    TableDef,
+    'entity' | 'prop' | 'columns' | 'constraints' | 'toCreationStatements' | 'toDeletionStatements'
+  > {
   readonly columns: ReadonlyArray<Column>;
   readonly constraints: ReadonlyArray<Constraint>;
   /** migrate 扩展：索引。ts-grm 模型无此概念，来源：补充声明 / introspection */
@@ -53,15 +45,8 @@ export interface Table extends Omit<
  * precision / scale 一并去掉：该信息已编码进方言类型字符串（如 "numeric(10,2)"），
  * migrate 的 IR 不重复承载，避免两处表达同一事实而漂移。
  */
-export interface Column extends Omit<
-  ColumnDef,
-  | "declaringTable"
-  | "prop"
-  | "type"
-  | "when"
-  | "precision"
-  | "scale"
-> {
+export interface Column
+  extends Omit<ColumnDef, 'declaringTable' | 'prop' | 'type' | 'when' | 'precision' | 'scale'> {
   /** 方言原生类型，如 "bigint" / "text" / "varchar(50)" / "numeric(10,2)" */
   readonly type: string;
   /** 默认值表达式原文（introspection 读到什么存什么，如 "nextval('t_id_seq'::regclass)"） */
@@ -95,36 +80,31 @@ export type Constraint =
   | CheckConstraint;
 
 /** 主键：继承原生 PRIMARY_KEY 定义（注意：原生 kind 是 "PRIMARY_KEY" | "INDEX" 联合），列改为名字集合 */
-export interface PrimaryKeyConstraint extends Omit<
-  Extract<ConstraintDef, { readonly kind: "PRIMARY_KEY" | "INDEX" }>,
-  "kind" | "columns"
-> {
-  readonly kind: "PRIMARY_KEY";
+export interface PrimaryKeyConstraint
+  extends Omit<
+    Extract<ConstraintDef, { readonly kind: 'PRIMARY_KEY' | 'INDEX' }>,
+    'kind' | 'columns'
+  > {
+  readonly kind: 'PRIMARY_KEY';
   readonly name: string | undefined;
   readonly columns: ReadonlyArray<string>;
 }
 
 /** 唯一约束：继承原生 UNIQUE 定义，列改为名字集合 */
-export interface UniqueConstraint extends Omit<
-  Extract<ConstraintDef, { readonly kind: "UNIQUE" }>,
-  "columns"
-> {
+export interface UniqueConstraint
+  extends Omit<Extract<ConstraintDef, { readonly kind: 'UNIQUE' }>, 'columns'> {
   readonly name: string | undefined;
   readonly columns: ReadonlyArray<string>;
 }
 
-export type OnDelete =
-  | "NO_ACTION"
-  | "RESTRICT"
-  | "CASCADE"
-  | "SET_NULL"
-  | "SET_DEFAULT";
+export type OnDelete = 'NO_ACTION' | 'RESTRICT' | 'CASCADE' | 'SET_NULL' | 'SET_DEFAULT';
 
 /** 外键：继承原生 FOREIGN_KEY 定义（含 cascade / implicit），引用目标改为表名 + 列名 */
-export interface ForeignKeyConstraint extends Omit<
-  Extract<ConstraintDef, { readonly kind: "FOREIGN_KEY" }>,
-  "columns" | "referencedColumns"
-> {
+export interface ForeignKeyConstraint
+  extends Omit<
+    Extract<ConstraintDef, { readonly kind: 'FOREIGN_KEY' }>,
+    'columns' | 'referencedColumns'
+  > {
   readonly name: string | undefined;
   /** 本表列 */
   readonly columns: ReadonlyArray<string>;
@@ -139,10 +119,8 @@ export interface ForeignKeyConstraint extends Omit<
 }
 
 /** 检查约束：继承原生 CHECK 定义（column+values 保留），expression 供 DDL 直接使用 */
-export interface CheckConstraint extends Omit<
-  Extract<ConstraintDef, { readonly kind: "CHECK" }>,
-  "column"
-> {
+export interface CheckConstraint
+  extends Omit<Extract<ConstraintDef, { readonly kind: 'CHECK' }>, 'column'> {
   readonly name: string | undefined;
   /** 条件表达式原文（如 `"TYPE" in ('Book', 'PaperBook')`） */
   readonly expression: string;

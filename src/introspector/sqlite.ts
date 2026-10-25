@@ -1,5 +1,15 @@
-import { sqliteChecks, sqlTokens } from "../schema/checks.js";
-import { diagnostic, asError } from "../diagnostics/error.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { Dialect, Introspector, SqlQueryable } from '../introspector.js';
+import { sqliteChecks, sqlTokens } from '../schema/checks.js';
+import type {
+  Column,
+  Constraint,
+  ForeignKeyConstraint,
+  Index,
+  OnDelete,
+  Schema,
+  Table,
+} from '../schema/model.js';
 /**
  * SQLite 版 Introspector。
  *
@@ -22,9 +32,7 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  *
  * introspection 是外部输入路径：出错包成带上下文的可读错误，不 fail-fast。
  */
-import type { CascadeType } from "../vendor/ts-grm.js";
-import type { Column, Constraint, ForeignKeyConstraint, Index, OnDelete, Schema, Table } from "../schema/model.js";
-import type { Dialect, Introspector, SqlQueryable } from "../introspector.js";
+import type { CascadeType } from '../vendor/ts-grm.js';
 
 export interface SqliteIntrospectorOptions {
   readonly query: SqlQueryable;
@@ -39,7 +47,7 @@ order by name
 `;
 
 export class SqliteIntrospector implements Introspector {
-  readonly dialect: Dialect = "sqlite";
+  readonly dialect: Dialect = 'sqlite';
 
   constructor(private readonly _options: SqliteIntrospectorOptions) {}
 
@@ -49,31 +57,51 @@ export class SqliteIntrospector implements Introspector {
       const tableRows = await query.query(TABLES_SQL);
       const tables: Array<Table> = [];
       for (const row of tableRows.rows) {
-        const name = asString(row["name"]);
-        const definitionTokens = sqlTokens(asString(row["sql"])).filter(token => token !== ";");
-        const specialDeclaration = definitionTokens.some((token, i) =>
-          (token.toLowerCase() === "deferrable" && definitionTokens[i - 1]?.toLowerCase() !== "not") ||
-          token.toLowerCase() === "collate" ||
-          (token.toLowerCase() === "virtual" && definitionTokens[i + 1]?.toLowerCase() === "table")
+        const name = asString(row['name']);
+        const definitionTokens = sqlTokens(asString(row['sql'])).filter((token) => token !== ';');
+        const specialDeclaration = definitionTokens.some(
+          (token, i) =>
+            (token.toLowerCase() === 'deferrable' &&
+              definitionTokens[i - 1]?.toLowerCase() !== 'not') ||
+            token.toLowerCase() === 'collate' ||
+            (token.toLowerCase() === 'virtual' &&
+              definitionTokens[i + 1]?.toLowerCase() === 'table'),
         );
-        if (specialDeclaration || definitionTokens.slice(-2).join(" ").toLowerCase() === "without rowid" || definitionTokens.at(-1)?.toLowerCase() === "strict") {
-          throw diagnostic("unsupported_structure", name, diagnostic("structure_table"));
+        if (
+          specialDeclaration ||
+          definitionTokens.slice(-2).join(' ').toLowerCase() === 'without rowid' ||
+          definitionTokens.at(-1)?.toLowerCase() === 'strict'
+        ) {
+          throw diagnostic('unsupported_structure', name, diagnostic('structure_table'));
         }
         // AUTOINCREMENT 只存于建表原文；SQLite 只允许它出现在单列 INTEGER 主键上
-        const autoIncrement = definitionTokens.some(token => token.toLowerCase() === "autoincrement");
+        const autoIncrement = definitionTokens.some(
+          (token) => token.toLowerCase() === 'autoincrement',
+        );
         const { columns, primaryKey } = await this._columns(name, autoIncrement);
         const foreignKeys = await this._foreignKeys(name);
         const { uniques, indexes } = await this._indexes(name);
         tables.push({
           name,
           columns,
-          constraints: [...primaryKey, ...uniques, ...foreignKeys, ...sqliteChecks(asString(row["sql"])).map(expression => ({ kind: "CHECK" as const, name: undefined, expression, values: [], implicit: undefined }))],
+          constraints: [
+            ...primaryKey,
+            ...uniques,
+            ...foreignKeys,
+            ...sqliteChecks(asString(row['sql'])).map((expression) => ({
+              kind: 'CHECK' as const,
+              name: undefined,
+              expression,
+              values: [],
+              implicit: undefined,
+            })),
+          ],
           indexes,
         });
       }
       return { tables };
     } catch (e) {
-      throw diagnostic("introspector_sqlite_1", asError(e));
+      throw diagnostic('introspector_sqlite_1', asError(e));
     }
   }
 
@@ -86,25 +114,28 @@ export class SqliteIntrospector implements Introspector {
     table: string,
     autoIncrement: boolean,
   ): Promise<{ columns: Array<Column>; primaryKey: Array<Constraint> }> {
-    const { rows } = await this._options.query.query(`pragma table_xinfo(${quoteForPragma(table)})`);
-    if (rows.some(row => Number(row["hidden"] ?? 0) !== 0)) throw diagnostic("unsupported_structure", table, diagnostic("structure_column"));
+    const { rows } = await this._options.query.query(
+      `pragma table_xinfo(${quoteForPragma(table)})`,
+    );
+    if (rows.some((row) => Number(row['hidden'] ?? 0) !== 0))
+      throw diagnostic('unsupported_structure', table, diagnostic('structure_column'));
     const pkColumns: Array<{ name: string; position: number }> = [];
     const columns = rows.map((row) => {
-      const name = asString(row["name"]);
-      const pkPosition = Number(row["pk"]);
+      const name = asString(row['name']);
+      const pkPosition = Number(row['pk']);
       if (pkPosition > 0) {
         pkColumns.push({ name, position: pkPosition });
       }
       return {
         name,
-        type: normalizeSqliteType(asString(row["type"])),
-        nullable: Number(row["notnull"]) === 0,
+        type: normalizeSqliteType(asString(row['type'])),
+        nullable: Number(row['notnull']) === 0,
         // 长度已编码在类型里（SQLite 一般不写），不重复承载
         length: undefined,
-        default: row["dflt_value"] == null ? undefined : asString(row["dflt_value"]),
+        default: row['dflt_value'] == null ? undefined : asString(row['dflt_value']),
         // AUTOINCREMENT 只能加在主键列上（见文件头第 4 点）
         autoIncrement: autoIncrement && pkPosition > 0,
-        ordinal: Number(row["cid"]) + 1,
+        ordinal: Number(row['cid']) + 1,
         comment: undefined,
       };
     });
@@ -114,7 +145,7 @@ export class SqliteIntrospector implements Introspector {
         ? []
         : [
             {
-              kind: "PRIMARY_KEY",
+              kind: 'PRIMARY_KEY',
               // catalog 不保存约束名，见文件头第 2 点
               name: undefined,
               columns: pkColumns.map((c) => c.name),
@@ -131,7 +162,7 @@ export class SqliteIntrospector implements Introspector {
     );
     const byId = new Map<number, Array<Record<string, unknown>>>();
     for (const row of rows) {
-      const id = Number(row["id"]);
+      const id = Number(row['id']);
       const group = byId.get(id);
       if (group == null) {
         byId.set(id, [row]);
@@ -141,21 +172,28 @@ export class SqliteIntrospector implements Introspector {
     }
     const result: Array<ForeignKeyConstraint> = [];
     for (const group of byId.values()) {
-      const ordered = [...group].sort((a, b) => Number(a["seq"]) - Number(b["seq"]));
-      const onDelete = toOnDelete(asString(ordered[0]!["on_delete"]));
-      if (asString(ordered[0]!["on_update"]).toUpperCase() !== "NO ACTION") throw diagnostic("unsupported_structure", table, diagnostic("structure_constraint"));
-      let referencedColumns = ordered.map(r => asString(r["to"]));
-      if (ordered.every(r => r["to"] == null)) {
-        const parent = asString(ordered[0]!["table"]);
-        const primary = await this._options.query.query(`pragma table_xinfo(${quoteForPragma(parent)})`);
-        referencedColumns = primary.rows.filter(r => Number(r["pk"]) > 0).sort((a, b) => Number(a["pk"]) - Number(b["pk"])).map(r => asString(r["name"]));
-        if (referencedColumns.length !== ordered.length) throw diagnostic("unsupported_structure", table, diagnostic("structure_missing_key"));
+      const ordered = [...group].sort((a, b) => Number(a['seq']) - Number(b['seq']));
+      const onDelete = toOnDelete(asString(ordered[0]!['on_delete']));
+      if (asString(ordered[0]!['on_update']).toUpperCase() !== 'NO ACTION')
+        throw diagnostic('unsupported_structure', table, diagnostic('structure_constraint'));
+      let referencedColumns = ordered.map((r) => asString(r['to']));
+      if (ordered.every((r) => r['to'] == null)) {
+        const parent = asString(ordered[0]!['table']);
+        const primary = await this._options.query.query(
+          `pragma table_xinfo(${quoteForPragma(parent)})`,
+        );
+        referencedColumns = primary.rows
+          .filter((r) => Number(r['pk']) > 0)
+          .sort((a, b) => Number(a['pk']) - Number(b['pk']))
+          .map((r) => asString(r['name']));
+        if (referencedColumns.length !== ordered.length)
+          throw diagnostic('unsupported_structure', table, diagnostic('structure_missing_key'));
       }
       result.push({
-        kind: "FOREIGN_KEY",
+        kind: 'FOREIGN_KEY',
         name: undefined,
-        columns: ordered.map((r) => asString(r["from"])),
-        referencedTable: asString(ordered[0]!["table"]),
+        columns: ordered.map((r) => asString(r['from'])),
+        referencedTable: asString(ordered[0]!['table']),
         // An omitted reference column list denotes the parent primary key.
         referencedColumns,
         onDelete,
@@ -179,36 +217,58 @@ export class SqliteIntrospector implements Introspector {
   private async _indexes(
     table: string,
   ): Promise<{ uniques: Array<Constraint>; indexes: Array<Index> }> {
-    const { rows } = await this._options.query.query(
-      `pragma index_list(${quoteForPragma(table)})`,
-    );
+    const { rows } = await this._options.query.query(`pragma index_list(${quoteForPragma(table)})`);
     const uniques: Array<Constraint> = [];
     const indexes: Array<Index> = [];
     for (const row of rows) {
-      const name = asString(row["name"]);
-      const origin = asString(row["origin"]);
-      if (origin === "pk") {
-        const details = await this._options.query.query(`pragma index_xinfo(${quoteForPragma(name)})`);
-        if (details.rows.some(r => Number(r["key"]) === 1 && (Number(r["desc"]) !== 0 || asString(r["coll"]).toUpperCase() !== "BINARY"))) throw diagnostic("unsupported_structure", table, diagnostic("structure_constraint"));
+      const name = asString(row['name']);
+      const origin = asString(row['origin']);
+      if (origin === 'pk') {
+        const details = await this._options.query.query(
+          `pragma index_xinfo(${quoteForPragma(name)})`,
+        );
+        if (
+          details.rows.some(
+            (r) =>
+              Number(r['key']) === 1 &&
+              (Number(r['desc']) !== 0 || asString(r['coll']).toUpperCase() !== 'BINARY'),
+          )
+        )
+          throw diagnostic('unsupported_structure', table, diagnostic('structure_constraint'));
         continue;
       }
       const columns = await this._indexColumns(name);
-      const definition = await this._options.query.query(`select sql from sqlite_master where type = 'index' and name = ${"'" + name.replaceAll("'", "''") + "'"}`);
-      const tokens = sqlTokens(asString(definition.rows[0]?.["sql"]));
-      const indexDetails = await this._options.query.query(`pragma index_xinfo(${quoteForPragma(name)})`);
-      const unsupported = indexDetails.rows.some(r => Number(r["key"]) === 1 && (Number(r["cid"]) < 0 || Number(r["desc"]) !== 0 || asString(r["coll"]).toUpperCase() !== "BINARY"));
-      const where = tokens.findIndex(t => t.toLowerCase() === "where");
-      if (origin === "u") {
-        if (unsupported) throw diagnostic("unsupported_structure", `${table}.${name}`, diagnostic("structure_constraint"));
-        uniques.push({ kind: "UNIQUE", name: undefined, columns, implicit: undefined });
+      const definition = await this._options.query.query(
+        `select sql from sqlite_master where type = 'index' and name = ${`'${name.replaceAll("'", "''")}'`}`,
+      );
+      const tokens = sqlTokens(asString(definition.rows[0]?.['sql']));
+      const indexDetails = await this._options.query.query(
+        `pragma index_xinfo(${quoteForPragma(name)})`,
+      );
+      const unsupported = indexDetails.rows.some(
+        (r) =>
+          Number(r['key']) === 1 &&
+          (Number(r['cid']) < 0 ||
+            Number(r['desc']) !== 0 ||
+            asString(r['coll']).toUpperCase() !== 'BINARY'),
+      );
+      const where = tokens.findIndex((t) => t.toLowerCase() === 'where');
+      if (origin === 'u') {
+        if (unsupported)
+          throw diagnostic(
+            'unsupported_structure',
+            `${table}.${name}`,
+            diagnostic('structure_constraint'),
+          );
+        uniques.push({ kind: 'UNIQUE', name: undefined, columns, implicit: undefined });
       } else {
         indexes.push({
           name,
-          ...(unsupported ? { unsupported: "SQLITE_SPECIAL_INDEX" } : {}),
+          ...(unsupported ? { unsupported: 'SQLITE_SPECIAL_INDEX' } : {}),
           columns,
-          unique: Number(row["unique"]) === 1,
+          unique: Number(row['unique']) === 1,
           // Partial predicates are retained even when the model does not manage indexes.
-          predicate: where < 0 ? undefined : tokens.slice(where + 1).join(" "),
+          predicate: where < 0 ? undefined : tokens.slice(where + 1).join(' '),
         });
       }
     }
@@ -216,12 +276,10 @@ export class SqliteIntrospector implements Introspector {
   }
 
   private async _indexColumns(index: string): Promise<Array<string>> {
-    const { rows } = await this._options.query.query(
-      `pragma index_info(${quoteForPragma(index)})`,
-    );
+    const { rows } = await this._options.query.query(`pragma index_info(${quoteForPragma(index)})`);
     return [...rows]
-      .sort((a, b) => Number(a["seqno"]) - Number(b["seqno"]))
-      .map((r) => asString(r["name"]));
+      .sort((a, b) => Number(a['seqno']) - Number(b['seqno']))
+      .map((r) => asString(r['name']));
   }
 }
 
@@ -240,54 +298,54 @@ function quoteForPragma(name: string): string {
 export function normalizeSqliteType(raw: string): string {
   const t = raw.trim().toLowerCase();
   // 未声明类型 → BLOB 亲和性
-  if (t === "") {
-    return "blob";
+  if (t === '') {
+    return 'blob';
   }
-  if (t.includes("int")) {
-    return "integer";
+  if (t.includes('int')) {
+    return 'integer';
   }
-  if (t.includes("char") || t.includes("clob") || t.includes("text")) {
-    return "text";
+  if (t.includes('char') || t.includes('clob') || t.includes('text')) {
+    return 'text';
   }
-  if (t.includes("blob")) {
-    return "blob";
+  if (t.includes('blob')) {
+    return 'blob';
   }
-  if (t.includes("real") || t.includes("floa") || t.includes("doub")) {
-    return "real";
+  if (t.includes('real') || t.includes('floa') || t.includes('doub')) {
+    return 'real';
   }
   // @see https://www.sqlite.org/datatype3.html §3.1
   // NUMERIC affinity differs from REAL and must remain observable.
-  return "numeric";
+  return 'numeric';
 }
 
 /** SQLite 的 on_delete 文本 → migrate 的 OnDelete */
 function toOnDelete(raw: string): OnDelete {
   switch (raw.toUpperCase()) {
-    case "CASCADE":
-      return "CASCADE";
-    case "SET NULL":
-      return "SET_NULL";
-    case "SET DEFAULT":
-      return "SET_DEFAULT";
-    case "RESTRICT":
-      return "RESTRICT";
+    case 'CASCADE':
+      return 'CASCADE';
+    case 'SET NULL':
+      return 'SET_NULL';
+    case 'SET DEFAULT':
+      return 'SET_DEFAULT';
+    case 'RESTRICT':
+      return 'RESTRICT';
     default:
-      return "NO_ACTION";
+      return 'NO_ACTION';
   }
 }
 
 /** migrate 的 OnDelete → ts-grm 的 ORM 级联语义（introspection 只能反推，与 PG 版同口径） */
 function toCascade(onDelete: OnDelete): CascadeType {
   switch (onDelete) {
-    case "CASCADE":
-      return "DELETE";
-    case "SET_NULL":
-      return "SET_NULL";
+    case 'CASCADE':
+      return 'DELETE';
+    case 'SET_NULL':
+      return 'SET_NULL';
     default:
-      return "NONE";
+      return 'NONE';
   }
 }
 
 function asString(value: unknown): string {
-  return value == null ? "" : String(value);
+  return value == null ? '' : String(value);
 }

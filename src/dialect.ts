@@ -1,4 +1,4 @@
-import { diagnostic } from "./diagnostics/error.js";
+import { diagnostic } from './diagnostics/error.js';
 /**
  * 方言注册表 —— 「有哪些方言、上游由谁提供、migrate 实现到哪一步」的唯一出处。
  *
@@ -13,7 +13,7 @@ import { diagnostic } from "./diagnostics/error.js";
  */
 
 /** migrate 的方言标识 */
-export type DialectName = "postgres" | "mysql" | "sqlite" | "mssql" | "oracle";
+export type DialectName = 'postgres' | 'mysql' | 'sqlite' | 'mssql' | 'oracle';
 
 /** 单个方言的支持情况 */
 export interface DialectInfo {
@@ -32,11 +32,11 @@ export interface DialectInfo {
 }
 
 export const DIALECTS: ReadonlyArray<DialectInfo> = [
-  { name: "postgres", tsGrmDrivers: ["PostgresDriver"], implemented: true },
-  { name: "mysql", tsGrmDrivers: ["MySqlDriver"], implemented: true },
-  { name: "sqlite", tsGrmDrivers: ["SqliteDriver"], implemented: true },
-  { name: "mssql", tsGrmDrivers: ["SqlServerDriver", "SqlServer2012Driver"], implemented: true },
-  { name: "oracle", tsGrmDrivers: ["OracleDriver", "Oracle12Drivier"], implemented: true },
+  { name: 'postgres', tsGrmDrivers: ['PostgresDriver'], implemented: true },
+  { name: 'mysql', tsGrmDrivers: ['MySqlDriver'], implemented: true },
+  { name: 'sqlite', tsGrmDrivers: ['SqliteDriver'], implemented: true },
+  { name: 'mssql', tsGrmDrivers: ['SqlServerDriver', 'SqlServer2012Driver'], implemented: true },
+  { name: 'oracle', tsGrmDrivers: ['OracleDriver', 'Oracle12Drivier'], implemented: true },
 ];
 
 /** 全部方言名（供配置校验与错误提示） */
@@ -54,7 +54,12 @@ export const IMPLEMENTED_DIALECT_NAMES: ReadonlyArray<DialectName> = DIALECTS.fi
 export function dialectInfo(name: string): DialectInfo {
   const found = DIALECTS.find((d) => d.name === name);
   if (found == null) {
-    throw diagnostic("dialect_1", name, DIALECT_NAMES.join(" / "), IMPLEMENTED_DIALECT_NAMES.join(" / "));
+    throw diagnostic(
+      'dialect_1',
+      name,
+      DIALECT_NAMES.join(' / '),
+      IMPLEMENTED_DIALECT_NAMES.join(' / '),
+    );
   }
   return found;
 }

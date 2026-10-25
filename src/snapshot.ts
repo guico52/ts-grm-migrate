@@ -1,4 +1,4 @@
-import { diagnostic, asError } from "./diagnostics/error.js";
+import { asError, diagnostic } from './diagnostics/error.js';
 /**
  * 快照 —— migrate 的统一比较形状 Schema 的持久化形态。
  *
@@ -14,7 +14,7 @@ import { diagnostic, asError } from "./diagnostics/error.js";
  * ```
  * formatVersion 用于未来格式演进（migrate 自由设计，不受 ts-grm 约束）。
  */
-import type { Schema } from "./schema/model.js";
+import type { Schema } from './schema/model.js';
 
 /** 快照文件格式版本 */
 export const SNAPSHOT_FORMAT_VERSION = 1 as const;
@@ -42,16 +42,16 @@ export function fromSnapshot(json: string): Schema {
   try {
     parsed = JSON.parse(json);
   } catch (e) {
-    throw diagnostic("snapshot_1", asError(e));
+    throw diagnostic('snapshot_1', asError(e));
   }
-  if (!isRecord(parsed) || typeof parsed.formatVersion !== "number") {
-    throw diagnostic("snapshot_2");
+  if (!isRecord(parsed) || typeof parsed.formatVersion !== 'number') {
+    throw diagnostic('snapshot_2');
   }
   if (parsed.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
-    throw diagnostic("snapshot_3", parsed.formatVersion, SNAPSHOT_FORMAT_VERSION);
+    throw diagnostic('snapshot_3', parsed.formatVersion, SNAPSHOT_FORMAT_VERSION);
   }
   if (!isSchema(parsed.schema)) {
-    throw diagnostic("snapshot_4");
+    throw diagnostic('snapshot_4');
   }
   return parsed.schema;
 }
@@ -59,23 +59,23 @@ export function fromSnapshot(json: string): Schema {
 // ---- 运行时形状校验（类型守卫）--------------------------------------------
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isStringArray(value: unknown): value is ReadonlyArray<string> {
-  return Array.isArray(value) && value.every((v) => typeof v === "string");
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
 }
 
 function isString(value: unknown): value is string {
-  return typeof value === "string";
+  return typeof value === 'string';
 }
 
 function isBoolean(value: unknown): value is boolean {
-  return typeof value === "boolean";
+  return typeof value === 'boolean';
 }
 
 function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
+  return value === undefined || typeof value === 'string';
 }
 
 /** Schema 形状校验（快照反序列化的安全网） */
@@ -104,14 +104,18 @@ function isColumn(value: unknown): boolean {
     isString(name) &&
     isString(type) &&
     isBoolean(nullable) &&
-    (length === undefined || typeof length === "number") &&
+    (length === undefined || typeof length === 'number') &&
     isOptionalString(def) &&
     isBoolean(autoIncrement) &&
-    typeof ordinal === "number" &&
+    typeof ordinal === 'number' &&
     isOptionalString(comment) &&
     isOptionalString(value.defaultConstraint) &&
     isOptionalString(value.collation) &&
-    (value.mysql === undefined || (isRecord(value.mysql) && isOptionalString(value.mysql.charset) && isOptionalString(value.mysql.collation) && isOptionalString(value.mysql.onUpdate))) &&
+    (value.mysql === undefined ||
+      (isRecord(value.mysql) &&
+        isOptionalString(value.mysql.charset) &&
+        isOptionalString(value.mysql.collation) &&
+        isOptionalString(value.mysql.onUpdate))) &&
     (value.autoIncrementManaged === undefined || isBoolean(value.autoIncrementManaged))
   );
 }
@@ -119,30 +123,36 @@ function isColumn(value: unknown): boolean {
 function isConstraint(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const { kind, name, columns } = value;
-  if (kind !== "PRIMARY_KEY" && kind !== "UNIQUE" && kind !== "FOREIGN_KEY" && kind !== "CHECK") {
+  if (kind !== 'PRIMARY_KEY' && kind !== 'UNIQUE' && kind !== 'FOREIGN_KEY' && kind !== 'CHECK') {
     return false;
   }
   if (!isOptionalString(name)) return false;
   switch (kind) {
-    case "PRIMARY_KEY":
-    case "UNIQUE":
+    case 'PRIMARY_KEY':
+    case 'UNIQUE':
       return isStringArray(columns);
-    case "FOREIGN_KEY": {
+    case 'FOREIGN_KEY': {
       const { referencedTable, referencedColumns, onDelete, deferrable } = value;
       return (
         isStringArray(columns) &&
         isString(referencedTable) &&
         isStringArray(referencedColumns) &&
-        (onDelete === "NO_ACTION" || onDelete === "RESTRICT" || onDelete === "CASCADE" ||
-          onDelete === "SET_NULL" || onDelete === "SET_DEFAULT") &&
+        (onDelete === 'NO_ACTION' ||
+          onDelete === 'RESTRICT' ||
+          onDelete === 'CASCADE' ||
+          onDelete === 'SET_NULL' ||
+          onDelete === 'SET_DEFAULT') &&
         isBoolean(deferrable)
       );
     }
-    case "CHECK": {
+    case 'CHECK': {
       const { expression, values } = value;
       return (
-        isString(expression) && isOptionalString(value.comparisonExpression) &&
-        (values === undefined || (Array.isArray(values) && values.every((v) => typeof v === "string" || typeof v === "number")))
+        isString(expression) &&
+        isOptionalString(value.comparisonExpression) &&
+        (values === undefined ||
+          (Array.isArray(values) &&
+            values.every((v) => typeof v === 'string' || typeof v === 'number')))
       );
     }
   }
@@ -152,9 +162,11 @@ function isIndex(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const { name, columns, unique, predicate } = value;
   return (
-    isString(name) && isOptionalString(value.unsupported) &&
+    isString(name) &&
+    isOptionalString(value.unsupported) &&
     isStringArray(columns) &&
     isBoolean(unique) &&
-    isOptionalString(predicate) && (value.implicit === undefined || isBoolean(value.implicit))
+    isOptionalString(predicate) &&
+    (value.implicit === undefined || isBoolean(value.implicit))
   );
 }

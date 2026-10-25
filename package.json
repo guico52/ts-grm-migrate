@@ -34,7 +34,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "test:coverage": "vitest run --coverage --exclude tests/manual-postgres.test.ts",
-    "check": "yarn lint && yarn typecheck && yarn build && yarn test",
+    "check": "biome check . && yarn typecheck && yarn build && yarn test",
     "test:compat": "node scripts/test-compatibility.mjs",
     "test:package": "node scripts/test-package.mjs",
     "prepack": "npm run build",

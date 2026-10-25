@@ -18,7 +18,7 @@ import type {
   Constraint as SchemaConstraint,
   Index as SchemaIndex,
   Table as SchemaTable,
-} from "../schema/model.js";
+} from '../schema/model.js';
 
 /** 一次 diff 的完整结果 */
 export interface Diff {
@@ -28,44 +28,38 @@ export interface Diff {
   readonly destructive: ReadonlyArray<DestructiveChange>;
 }
 
-export type Change =
-  | CreateTable
-  | DropTable
-  | AlterTable;
+export type Change = CreateTable | DropTable | AlterTable;
 
 /** 单表级别的变更集合 */
 export interface AlterTable {
-  readonly kind: "ALTER_TABLE";
+  readonly kind: 'ALTER_TABLE';
   readonly table: string;
   readonly columns: ReadonlyArray<ColumnChange>;
   readonly constraints: ReadonlyArray<ConstraintChange>;
   readonly indexes: ReadonlyArray<IndexChange>;
 }
 
-export type ColumnChange =
-  | AddColumn
-  | DropColumn
-  | AlterColumn;
+export type ColumnChange = AddColumn | DropColumn | AlterColumn;
 
 export interface AddColumn {
-  readonly kind: "ADD_COLUMN";
+  readonly kind: 'ADD_COLUMN';
   readonly column: SchemaColumn;
 }
 
 export interface DropColumn {
-  readonly kind: "DROP_COLUMN";
+  readonly kind: 'DROP_COLUMN';
   readonly column: string;
 }
 
 export interface AlterColumn {
-  readonly kind: "ALTER_COLUMN";
+  readonly kind: 'ALTER_COLUMN';
   readonly column: string;
   /** 类型变化（null = 不变） */
   readonly type: string | undefined;
   /** nullable 变化（undefined = 不变） */
   readonly nullable: boolean | undefined;
   /** 默认值变化：string = 设置；"" = 删除；undefined = 不变 */
-  readonly default: string | "" | undefined;
+  readonly default: string | '' | undefined;
   /**
    * 自增变化（undefined = 不变）。仅当模型侧声明了自增（补丁已安装，
    * 见 schema/model.ts 的 autoIncrementManaged）才会有值；方言无法原地完成时
@@ -78,41 +72,37 @@ export interface AlterColumn {
    */
 }
 
-export type ConstraintChange =
-  | AddConstraint
-  | DropConstraint;
+export type ConstraintChange = AddConstraint | DropConstraint;
 
 export interface AddConstraint {
-  readonly kind: "ADD_CONSTRAINT";
+  readonly kind: 'ADD_CONSTRAINT';
   readonly constraint: SchemaConstraint;
 }
 
 export interface DropConstraint {
-  readonly kind: "DROP_CONSTRAINT";
+  readonly kind: 'DROP_CONSTRAINT';
   readonly constraint: SchemaConstraint;
 }
 
-export type IndexChange =
-  | AddIndex
-  | DropIndex;
+export type IndexChange = AddIndex | DropIndex;
 
 export interface AddIndex {
-  readonly kind: "ADD_INDEX";
+  readonly kind: 'ADD_INDEX';
   readonly index: SchemaIndex;
 }
 
 export interface DropIndex {
-  readonly kind: "DROP_INDEX";
+  readonly kind: 'DROP_INDEX';
   readonly index: SchemaIndex;
 }
 
 export interface CreateTable {
-  readonly kind: "CREATE_TABLE";
+  readonly kind: 'CREATE_TABLE';
   readonly table: SchemaTable;
 }
 
 export interface DropTable {
-  readonly kind: "DROP_TABLE";
+  readonly kind: 'DROP_TABLE';
   readonly table: string;
   /**
    * 该表**自身**的外键约束名（现状库里的实际名字）。
@@ -132,6 +122,11 @@ export interface DropTable {
 /** 可能丢失数据的操作子集（带表名上下文，便于 CLI 提示） */
 export type DestructiveChange =
   | DropTable
-  | { readonly kind: "DROP_COLUMN"; readonly table: string; readonly column: string }
-  | { readonly kind: "DROP_INDEX"; readonly table: string; readonly index: string }
-  | { readonly kind: "ALTER_COLUMN"; readonly table: string; readonly column: string; readonly type: string };
+  | { readonly kind: 'DROP_COLUMN'; readonly table: string; readonly column: string }
+  | { readonly kind: 'DROP_INDEX'; readonly table: string; readonly index: string }
+  | {
+      readonly kind: 'ALTER_COLUMN';
+      readonly table: string;
+      readonly column: string;
+      readonly type: string;
+    };

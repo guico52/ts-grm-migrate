@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { createSchema } from "../src/vendor/ts-grm";
-import { tableDefsToSchema } from "../src/schema/adapter";
-import { toSnapshot, fromSnapshot } from "../src";
-import { createTestSqlClient } from "./util/ts-grm-client";
+import { describe, expect, it } from 'vitest';
+import { fromSnapshot, toSnapshot } from '../src';
+import { tableDefsToSchema } from '../src/schema/adapter';
+import { createSchema } from '../src/vendor/ts-grm';
+import { createTestSqlClient } from './util/ts-grm-client';
 
 /**
  * 快照 JSON 输出 —— 演示/验证端到端效果。
@@ -11,8 +11,8 @@ import { createTestSqlClient } from "./util/ts-grm-client";
  *
  * 运行 `yarn test` 验证快照往返，不向终端倾倒完整快照。
  */
-describe("快照 JSON 输出", () => {
-  it("输出真实链路生成的快照 JSON", async () => {
+describe('快照 JSON 输出', () => {
+  it('输出真实链路生成的快照 JSON', async () => {
     const sqlClient = createTestSqlClient();
     const tableDefs = await createSchema(sqlClient);
     const schema = tableDefsToSchema(tableDefs, sqlClient.driver);
@@ -25,10 +25,10 @@ describe("快照 JSON 输出", () => {
     };
     expect(parsed.formatVersion).toBe(1);
     expect(parsed.schema.tables.map((t) => t.name)).toEqual([
-      "author",
-      "book",
-      "tag",
-      "book_tag_mapping",
+      'author',
+      'book',
+      'tag',
+      'book_tag_mapping',
     ]);
     expect(fromSnapshot(json)).toEqual(schema);
   });

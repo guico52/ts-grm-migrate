@@ -1,23 +1,17 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
-import type { Introspector, SqlQueryable } from "../introspector.js";
-import type {
-  Column,
-  Constraint,
-  Index,
-  OnDelete,
-  Schema,
-} from "../schema/model.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { Introspector, SqlQueryable } from '../introspector.js';
+import type { Column, Constraint, Index, OnDelete, Schema } from '../schema/model.js';
 import {
   groupRows,
-  stringValue as s,
   normalizeServerExpression,
   type CatalogRow as Row,
-} from "../server/catalog.js";
-import { normalizeServerType } from "../server/sql.js";
+  stringValue as s,
+} from '../server/catalog.js';
+import { normalizeServerType } from '../server/sql.js';
 
 /** @see https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/catalog-views-transact-sql */
 export class SqlServerIntrospector implements Introspector {
-  readonly dialect = "mssql" as const;
+  readonly dialect = 'mssql' as const;
   constructor(
     private readonly _options: {
       readonly query: SqlQueryable;
@@ -26,7 +20,7 @@ export class SqlServerIntrospector implements Introspector {
   ) {}
 
   async introspect(): Promise<Schema> {
-    const schema = this._options.schema ?? "dbo";
+    const schema = this._options.schema ?? 'dbo';
     const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
       (await this._options.query.query(sql, [schema])).rows;
     try {
@@ -74,53 +68,49 @@ export class SqlServerIntrospector implements Introspector {
         tables: tables.map((t) => {
           const name = s(t.name);
           if (Number(t.temporal_type) !== 0 || t.is_memory_optimized)
-            throw diagnostic("introspector_sqlserver_1", name);
+            throw diagnostic('introspector_sqlserver_1', name);
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.table_name === name);
           const constraints: Constraint[] = [];
-          for (const [name, rows] of groupRows(forTable(keys), "name")) {
-            const primary = rows[0]!.type === "PK";
+          for (const [name, rows] of groupRows(forTable(keys), 'name')) {
+            const primary = rows[0]!.type === 'PK';
             if (Number(rows[0]!.index_type) !== (primary ? 1 : 2))
-              throw diagnostic("introspector_sqlserver_2", name);
+              throw diagnostic('introspector_sqlserver_2', name);
             constraints.push({
-              kind: primary ? "PRIMARY_KEY" : "UNIQUE",
+              kind: primary ? 'PRIMARY_KEY' : 'UNIQUE',
               name,
               columns: rows.map((r) => s(r.column_name)),
               implicit: undefined,
             });
           }
-          for (const [name, rows] of groupRows(forTable(fks), "name")) {
+          for (const [name, rows] of groupRows(forTable(fks), 'name')) {
             const first = rows[0]!;
             if (
               first.ref_schema !== schema ||
-              first.update_rule !== "NO_ACTION" ||
+              first.update_rule !== 'NO_ACTION' ||
               first.is_disabled ||
               first.is_not_trusted
             )
-              throw diagnostic("introspector_sqlserver_3", name);
+              throw diagnostic('introspector_sqlserver_3', name);
             const onDelete = s(first.delete_rule) as OnDelete;
             constraints.push({
-              kind: "FOREIGN_KEY",
+              kind: 'FOREIGN_KEY',
               name,
               columns: rows.map((r) => s(r.column_name)),
               referencedTable: s(first.ref_table),
               referencedColumns: rows.map((r) => s(r.ref_column)),
               onDelete,
               cascade:
-                onDelete === "CASCADE"
-                  ? "DELETE"
-                  : onDelete === "SET_NULL"
-                    ? "SET_NULL"
-                    : "NONE",
+                onDelete === 'CASCADE' ? 'DELETE' : onDelete === 'SET_NULL' ? 'SET_NULL' : 'NONE',
               deferrable: false,
               implicit: undefined,
             });
           }
           for (const c of forTable(checks)) {
             if (c.is_disabled || c.is_not_trusted)
-              throw diagnostic("introspector_sqlserver_4", s(c.name));
+              throw diagnostic('introspector_sqlserver_4', s(c.name));
             constraints.push({
-              kind: "CHECK",
+              kind: 'CHECK',
               name: s(c.name),
               expression: s(c.definition),
               comparisonExpression: normalizeServerExpression(s(c.definition)),
@@ -129,10 +119,7 @@ export class SqlServerIntrospector implements Introspector {
             });
           }
           const tableIndexes: Index[] = [];
-          for (const [indexName, rows] of groupRows(
-            forTable(indexes),
-            "name",
-          )) {
+          for (const [indexName, rows] of groupRows(forTable(indexes), 'name')) {
             if (
               rows.some(
                 (r) =>
@@ -142,15 +129,13 @@ export class SqlServerIntrospector implements Introspector {
                   r.is_included_column,
               )
             )
-              throw diagnostic("introspector_sqlserver_5", indexName);
+              throw diagnostic('introspector_sqlserver_5', indexName);
             tableIndexes.push({
               name: indexName,
               columns: rows.map((r) => s(r.column_name)),
               unique: Boolean(rows[0]!.is_unique),
               predicate:
-                rows[0]!.filter_definition == null
-                  ? undefined
-                  : s(rows[0]!.filter_definition),
+                rows[0]!.filter_definition == null ? undefined : s(rows[0]!.filter_definition),
             });
           }
           return {
@@ -162,7 +147,7 @@ export class SqlServerIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw diagnostic("introspector_sqlserver_6", asError(e));
+      throw diagnostic('introspector_sqlserver_6', asError(e));
     }
   }
 }
@@ -174,29 +159,22 @@ function column(row: Row): Column {
     Number(row.generated_always_type) !== 0 ||
     row.is_user_defined
   )
-    throw diagnostic("introspector_sqlserver_7", s(row.name));
+    throw diagnostic('introspector_sqlserver_7', s(row.name));
   let type = s(row.type_name);
-  if (
-    ["nvarchar", "varchar", "varbinary", "char", "nchar", "binary"].includes(
-      type,
-    )
-  ) {
+  if (['nvarchar', 'varchar', 'varbinary', 'char', 'nchar', 'binary'].includes(type)) {
     const length = Number(row.max_length);
-    type += `(${length === -1 ? "max" : type.startsWith("n") ? length / 2 : length})`;
-  } else if (["decimal", "numeric"].includes(type))
-    type += `(${s(row.precision)},${s(row.scale)})`;
-  else if (["datetime2", "datetimeoffset", "time"].includes(type))
-    type += `(${s(row.scale)})`;
-  if (["timestamp", "rowversion"].includes(type))
-    throw diagnostic("introspector_sqlserver_8", s(row.name));
+    type += `(${length === -1 ? 'max' : type.startsWith('n') ? length / 2 : length})`;
+  } else if (['decimal', 'numeric'].includes(type)) type += `(${s(row.precision)},${s(row.scale)})`;
+  else if (['datetime2', 'datetimeoffset', 'time'].includes(type)) type += `(${s(row.scale)})`;
+  if (['timestamp', 'rowversion'].includes(type))
+    throw diagnostic('introspector_sqlserver_8', s(row.name));
   return {
     name: s(row.name),
-    type: normalizeServerType(type, "mssql"),
+    type: normalizeServerType(type, 'mssql'),
     nullable: Boolean(row.is_nullable),
     length: undefined,
     default: row.default_value == null ? undefined : s(row.default_value),
-    defaultConstraint:
-      row.default_name == null ? undefined : s(row.default_name),
+    defaultConstraint: row.default_name == null ? undefined : s(row.default_name),
     collation: row.collation_name == null ? undefined : s(row.collation_name),
     autoIncrement: Boolean(row.is_identity),
     ordinal: Number(row.column_id),

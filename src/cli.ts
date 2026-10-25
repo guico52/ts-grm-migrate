@@ -8,22 +8,22 @@
  *
  * 配置文件在项目根自动查找（见 `src/config.ts` 的候选名）。
  */
-import { createInterface } from "node:readline/promises";
-import { runSeed } from "./seed.js";
-import { loadConfig } from "./config.js";
-import { messages, type CliLanguage, type CliMessages } from "./cli/messages.js";
-import { abnormalDrift } from "./drift.js";
-import { MigrationAbortedError, type MigrationProgress } from "./migrator.js";
-import { createRuntime } from "./runtime.js";
-import type { DestructiveChange, Diff } from "./diff/types.js";
-import type { SchemaDrift } from "./drift.js";
-import type { MigrateConfig } from "./config.js";
-import type { ParsedArgs, RunOptions } from "./cli/types.js";
-import type { Runtime } from "./runtime.js";
+import { createInterface } from 'node:readline/promises';
+import { type CliLanguage, type CliMessages, messages } from './cli/messages.js';
+import type { ParsedArgs, RunOptions } from './cli/types.js';
+import type { MigrateConfig } from './config.js';
+import { loadConfig } from './config.js';
+import type { DestructiveChange, Diff } from './diff/types.js';
+import type { SchemaDrift } from './drift.js';
+import { abnormalDrift } from './drift.js';
+import { MigrationAbortedError, type MigrationProgress } from './migrator.js';
+import type { Runtime } from './runtime.js';
+import { createRuntime } from './runtime.js';
+import { runSeed } from './seed.js';
 
-export type { ParsedArgs, RunOptions } from "./cli/types.js";
+export type { ParsedArgs, RunOptions } from './cli/types.js';
 
-const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail", "create-only", "dry-run"]);
+const BOOLEAN_FLAGS = new Set(['help', 'h', 'force', 'detail', 'create-only', 'dry-run']);
 
 /** 解析 argv：`--k v` / `--k=v` / `-h` / 位置参数（第一个位置参数是命令） */
 /**
@@ -31,7 +31,7 @@ const BOOLEAN_FLAGS = new Set(["help", "h", "force", "detail", "create-only", "d
  * 只有登记过的短选项才会吃掉下一个参数，其余一律按布尔开关处理
  * （否则 `-h dev` 会把命令名当成 help 的值）。
  */
-const SHORT_FLAG_ALIASES: Record<string, string> = { n: "name" };
+const SHORT_FLAG_ALIASES: Record<string, string> = { n: 'name' };
 
 export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   const flags = new Map<string, string | true>();
@@ -40,27 +40,27 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
-    if (arg === "--") {
+    if (arg === '--') {
       passthrough = argv.slice(i + 1);
       break;
     }
-    if (arg.startsWith("--")) {
-      const eq = arg.indexOf("=");
+    if (arg.startsWith('--')) {
+      const eq = arg.indexOf('=');
       if (eq >= 0) {
         flags.set(arg.slice(2, eq), arg.slice(eq + 1));
         continue;
       }
       const name = arg.slice(2);
       const next = argv[i + 1];
-      if (!BOOLEAN_FLAGS.has(name) && next != null && !next.startsWith("-")) {
+      if (!BOOLEAN_FLAGS.has(name) && next != null && !next.startsWith('-')) {
         flags.set(name, next);
         i++;
       } else {
         flags.set(name, true);
       }
-    } else if (arg.startsWith("-") && arg.length > 1) {
+    } else if (arg.startsWith('-') && arg.length > 1) {
       const short = arg.slice(1);
-      const eq = short.indexOf("=");
+      const eq = short.indexOf('=');
       if (eq >= 0) {
         const key = short.slice(0, eq);
         flags.set(SHORT_FLAG_ALIASES[key] ?? key, short.slice(eq + 1));
@@ -68,7 +68,7 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
       }
       const canonical = SHORT_FLAG_ALIASES[short];
       const next = argv[i + 1];
-      if (canonical != null && next != null && !next.startsWith("-")) {
+      if (canonical != null && next != null && !next.startsWith('-')) {
         flags.set(canonical, next);
         i++;
       } else {
@@ -94,56 +94,60 @@ export async function run(
   const log = options.log ?? ((message: string) => console.log(message));
   const errorLog = options.errorLog ?? ((message: string) => console.error(message));
   const { command, flags, passthrough } = parseArgs(argv);
-  const lang = flags.get("lang");
-  const initialLanguage: CliLanguage = lang === "zh-CN" ? "zh-CN" : "en";
+  const lang = flags.get('lang');
+  const initialLanguage: CliLanguage = lang === 'zh-CN' ? 'zh-CN' : 'en';
   let m = messages(initialLanguage);
 
-  if (lang != null && lang !== "en" && lang !== "zh-CN") {
+  if (lang != null && lang !== 'en' && lang !== 'zh-CN') {
     errorLog(m.invalidLanguage(String(lang)));
     return 1;
   }
 
-  if (command == null || command === "help" || flags.has("help") || flags.has("h")) {
+  if (command == null || command === 'help' || flags.has('help') || flags.has('h')) {
     log(m.usage);
     return 0;
   }
-  if (!["dev", "deploy", "push", "status", "resolve", "check", "seed"].includes(command)) {
+  if (!['dev', 'deploy', 'push', 'status', 'resolve', 'check', 'seed'].includes(command)) {
     errorLog(m.unknownCommand(command));
     log(m.usage);
     return 1;
   }
 
-  const detail = flags.has("detail");
-  const configFlag = flags.get("config");
+  const detail = flags.has('detail');
+  const configFlag = flags.get('config');
   const { config, path: configFile } = await loadConfig(
     cwd,
-    typeof configFlag === "string" ? configFlag : undefined,
+    typeof configFlag === 'string' ? configFlag : undefined,
     (configuredLanguage) => {
-      const selected = lang === "en" || lang === "zh-CN" ? lang : configuredLanguage;
+      const selected = lang === 'en' || lang === 'zh-CN' ? lang : configuredLanguage;
       m = messages(selected);
       options.onLanguage?.(selected);
     },
   );
-  const language: CliLanguage = lang === "en" || lang === "zh-CN" ? lang : config.language ?? "en";
+  const language: CliLanguage =
+    lang === 'en' || lang === 'zh-CN' ? lang : (config.language ?? 'en');
   m = messages(language);
   options.onLanguage?.(language);
 
-  for (const flag of ["detail", "create-only", "dry-run", "force"]) {
+  for (const flag of ['detail', 'create-only', 'dry-run', 'force']) {
     if (flags.has(flag) && flags.get(flag) !== true) {
       errorLog(m.invalidOption(flag));
       return 1;
     }
   }
-  if (flags.has("create-only") && command !== "dev") {
+  if (flags.has('create-only') && command !== 'dev') {
     errorLog(m.createOnlyDev);
     return 1;
   }
 
-  if (flags.has("dry-run") && command !== "push") { errorLog(m.dryRunPush); return 1; }
+  if (flags.has('dry-run') && command !== 'push') {
+    errorLog(m.dryRunPush);
+    return 1;
+  }
 
-  if (command === "seed") {
+  if (command === 'seed') {
     for (const flag of flags.keys()) {
-      if (!["config", "lang", "detail"].includes(flag)) {
+      if (!['config', 'lang', 'detail'].includes(flag)) {
         errorLog(m.seedOption(flag));
         return 1;
       }
@@ -161,11 +165,11 @@ export async function run(
   }
 
   const runtime = await createRuntime(config, cwd, {
-    confirm: options.confirm ?? makeConfirm(flags.has("force"), errorLog, m),
+    confirm: options.confirm ?? makeConfirm(flags.has('force'), errorLog, m),
     driftLanguage: language,
-    readOnly: command === "check" || command === "status" || flags.has("dry-run"),
+    readOnly: command === 'check' || command === 'status' || flags.has('dry-run'),
     onProgress: (event: MigrationProgress) => {
-      if (event.kind === "data-condition") errorLog(m.dataCondition(event.table));
+      if (event.kind === 'data-condition') errorLog(m.dataCondition(event.table));
       else if (detail) reportProgress(event, log, m);
     },
   });
@@ -177,22 +181,31 @@ export async function run(
       log(m.target(dbLabel));
     }
     switch (command) {
-      case "dev":
-        return await runDev(runtime, flags.get("name"), dbLabel, log, errorLog, m, detail, flags.has("create-only"));
-      case "check": {
+      case 'dev':
+        return await runDev(
+          runtime,
+          flags.get('name'),
+          dbLabel,
+          log,
+          errorLog,
+          m,
+          detail,
+          flags.has('create-only'),
+        );
+      case 'check': {
         const drift = await runtime.migrator.checkDrift();
         reportDrift(drift, dbLabel, log, errorLog, m, detail);
         if (drift.length > 0) return 1;
         log(m.checkPassed(dbLabel));
         return 0;
       }
-      case "deploy":
+      case 'deploy':
         return await runDeploy(runtime, dbLabel, log, errorLog, m, detail);
-      case "push":
-        return await runPush(runtime, dbLabel, log, errorLog, m, detail, flags.has("dry-run"));
-      case "status":
+      case 'push':
+        return await runPush(runtime, dbLabel, log, errorLog, m, detail, flags.has('dry-run'));
+      case 'status':
         return await runStatus(runtime, log, m);
-      case "resolve":
+      case 'resolve':
         return await runResolve(runtime, flags, log, errorLog, m);
       default:
         return 1;
@@ -209,14 +222,29 @@ export async function run(
   }
 }
 
-function reportProgress(event: MigrationProgress, log: (message: string) => void, m: CliMessages): void {
+function reportProgress(
+  event: MigrationProgress,
+  log: (message: string) => void,
+  m: CliMessages,
+): void {
   switch (event.kind) {
-    case "data-condition": break;
-    case "process-lock": log(m.detailProcessLock(event.path)); break;
-    case "database-lock": log(m.detailDatabaseLock(event.key)); break;
-    case "sql": log(m.detailSql(event.sql)); break;
-    case "migration-start": log(m.detailMigration(event.id)); break;
-    case "migration-applied": log(m.detailApplied(event.id)); break;
+    case 'data-condition':
+      break;
+    case 'process-lock':
+      log(m.detailProcessLock(event.path));
+      break;
+    case 'database-lock':
+      log(m.detailDatabaseLock(event.key));
+      break;
+    case 'sql':
+      log(m.detailSql(event.sql));
+      break;
+    case 'migration-start':
+      log(m.detailMigration(event.id));
+      break;
+    case 'migration-applied':
+      log(m.detailApplied(event.id));
+      break;
   }
 }
 
@@ -231,7 +259,7 @@ async function runDev(
   createOnly: boolean,
 ): Promise<number> {
   // name 可选：不给就用纯时间戳命名（由 migrator 层的 generateMigrationId 负责）
-  const migrationName = typeof name === "string" ? name.trim() : "";
+  const migrationName = typeof name === 'string' ? name.trim() : '';
   const result = await runtime.migrator.dev({ name: migrationName, createOnly });
   if (result.migrationId != null && createOnly) {
     log(m.devCreated(result.migrationId));
@@ -291,11 +319,28 @@ async function runPush(
 
 /** 数据库的可读标识（用于对账消息里指认「哪个库」） */
 function describeDatabase(config: MigrateConfig, m: CliMessages): string {
-  const dialect = config.dialect ?? "postgres";
-  if (dialect === "sqlite") return `sqlite ${config.database.file ?? ":memory:"}`;
-  const database = config.database.database ?? (dialect === "oracle" && config.database.connectionString == null ? "FREEPDB1" : undefined);
-  const schema = config.schema ?? (dialect === "mssql" ? "dbo" : dialect === "postgres" ? "public" : dialect === "oracle" ? config.database.user : undefined);
-  return [dialect, database ?? (config.database.connectionString ? m.connectionStringLabel : m.defaultDatabaseLabel), schema].filter((part) => part != null && part !== "").join("/");
+  const dialect = config.dialect ?? 'postgres';
+  if (dialect === 'sqlite') return `sqlite ${config.database.file ?? ':memory:'}`;
+  const database =
+    config.database.database ??
+    (dialect === 'oracle' && config.database.connectionString == null ? 'FREEPDB1' : undefined);
+  const schema =
+    config.schema ??
+    (dialect === 'mssql'
+      ? 'dbo'
+      : dialect === 'postgres'
+        ? 'public'
+        : dialect === 'oracle'
+          ? config.database.user
+          : undefined);
+  return [
+    dialect,
+    database ??
+      (config.database.connectionString ? m.connectionStringLabel : m.defaultDatabaseLabel),
+    schema,
+  ]
+    .filter((part) => part != null && part !== '')
+    .join('/');
 }
 
 /**
@@ -324,7 +369,11 @@ function reportDrift(
   }
 }
 
-async function runStatus(runtime: Runtime, log: (message: string) => void, m: CliMessages): Promise<number> {
+async function runStatus(
+  runtime: Runtime,
+  log: (message: string) => void,
+  m: CliMessages,
+): Promise<number> {
   const status = await runtime.migrator.status();
   if (status.applied.length === 0 && status.pending.length === 0) {
     log(m.noMigrations);
@@ -333,7 +382,9 @@ async function runStatus(runtime: Runtime, log: (message: string) => void, m: Cl
   if (status.applied.length > 0) {
     log(m.appliedHeading);
     for (const applied of status.applied) {
-      log(`  ${applied.id}  ${applied.appliedAt.toISOString()}${applied.failed ? `  [${m.failed}]` : ""}`);
+      log(
+        `  ${applied.id}  ${applied.appliedAt.toISOString()}${applied.failed ? `  [${m.failed}]` : ''}`,
+      );
     }
   }
   if (status.pending.length > 0) {
@@ -355,20 +406,20 @@ async function runResolve(
   errorLog: (message: string) => void,
   m: CliMessages,
 ): Promise<number> {
-  const applied = flags.get("applied");
-  const rolledBack = flags.get("rolled-back");
+  const applied = flags.get('applied');
+  const rolledBack = flags.get('rolled-back');
 
   if (applied != null && rolledBack != null) {
     errorLog(m.resolveConflict);
     return 1;
   }
-  if (typeof applied === "string") {
-    await runtime.migrator.resolve({ migration: applied, action: "applied" });
+  if (typeof applied === 'string') {
+    await runtime.migrator.resolve({ migration: applied, action: 'applied' });
     log(m.resolvedApplied(applied));
     return 0;
   }
-  if (typeof rolledBack === "string") {
-    await runtime.migrator.resolve({ migration: rolledBack, action: "rolled-back" });
+  if (typeof rolledBack === 'string') {
+    await runtime.migrator.resolve({ migration: rolledBack, action: 'rolled-back' });
     log(m.resolvedRolledBack(rolledBack));
     return 0;
   }
@@ -394,7 +445,7 @@ function makeConfirm(
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try {
       const answer = (await rl.question(m.confirm)).trim().toLowerCase();
-      return answer === "y" || answer === "yes";
+      return answer === 'y' || answer === 'yes';
     } finally {
       rl.close();
     }
@@ -409,16 +460,16 @@ function printDestructive(
   errorLog(m.destructive);
   for (const change of changes) {
     switch (change.kind) {
-      case "DROP_TABLE":
+      case 'DROP_TABLE':
         errorLog(m.dropTable(change.table));
         break;
-      case "DROP_COLUMN":
+      case 'DROP_COLUMN':
         errorLog(m.dropColumn(change.table, change.column));
         break;
-      case "DROP_INDEX":
+      case 'DROP_INDEX':
         errorLog(m.dropIndex(change.table, change.index));
         break;
-      case "ALTER_COLUMN":
+      case 'ALTER_COLUMN':
         errorLog(m.alterColumn(change.table, change.column, change.type));
         break;
     }

@@ -1,16 +1,19 @@
 // Isolated historical dependency checks; never rewrites the working tree or lockfile.
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+
+import { spawnSync } from 'node:child_process';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+
 const root = fileURLToPath(new URL('../', import.meta.url));
 const versions = process.argv.slice(2);
-if (!versions.length || versions.some(v => !/^\d+\.\d+\.\d+$/.test(v))) {
+if (!versions.length || versions.some((v) => !/^\d+\.\d+\.\d+$/.test(v))) {
   throw new Error('Usage: node scripts/test-compatibility.mjs 0.0.12 0.0.13');
 }
 const scratch = await mkdtemp(path.join(tmpdir(), 'tgm-compat-'));
-const patchVersion = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).devDependencies['ts-grm-patches'];
+const patchVersion = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+  .devDependencies['ts-grm-patches'];
 const results = [];
 const env = { ...process.env };
 if (env.COMPAT_DATABASES !== '1') {
@@ -24,38 +27,99 @@ try {
   for (const version of versions) {
     const cwd = path.join(scratch, version);
     await mkdir(cwd);
-    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+    await writeFile(
+      path.join(cwd, 'package.json'),
+      JSON.stringify({ private: true, type: 'module' }),
+    );
     const patches = version === '0.0.13'; // Companion package's published peer range.
-    const install = run('npm', ['install', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund', `@ts-grm/core@${version}`, `@ts-grm/sql@${version}`, ...(patches ? [`ts-grm-patches@${patchVersion}`] : [])], cwd);
+    const install = run(
+      'npm',
+      [
+        'install',
+        '--ignore-scripts',
+        '--omit=optional',
+        '--no-audit',
+        '--no-fund',
+        `@ts-grm/core@${version}`,
+        `@ts-grm/sql@${version}`,
+        ...(patches ? [`ts-grm-patches@${patchVersion}`] : []),
+      ],
+      cwd,
+    );
     if (!install.passed) {
       console.error(`${version}: dependency installation failed\n${install.output}`);
       results.push({ version, install });
       continue;
     }
     // npm may install a different nested core for historical SQL releases. Record that fact.
-    const sql = JSON.parse(await readFile(path.join(cwd, 'node_modules/@ts-grm/sql/package.json'), 'utf8'));
+    const sql = JSON.parse(
+      await readFile(path.join(cwd, 'node_modules/@ts-grm/sql/package.json'), 'utf8'),
+    );
     for (const entry of await readdir(path.join(root, 'node_modules'))) {
-      if (entry === '@ts-grm' || entry === 'ts-grm-patches' || entry === '.package-lock.json') continue;
-      try { await readFile(path.join(cwd, 'node_modules', entry, 'package.json')); continue; } catch { /* Link only missing test tools. */ }
-      try { await symlink(path.join(root, 'node_modules', entry), path.join(cwd, 'node_modules', entry), 'dir'); }
-      catch (e) { if (e.code !== 'EEXIST') throw e; }
+      if (entry === '@ts-grm' || entry === 'ts-grm-patches' || entry === '.package-lock.json')
+        continue;
+      try {
+        await readFile(path.join(cwd, 'node_modules', entry, 'package.json'));
+        continue;
+      } catch {
+        /* Link only missing test tools. */
+      }
+      try {
+        await symlink(
+          path.join(root, 'node_modules', entry),
+          path.join(cwd, 'node_modules', entry),
+          'dir',
+        );
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+      }
     }
     for (const entry of ['src', 'tests', 'tsconfig.json', 'vitest.config.ts']) {
       await cp(path.join(root, entry), path.join(cwd, entry), { recursive: true });
     }
     if (!patches) {
-      for (const file of ['patches.test.ts', 'patches-postgres.test.ts', 'patches-mysql.test.ts']) await rm(path.join(cwd, 'tests', file));
+      for (const file of ['patches.test.ts', 'patches-postgres.test.ts', 'patches-mysql.test.ts'])
+        await rm(path.join(cwd, 'tests', file));
     }
-    const types = run(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit'], cwd);
-    const tests = run(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run', '--exclude', 'tests/manual-postgres.test.ts'], cwd);
-    results.push({ version, patches: patches ? patchVersion : 'outside companion peer range', sqlCoreDependency: sql.dependencies?.['@ts-grm/core'], types, tests });
-    console.log(`${version}: types=${types.passed ? 'PASS' : 'FAIL'} tests=${tests.passed ? 'PASS' : 'FAIL'} patches=${patches ? patchVersion : 'not supported'}`);
-    console.log(tests.output.split('\n').filter(line => /Test Files|Tests\s/.test(line)).join('\n'));
+    const types = run(
+      process.execPath,
+      [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit'],
+      cwd,
+    );
+    const tests = run(
+      process.execPath,
+      [
+        path.join(root, 'node_modules/vitest/vitest.mjs'),
+        'run',
+        '--exclude',
+        'tests/manual-postgres.test.ts',
+      ],
+      cwd,
+    );
+    results.push({
+      version,
+      patches: patches ? patchVersion : 'outside companion peer range',
+      sqlCoreDependency: sql.dependencies?.['@ts-grm/core'],
+      types,
+      tests,
+    });
+    console.log(
+      `${version}: types=${types.passed ? 'PASS' : 'FAIL'} tests=${tests.passed ? 'PASS' : 'FAIL'} patches=${patches ? patchVersion : 'not supported'}`,
+    );
+    console.log(
+      tests.output
+        .split('\n')
+        .filter((line) => /Test Files|Tests\s/.test(line))
+        .join('\n'),
+    );
     if (!types.passed) console.error(types.output);
     if (!tests.passed) console.error(tests.output.slice(-16000));
   }
-  const output = process.env.COMPAT_REPORT ?? path.join(tmpdir(), `tgm-compatibility-${process.pid}.json`);
+  const output =
+    process.env.COMPAT_REPORT ?? path.join(tmpdir(), `tgm-compatibility-${process.pid}.json`);
   await writeFile(output, JSON.stringify({ node: process.version, results }, null, 2));
   console.log(`Report: ${output}`);
-  if (results.some(r => !r.types?.passed || !r.tests?.passed)) process.exitCode = 1;
-} finally { await rm(scratch, { recursive: true, force: true }); }
+  if (results.some((r) => !r.types?.passed || !r.tests?.passed)) process.exitCode = 1;
+} finally {
+  await rm(scratch, { recursive: true, force: true });
+}

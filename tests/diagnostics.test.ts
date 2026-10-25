@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diagnostics, type DiagnosticKey } from '../src/diagnostics/catalog.js';
-import { diagnostic, DiagnosticAggregateError, formatError } from '../src/diagnostics/error.js';
+import { describe, expect, it } from 'vitest';
+import { type DiagnosticKey, diagnostics } from '../src/diagnostics/catalog.js';
+import { DiagnosticAggregateError, diagnostic, formatError } from '../src/diagnostics/error.js';
 import { describeDiff } from '../src/drift.js';
 
 describe('diagnostic localization', () => {
@@ -49,7 +49,9 @@ describe('diagnostic localization', () => {
 
   it('detail does not reintroduce English tool descriptions when there is no external error', () => {
     const error = diagnostic('config_4', '/project/config.mjs');
-    expect(formatError(error, 'zh-CN', true)).toBe('配置文件 "/project/config.mjs" 缺少数据库连接设置。');
+    expect(formatError(error, 'zh-CN', true)).toBe(
+      '配置文件 "/project/config.mjs" 缺少数据库连接设置。',
+    );
   });
 
   it('retains both failures when migration failure recording also fails', () => {
@@ -77,14 +79,19 @@ describe('diagnostic localization', () => {
   it.each([
     { code: 'EREQUEST', number: 2627 },
     { code: 'ORA-00001', errorNum: 1 },
-  ])('localizes numeric server errors while keeping the codes and constraint name: %o', (fields) => {
-    const error = Object.assign(new Error('duplicate key'), fields, { constraint: 'USER_NAME_unique' });
-    const output = formatError(error, 'zh-CN');
-    expect(output).toContain('违反唯一性约束');
-    expect(output).toContain(fields.code);
-    expect(output).toContain('约束 USER_NAME_unique');
-    expect(output).not.toContain('duplicate key');
-  });
+  ])(
+    'localizes numeric server errors while keeping the codes and constraint name: %o',
+    (fields) => {
+      const error = Object.assign(new Error('duplicate key'), fields, {
+        constraint: 'USER_NAME_unique',
+      });
+      const output = formatError(error, 'zh-CN');
+      expect(output).toContain('违反唯一性约束');
+      expect(output).toContain(fields.code);
+      expect(output).toContain('约束 USER_NAME_unique');
+      expect(output).not.toContain('duplicate key');
+    },
+  );
 
   it('handles circular upstream error causes in detail output', () => {
     const upstream = new Error('unknown upstream message');

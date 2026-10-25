@@ -11,35 +11,46 @@
  * 曾用 createRequire 取 CJS 实例；依赖改为 npm 包后 CJS 与 ESM 会形成两份
  * EntityManager/model/prop（实测 ESM !== CJS），混用会导致运行时方法丢失。
  */
-import { model, prop } from "@ts-grm/core";
+import { model, prop } from '@ts-grm/core';
 
-export const AUTHOR = model("Author", "id", class {
-  id = prop.i64()
-  name = prop.str(50)
-  age = prop.i32().nullable()
-  // o2m 反向侧：FK 列在 BOOK.author 上，本表不产生列
-  books = prop.o2m(BOOK).mappedBy("author")
-});
+export const AUTHOR = model(
+  'Author',
+  'id',
+  class {
+    id = prop.i64();
+    name = prop.str(50);
+    age = prop.i32().nullable();
+    // o2m 反向侧：FK 列在 BOOK.author 上，本表不产生列
+    // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: ts-grm 延迟解析关联模型，循环引用在实例化时已完成声明
+    books = prop.o2m(BOOK).mappedBy('author');
+  },
+);
 
-export const BOOK = model("Book", "id", class {
-  id = prop.i64()
-  title = prop.str(100)
-  // m2o：BOOK 表产生 AUTHOR_ID 外键列，级联删除
-  author = prop.m2o(AUTHOR)
-    .joinColumns({ cascade: "DELETE" })
-    .nullable()
-  // m2m 拥有侧：joinTable 定义中间表 book_tag_mapping
-  tags = prop.m2m(TAG)
-    .joinTable({
-      name: "book_tag_mapping",
-      joinThisColumns: ["book_id"],
-      joinTargetColumns: ["tag_id"],
-    })
-});
+export const BOOK = model(
+  'Book',
+  'id',
+  class {
+    id = prop.i64();
+    title = prop.str(100);
+    // m2o：BOOK 表产生 AUTHOR_ID 外键列，级联删除
+    author = prop.m2o(AUTHOR).joinColumns({ cascade: 'DELETE' }).nullable();
+    // m2m 拥有侧：joinTable 定义中间表 book_tag_mapping
+    // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: ts-grm 延迟解析关联模型，循环引用在实例化时已完成声明
+    tags = prop.m2m(TAG).joinTable({
+      name: 'book_tag_mapping',
+      joinThisColumns: ['book_id'],
+      joinTargetColumns: ['tag_id'],
+    });
+  },
+);
 
-export const TAG = model("Tag", "id", class {
-  id = prop.i64()
-  name = prop.str(30)
-  // m2m 反向侧：指向 BOOK.tags
-  books = prop.m2m(BOOK).mappedBy("tags")
-});
+export const TAG = model(
+  'Tag',
+  'id',
+  class {
+    id = prop.i64();
+    name = prop.str(30);
+    // m2m 反向侧：指向 BOOK.tags
+    books = prop.m2m(BOOK).mappedBy('tags');
+  },
+);

@@ -1,5 +1,5 @@
 import type { OutputLanguage } from '../config.js';
-import { diagnostics, type DiagnosticKey } from './catalog.js';
+import { type DiagnosticKey, diagnostics } from './catalog.js';
 
 export function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
@@ -87,7 +87,15 @@ function describeExternal(error: unknown): string {
   }
   const fields =
     error != null && typeof error === 'object'
-      ? (error as { code?: unknown; path?: unknown; number?: unknown; errorNum?: unknown; constraint?: unknown; table?: unknown; column?: unknown })
+      ? (error as {
+          code?: unknown;
+          path?: unknown;
+          number?: unknown;
+          errorNum?: unknown;
+          constraint?: unknown;
+          table?: unknown;
+          column?: unknown;
+        })
       : {};
   const code =
     typeof fields.code === 'string' || typeof fields.code === 'number' ? String(fields.code) : '';
@@ -121,18 +129,37 @@ function describeExternal(error: unknown): string {
   };
   // SQL Server and Oracle also expose numeric database error codes.
   const serverDescriptions: Record<number, string> = {
-    2601: '违反唯一性约束', 2627: '违反唯一性约束', 515: '违反非空约束', 547: '违反外键或检查约束',
+    2601: '违反唯一性约束',
+    2627: '违反唯一性约束',
+    515: '违反非空约束',
+    547: '违反外键或检查约束',
   };
   const oracleDescriptions: Record<number, string> = {
-    1: '违反唯一性约束', 1400: '违反非空约束', 2291: '违反外键约束', 2292: '删除操作违反外键约束', 1017: '数据库身份验证失败',
+    1: '违反唯一性约束',
+    1400: '违反非空约束',
+    2291: '违反外键约束',
+    2292: '删除操作违反外键约束',
+    1017: '数据库身份验证失败',
   };
   const number = typeof fields.number === 'number' ? fields.number : undefined;
   const errorNum = typeof fields.errorNum === 'number' ? fields.errorNum : undefined;
-  const description = descriptions[code] ?? (number !== undefined ? serverDescriptions[number] : undefined) ?? (errorNum !== undefined ? oracleDescriptions[errorNum] : undefined) ?? '外部组件返回了错误';
-  const codes = [code, number, errorNum].filter((value) => value !== undefined && value !== '').join(' / ');
+  const description =
+    descriptions[code] ??
+    (number !== undefined ? serverDescriptions[number] : undefined) ??
+    (errorNum !== undefined ? oracleDescriptions[errorNum] : undefined) ??
+    '外部组件返回了错误';
+  const codes = [code, number, errorNum]
+    .filter((value) => value !== undefined && value !== '')
+    .join(' / ');
   const context = [
-    ['路径', fields.path], ['表', fields.table], ['列', fields.column], ['约束', fields.constraint],
-  ].filter(([, value]) => typeof value === 'string').map(([label, value]) => `${label} ${value}`).join('，');
+    ['路径', fields.path],
+    ['表', fields.table],
+    ['列', fields.column],
+    ['约束', fields.constraint],
+  ]
+    .filter(([, value]) => typeof value === 'string')
+    .map(([label, value]) => `${label} ${value}`)
+    .join('，');
   return `${description}${codes ? `（错误码 ${codes}）` : ''}${context ? `：${context}` : ''}。请使用 --detail 查看原始诊断。`;
 }
 
@@ -148,7 +175,10 @@ function rawDiagnostics(error: unknown, seen: Set<unknown>): Array<string> {
   if (seen.has(error)) return [];
   seen.add(error);
   if (!(error instanceof Error)) return [String(error)];
-  const lines = error instanceof DiagnosticError || error instanceof DiagnosticAggregateError ? [] : [error.message];
+  const lines =
+    error instanceof DiagnosticError || error instanceof DiagnosticAggregateError
+      ? []
+      : [error.message];
   if (error.cause !== undefined) lines.push(...rawDiagnostics(error.cause, seen));
   if (error instanceof AggregateError)
     for (const cause of error.errors) lines.push(...rawDiagnostics(cause, seen));

@@ -1,25 +1,38 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
-import type { Introspector, SqlQueryable } from "../introspector.js";
-import type { Column, Constraint, ForeignKeyConstraint, Index, OnDelete, Schema } from "../schema/model.js";
-import { normalizeMysqlCheck, normalizeMysqlType, quoteMysqlLiteral } from "../mysql/sql.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { Introspector, SqlQueryable } from '../introspector.js';
+import { normalizeMysqlCheck, normalizeMysqlType, quoteMysqlLiteral } from '../mysql/sql.js';
+import type {
+  Column,
+  Constraint,
+  ForeignKeyConstraint,
+  Index,
+  OnDelete,
+  Schema,
+} from '../schema/model.js';
 
 type Row = Record<string, unknown>;
-const str = (value: unknown): string => String(value ?? "");
+const str = (value: unknown): string => String(value ?? '');
 
 /**
  * MySQL 8.0.16+ / InnoDB catalog reader. Catalog names are bound, never interpolated.
  * @see https://dev.mysql.com/doc/refman/8.4/en/information-schema.html
  */
 export class MysqlIntrospector implements Introspector {
-  readonly dialect = "mysql" as const;
+  readonly dialect = 'mysql' as const;
   constructor(private readonly _options: { readonly query: SqlQueryable }) {}
 
   async introspect(): Promise<Schema> {
-    const query = async (sql: string): Promise<ReadonlyArray<Row>> => (await this._options.query.query(sql)).rows;
+    const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
+      (await this._options.query.query(sql)).rows;
     try {
-      const tables = await query("select TABLE_NAME as name, ENGINE as engine from information_schema.TABLES where TABLE_SCHEMA = database() and TABLE_TYPE = 'BASE TABLE' order by TABLE_NAME");
-      const columns = await query("select * from information_schema.COLUMNS where TABLE_SCHEMA = database() order by TABLE_NAME, ORDINAL_POSITION");
-      const keys = await query(`select tc.TABLE_NAME, tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE, k.COLUMN_NAME,
+      const tables = await query(
+        "select TABLE_NAME as name, ENGINE as engine from information_schema.TABLES where TABLE_SCHEMA = database() and TABLE_TYPE = 'BASE TABLE' order by TABLE_NAME",
+      );
+      const columns = await query(
+        'select * from information_schema.COLUMNS where TABLE_SCHEMA = database() order by TABLE_NAME, ORDINAL_POSITION',
+      );
+      const keys =
+        await query(`select tc.TABLE_NAME, tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE, k.COLUMN_NAME,
         k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, k.REFERENCED_TABLE_SCHEMA,
         rc.DELETE_RULE, rc.UPDATE_RULE, cc.CHECK_CLAUSE, tc.ENFORCED
         from information_schema.TABLE_CONSTRAINTS tc
@@ -30,44 +43,61 @@ export class MysqlIntrospector implements Introspector {
         left join information_schema.CHECK_CONSTRAINTS cc on cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
           and cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
         where tc.CONSTRAINT_SCHEMA = database() order by tc.TABLE_NAME, tc.CONSTRAINT_NAME, k.ORDINAL_POSITION`);
-      const indexes = await query("select * from information_schema.STATISTICS where TABLE_SCHEMA = database() order by TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX");
-      const db = str((await query("select database() as name"))[0]?.name);
-      return { tables: tables.map((table) => {
-        const name = str(table.name);
-        if (table.engine !== "InnoDB") throw diagnostic("introspector_mysql_1", name, str(table.engine));
-        const constraints = this._constraints(keys.filter((r) => r.TABLE_NAME === name), db);
-        return {
-          name,
-          columns: columns.filter((r) => r.TABLE_NAME === name).map((r) => this._column(r)),
-          constraints,
-          indexes: this._indexes(indexes.filter((r) => r.TABLE_NAME === name), constraints),
-        };
-      }) };
+      const indexes = await query(
+        'select * from information_schema.STATISTICS where TABLE_SCHEMA = database() order by TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX',
+      );
+      const db = str((await query('select database() as name'))[0]?.name);
+      return {
+        tables: tables.map((table) => {
+          const name = str(table.name);
+          if (table.engine !== 'InnoDB')
+            throw diagnostic('introspector_mysql_1', name, str(table.engine));
+          const constraints = this._constraints(
+            keys.filter((r) => r.TABLE_NAME === name),
+            db,
+          );
+          return {
+            name,
+            columns: columns.filter((r) => r.TABLE_NAME === name).map((r) => this._column(r)),
+            constraints,
+            indexes: this._indexes(
+              indexes.filter((r) => r.TABLE_NAME === name),
+              constraints,
+            ),
+          };
+        }),
+      };
     } catch (e) {
-      throw diagnostic("introspector_mysql_2", asError(e));
+      throw diagnostic('introspector_mysql_2', asError(e));
     }
   }
 
   private _column(row: Row): Column {
     const extra = str(row.EXTRA);
     if (str(row.GENERATION_EXPRESSION) || /invisible/i.test(extra)) {
-      throw diagnostic("introspector_mysql_3", str(row.TABLE_NAME), str(row.COLUMN_NAME));
+      throw diagnostic('introspector_mysql_3', str(row.TABLE_NAME), str(row.COLUMN_NAME));
     }
     const rawDefault = row.COLUMN_DEFAULT;
     let defaultValue: string | undefined;
     if (rawDefault != null) {
       if (/DEFAULT_GENERATED/i.test(extra)) {
         const expression = str(rawDefault);
-        defaultValue = /^current_timestamp(?:\(\d*\))?$/i.test(expression) ? expression : `(${expression})`;
+        defaultValue = /^current_timestamp(?:\(\d*\))?$/i.test(expression)
+          ? expression
+          : `(${expression})`;
       } else {
         defaultValue = quoteMysqlLiteral(str(rawDefault));
       }
     }
     return {
-      name: str(row.COLUMN_NAME), type: normalizeMysqlType(str(row.COLUMN_TYPE)),
-      nullable: row.IS_NULLABLE === "YES", length: undefined,
-      default: defaultValue, autoIncrement: /auto_increment/i.test(extra),
-      ordinal: Number(row.ORDINAL_POSITION), comment: str(row.COLUMN_COMMENT) || undefined,
+      name: str(row.COLUMN_NAME),
+      type: normalizeMysqlType(str(row.COLUMN_TYPE)),
+      nullable: row.IS_NULLABLE === 'YES',
+      length: undefined,
+      default: defaultValue,
+      autoIncrement: /auto_increment/i.test(extra),
+      ordinal: Number(row.ORDINAL_POSITION),
+      comment: str(row.COLUMN_COMMENT) || undefined,
       // MODIFY must retain attributes the model does not manage.
       mysql: {
         charset: row.CHARACTER_SET_NAME == null ? undefined : str(row.CHARACTER_SET_NAME),
@@ -78,42 +108,74 @@ export class MysqlIntrospector implements Introspector {
   }
 
   private _constraints(rows: ReadonlyArray<Row>, database: string): Array<Constraint> {
-    return [...group(rows, "CONSTRAINT_NAME").entries()].map(([name, entries]): Constraint => {
+    return [...group(rows, 'CONSTRAINT_NAME').entries()].map(([name, entries]): Constraint => {
       const row = entries[0]!;
       const columns = entries.map((r) => str(r.COLUMN_NAME));
       switch (row.CONSTRAINT_TYPE) {
-        case "PRIMARY KEY": return { kind: "PRIMARY_KEY", name, columns, implicit: undefined };
-        case "UNIQUE": return { kind: "UNIQUE", name, columns, implicit: undefined };
-        case "CHECK":
-          if (row.ENFORCED === "NO") throw diagnostic("introspector_mysql_4", name);
-          return { kind: "CHECK", name, expression: str(row.CHECK_CLAUSE), comparisonExpression: normalizeMysqlCheck(str(row.CHECK_CLAUSE)), values: [], implicit: undefined };
-        case "FOREIGN KEY": {
-          if (row.REFERENCED_TABLE_SCHEMA !== database) throw diagnostic("introspector_mysql_5", name);
-          if (!["NO ACTION", "RESTRICT"].includes(str(row.UPDATE_RULE))) throw diagnostic("introspector_mysql_6", name, str(row.UPDATE_RULE));
+        case 'PRIMARY KEY':
+          return { kind: 'PRIMARY_KEY', name, columns, implicit: undefined };
+        case 'UNIQUE':
+          return { kind: 'UNIQUE', name, columns, implicit: undefined };
+        case 'CHECK':
+          if (row.ENFORCED === 'NO') throw diagnostic('introspector_mysql_4', name);
+          return {
+            kind: 'CHECK',
+            name,
+            expression: str(row.CHECK_CLAUSE),
+            comparisonExpression: normalizeMysqlCheck(str(row.CHECK_CLAUSE)),
+            values: [],
+            implicit: undefined,
+          };
+        case 'FOREIGN KEY': {
+          if (row.REFERENCED_TABLE_SCHEMA !== database)
+            throw diagnostic('introspector_mysql_5', name);
+          if (!['NO ACTION', 'RESTRICT'].includes(str(row.UPDATE_RULE)))
+            throw diagnostic('introspector_mysql_6', name, str(row.UPDATE_RULE));
           const onDelete = deleteAction(str(row.DELETE_RULE));
           return {
-            kind: "FOREIGN_KEY", name, columns, referencedTable: str(row.REFERENCED_TABLE_NAME),
-            referencedColumns: entries.map((r) => str(r.REFERENCED_COLUMN_NAME)), onDelete,
-            cascade: onDelete === "CASCADE" ? "DELETE" : onDelete === "SET_NULL" ? "SET_NULL" : "NONE",
-            deferrable: false, implicit: undefined,
+            kind: 'FOREIGN_KEY',
+            name,
+            columns,
+            referencedTable: str(row.REFERENCED_TABLE_NAME),
+            referencedColumns: entries.map((r) => str(r.REFERENCED_COLUMN_NAME)),
+            onDelete,
+            cascade:
+              onDelete === 'CASCADE' ? 'DELETE' : onDelete === 'SET_NULL' ? 'SET_NULL' : 'NONE',
+            deferrable: false,
+            implicit: undefined,
           };
         }
-        default: throw diagnostic("introspector_mysql_7", str(row.CONSTRAINT_TYPE));
+        default:
+          throw diagnostic('introspector_mysql_7', str(row.CONSTRAINT_TYPE));
       }
     });
   }
 
   private _indexes(rows: ReadonlyArray<Row>, constraints: ReadonlyArray<Constraint>): Array<Index> {
-    const foreignKeys = constraints.filter((c): c is ForeignKeyConstraint => c.kind === "FOREIGN_KEY");
+    const foreignKeys = constraints.filter(
+      (c): c is ForeignKeyConstraint => c.kind === 'FOREIGN_KEY',
+    );
     const result: Array<Index> = [];
-    for (const [name, entries] of group(rows, "INDEX_NAME")) {
-      if (entries.some((r) => r.SUB_PART != null || r.EXPRESSION != null || r.COLLATION === "D" || r.INDEX_TYPE !== "BTREE" || r.IS_VISIBLE === "NO")) {
-        throw diagnostic("introspector_mysql_8", name);
+    for (const [name, entries] of group(rows, 'INDEX_NAME')) {
+      if (
+        entries.some(
+          (r) =>
+            r.SUB_PART != null ||
+            r.EXPRESSION != null ||
+            r.COLLATION === 'D' ||
+            r.INDEX_TYPE !== 'BTREE' ||
+            r.IS_VISIBLE === 'NO',
+        )
+      ) {
+        throw diagnostic('introspector_mysql_8', name);
       }
-      if (name === "PRIMARY" || Number(entries[0]!.NON_UNIQUE) === 0) continue;
+      if (name === 'PRIMARY' || Number(entries[0]!.NON_UNIQUE) === 0) continue;
       const columns = entries.map((r) => str(r.COLUMN_NAME));
       result.push({
-        name, columns, unique: false, predicate: undefined,
+        name,
+        columns,
+        unique: false,
+        predicate: undefined,
         // InnoDB creates/supports FK indexes; they are not user-model drift.
         implicit: foreignKeys.some((fk) => fk.columns.every((c, i) => columns[i] === c)),
       });
@@ -127,16 +189,21 @@ function group(rows: ReadonlyArray<Row>, key: string): Map<string, Array<Row>> {
   for (const row of rows) {
     const name = str(row[key]);
     const entries = groups.get(name) ?? [];
-    entries.push(row); groups.set(name, entries);
+    entries.push(row);
+    groups.set(name, entries);
   }
   return groups;
 }
 function deleteAction(value: string): OnDelete {
   switch (value) {
-    case "CASCADE": return "CASCADE";
-    case "SET NULL": return "SET_NULL";
-    case "RESTRICT":
-    case "NO ACTION": return "NO_ACTION";
-    default: throw diagnostic("introspector_mysql_9", value);
+    case 'CASCADE':
+      return 'CASCADE';
+    case 'SET NULL':
+      return 'SET_NULL';
+    case 'RESTRICT':
+    case 'NO ACTION':
+      return 'NO_ACTION';
+    default:
+      throw diagnostic('introspector_mysql_9', value);
   }
 }

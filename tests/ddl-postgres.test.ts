@@ -11,26 +11,27 @@
  *
  * 无 PG_HOST 时整体跳过。
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { lookup } from "node:dns/promises";
-import { Pool } from "pg";
-import { SchemaDiffer } from "../src/differ";
-import { PostgresIntrospector } from "../src/introspector/postgres";
-import { PostgresDdlGenerator } from "../src";
-import type { Column, Constraint, Schema, Table as SchemaTable } from "../src/schema/model";
+
+import { lookup } from 'node:dns/promises';
+import { Pool } from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PostgresDdlGenerator } from '../src';
+import { SchemaDiffer } from '../src/differ';
+import { PostgresIntrospector } from '../src/introspector/postgres';
+import type { Column, Constraint, Schema, Table as SchemaTable } from '../src/schema/model';
 
 const PG_HOST = process.env.PG_HOST;
 const PG_CONFIG = {
-  host: PG_HOST ?? "",
+  host: PG_HOST ?? '',
   port: Number(process.env.PG_PORT ?? 5432),
-  database: process.env.PG_DATABASE ?? "ts_grm_migrate_test",
-  user: process.env.PG_USER ?? "postgres",
-  password: process.env.PG_PASSWORD ?? "",
+  database: process.env.PG_DATABASE ?? 'ts_grm_migrate_test',
+  user: process.env.PG_USER ?? 'postgres',
+  password: process.env.PG_PASSWORD ?? '',
 };
 
 const col = (name: string): Column => ({
   name,
-  type: "integer",
+  type: 'integer',
   nullable: false,
   length: undefined,
   default: undefined,
@@ -39,7 +40,7 @@ const col = (name: string): Column => ({
   comment: undefined,
 });
 const pk = (columns: Array<string>): Constraint => ({
-  kind: "PRIMARY_KEY",
+  kind: 'PRIMARY_KEY',
   name: undefined,
   columns,
   implicit: undefined,
@@ -50,14 +51,14 @@ const fk = (
   referencedTable: string,
   referencedColumns: Array<string>,
 ): Constraint => ({
-  kind: "FOREIGN_KEY",
+  kind: 'FOREIGN_KEY',
   name,
   columns,
   referencedTable,
   referencedColumns,
-  onDelete: "NO_ACTION",
+  onDelete: 'NO_ACTION',
   deferrable: false,
-  cascade: "NONE",
+  cascade: 'NONE',
   implicit: undefined,
 });
 const table = (
@@ -68,13 +69,13 @@ const table = (
 
 const describePg = PG_HOST != null ? describe : describe.skip;
 
-describePg("DDL 执行（真实数据库）", () => {
+describePg('DDL 执行（真实数据库）', () => {
   let pool: Pool;
-  const schemaName = "ddl_e2e_drop_fk";
+  const schemaName = 'ddl_e2e_drop_fk';
 
   beforeAll(async () => {
     try {
-      const { address } = await lookup(PG_HOST ?? "");
+      const { address } = await lookup(PG_HOST ?? '');
       PG_CONFIG.host = address;
     } catch {
       // 解析失败就保留域名，让连接错误自然暴露
@@ -87,13 +88,17 @@ describePg("DDL 执行（真实数据库）", () => {
     await pool?.end();
   });
 
-  it("三表一起删（中间表引用另外两张）不再因外键依赖失败", async () => {
-    const bookTable = table("book", [col("id")], [pk(["id"])]);
-    const tagTable = table("tag", [col("id")], [pk(["id"])]);
-    const mappingTable = table("book_tag_mapping", [col("book_id"), col("tag_id")], [
-      fk("book_tag_mapping_book_id_fkey", ["book_id"], "book", ["id"]),
-      fk("book_tag_mapping_tag_id_fkey", ["tag_id"], "tag", ["id"]),
-    ]);
+  it('三表一起删（中间表引用另外两张）不再因外键依赖失败', async () => {
+    const bookTable = table('book', [col('id')], [pk(['id'])]);
+    const tagTable = table('tag', [col('id')], [pk(['id'])]);
+    const mappingTable = table(
+      'book_tag_mapping',
+      [col('book_id'), col('tag_id')],
+      [
+        fk('book_tag_mapping_book_id_fkey', ['book_id'], 'book', ['id']),
+        fk('book_tag_mapping_tag_id_fkey', ['tag_id'], 'tag', ['id']),
+      ],
+    );
     // Deliberately create the referencing table first.
     const buildOrder: Schema = { tables: [mappingTable, bookTable, tagTable] };
     // 删除按 introspection 的字母序给出（book 排在中间表之前），正是触发 bug 的顺序
@@ -127,24 +132,69 @@ describePg("DDL 执行（真实数据库）", () => {
     }
   }, 60_000);
 
-  it("cyclic foreign keys and replacement of referenced keys preserve data", async () => {
+  it('cyclic foreign keys and replacement of referenced keys preserve data', async () => {
     const client = await pool.connect();
     try {
-      await client.query(`drop schema if exists "${schemaName}" cascade; create schema "${schemaName}"; set search_path to "${schemaName}"`);
-      const a = table("a", [col("id"), { ...col("b_id"), nullable: true }], [pk(["id"]), fk("a_b", ["b_id"], "b", ["id"])]);
-      const b = table("b", [col("id"), { ...col("a_id"), nullable: true }], [pk(["id"]), fk("b_a", ["a_id"], "a", ["id"])]);
+      await client.query(
+        `drop schema if exists "${schemaName}" cascade; create schema "${schemaName}"; set search_path to "${schemaName}"`,
+      );
+      const a = table(
+        'a',
+        [col('id'), { ...col('b_id'), nullable: true }],
+        [pk(['id']), fk('a_b', ['b_id'], 'b', ['id'])],
+      );
+      const b = table(
+        'b',
+        [col('id'), { ...col('a_id'), nullable: true }],
+        [pk(['id']), fk('b_a', ['a_id'], 'a', ['id'])],
+      );
       const generator = new PostgresDdlGenerator();
-      for (const statement of generator.createStatements({ tables: [a, b] })) await client.query(statement);
-      await client.query('insert into a values (1, null); insert into b values (1, 1); update a set b_id=1');
-      const from = await new PostgresIntrospector({ query: client, schema: schemaName }).introspect();
-      const to: Schema = { tables: from.tables.map(t => ({ ...t, constraints: t.constraints.map(c => c.kind === "PRIMARY_KEY" ? { kind: "UNIQUE" as const, name: `${t.name}_unique`, columns: c.columns, implicit: undefined } : c) })) };
-      for (const statement of generator.statements(new SchemaDiffer().diff(from, to), { from, to })) await client.query(statement);
+      for (const statement of generator.createStatements({ tables: [a, b] }))
+        await client.query(statement);
+      await client.query(
+        'insert into a values (1, null); insert into b values (1, 1); update a set b_id=1',
+      );
+      const from = await new PostgresIntrospector({
+        query: client,
+        schema: schemaName,
+      }).introspect();
+      const to: Schema = {
+        tables: from.tables.map((t) => ({
+          ...t,
+          constraints: t.constraints.map((c) =>
+            c.kind === 'PRIMARY_KEY'
+              ? {
+                  kind: 'UNIQUE' as const,
+                  name: `${t.name}_unique`,
+                  columns: c.columns,
+                  implicit: undefined,
+                }
+              : c,
+          ),
+        })),
+      };
+      for (const statement of generator.statements(new SchemaDiffer().diff(from, to), { from, to }))
+        await client.query(statement);
       expect((await client.query('select * from a')).rows).toEqual([{ id: 1, b_id: 1 }]);
-      const actual = await new PostgresIntrospector({ query: client, schema: schemaName }).introspect();
+      const actual = await new PostgresIntrospector({
+        query: client,
+        schema: schemaName,
+      }).introspect();
       expect(new SchemaDiffer().diff(actual, to).changes).toEqual([]);
-      const withoutKeys: Schema = { tables: actual.tables.map(t => ({ ...t, constraints: [] })) };
-      for (const statement of generator.statements(new SchemaDiffer().diff(actual, withoutKeys), { from: actual, to: withoutKeys })) await client.query(statement);
-      expect(new SchemaDiffer().diff(await new PostgresIntrospector({ query: client, schema: schemaName }).introspect(), withoutKeys).changes).toEqual([]);
-    } finally { client.release(); }
+      const withoutKeys: Schema = { tables: actual.tables.map((t) => ({ ...t, constraints: [] })) };
+      for (const statement of generator.statements(new SchemaDiffer().diff(actual, withoutKeys), {
+        from: actual,
+        to: withoutKeys,
+      }))
+        await client.query(statement);
+      expect(
+        new SchemaDiffer().diff(
+          await new PostgresIntrospector({ query: client, schema: schemaName }).introspect(),
+          withoutKeys,
+        ).changes,
+      ).toEqual([]);
+    } finally {
+      client.release();
+    }
   });
 });

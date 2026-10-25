@@ -1,4 +1,8 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { DialectName } from '../dialect.js';
+import { normalizeMysqlCheck, normalizeMysqlType } from '../mysql/sql.js';
+import { normalizeServerExpression } from '../server/catalog.js';
+import { normalizeServerType } from '../server/sql.js';
 /**
  * 目标态适配器：ts-grm 原生 TableDef[] → migrate 统一形状 Schema。
  *
@@ -15,13 +19,9 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  * - comment / 索引：模型侧无来源 → 空值，由 introspection 提供现状；
  * - 约束名不填充（ts-grm 自动名 {table}_constraint_{n} 不可靠，diff 按内容匹配）。
  */
-import type {ColumnDef, ConstraintDef, SchemaDriver, TableDef,} from "../vendor/ts-grm.js";
-import type {CheckConstraint, Column, Constraint, ForeignKeyConstraint, OnDelete, Schema, Table,} from "./model.js";
-import { normalizeServerType } from "../server/sql.js";
-import { normalizeServerExpression } from "../server/catalog.js";
-import { normalizeMysqlType, normalizeMysqlCheck } from "../mysql/sql.js";
-import { readColumnPatch, renderColumnDefault } from "./patches.js";
-import type { DialectName } from "../dialect.js";
+import type { ColumnDef, ConstraintDef, SchemaDriver, TableDef } from '../vendor/ts-grm.js';
+import type { CheckConstraint, Column, Constraint, OnDelete, Schema, Table } from './model.js';
+import { readColumnPatch, renderColumnDefault } from './patches.js';
 
 /**
  * 方言映射能力（上游 Driver 的最小结构化投影）。
@@ -48,37 +48,56 @@ export type { SchemaDriver };
  * 将来支持多方言时应下移到方言层。
  */
 function toPhysicalName(value: string, dialect: DialectName): string {
-  if (value.startsWith("\"") && value.endsWith("\"")) {
-    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value
+      .slice(1, -1)
+      .replaceAll(
+        value[0] === '[' ? ']]' : value[0]!.repeat(2),
+        value[0] === '[' ? ']' : value[0]!,
+      );
   }
-  if (value.startsWith("`") && value.endsWith("`")) {
-    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
+  if (value.startsWith('`') && value.endsWith('`')) {
+    return value
+      .slice(1, -1)
+      .replaceAll(
+        value[0] === '[' ? ']]' : value[0]!.repeat(2),
+        value[0] === '[' ? ']' : value[0]!,
+      );
   }
-  if (value.startsWith("[") && value.endsWith("]")) {
-    return value.slice(1, -1).replaceAll(value[0] === "[" ? "]]" : value[0]!.repeat(2), value[0] === "[" ? "]" : value[0]!);
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value
+      .slice(1, -1)
+      .replaceAll(
+        value[0] === '[' ? ']]' : value[0]!.repeat(2),
+        value[0] === '[' ? ']' : value[0]!,
+      );
   }
   // 未加引号的标识符：PG 折叠为小写；MySQL / SQLite 原样保留（见上方注释）
-  return dialect === "postgres" ? value.toLowerCase() : dialect === "oracle" ? value.toUpperCase() : value;
+  return dialect === 'postgres'
+    ? value.toLowerCase()
+    : dialect === 'oracle'
+      ? value.toUpperCase()
+      : value;
 }
 
 /** ts-grm 的 CascadeType（ORM 语义）→ 数据库 ON DELETE 动作 */
 function toOnDelete(cascade: string): OnDelete {
   switch (cascade) {
-    case "DELETE":
-      return "CASCADE";
-    case "SET_NULL":
-      return "SET_NULL";
+    case 'DELETE':
+      return 'CASCADE';
+    case 'SET_NULL':
+      return 'SET_NULL';
     // NONE / GRM_DELETE / GRM_SET_NULL：数据库层面无动作（GRM_* 为 ORM 预留语义）
     default:
-      return "NO_ACTION";
+      return 'NO_ACTION';
   }
 }
 
 /** 原生 CHECK（column + values）→ 表达式原文（与 ts-grm constraintCreationSql 同构） */
-function checkExpression(constraint: Extract<ConstraintDef, { readonly kind: "CHECK" }>): string {
+function checkExpression(constraint: Extract<ConstraintDef, { readonly kind: 'CHECK' }>): string {
   const values = constraint.values
-    .map((v) => (typeof v === "number" ? v.toString() : `'${v.replaceAll("'", "''")}'`))
-    .join(", ");
+    .map((v) => (typeof v === 'number' ? v.toString() : `'${v.replaceAll("'", "''")}'`))
+    .join(', ');
   return `${constraint.column.name} in (${values})`;
 }
 
@@ -90,29 +109,34 @@ function toColumn(
   tableName: string,
 ): Column {
   const name = toPhysicalName(columnDef.name, dialect);
-  let patch;
+  let patch: ReturnType<typeof readColumnPatch>;
   try {
     patch = readColumnPatch(columnDef.prop);
   } catch (error) {
-    throw diagnostic("schema_adapter_1", tableName, name, asError(error));
+    throw diagnostic('schema_adapter_1', tableName, name, asError(error));
   }
   const autoIncrement = patch.autoIncrementManaged && patch.autoIncrement;
   if (autoIncrement && patch.default !== undefined) {
-    throw diagnostic("schema_adapter_2", tableName, name);
+    throw diagnostic('schema_adapter_2', tableName, name);
   }
   return {
     name,
-    type: dialect === "mysql" ? normalizeMysqlType(driver.typeName(columnDef))
-      : dialect === "mssql" || dialect === "oracle" ? normalizeServerType(driver.typeName(columnDef), dialect) : driver.typeName(columnDef),
+    type:
+      dialect === 'mysql'
+        ? normalizeMysqlType(driver.typeName(columnDef))
+        : dialect === 'mssql' || dialect === 'oracle'
+          ? normalizeServerType(driver.typeName(columnDef), dialect)
+          : driver.typeName(columnDef),
     nullable: columnDef.nullable,
     length: columnDef.length,
     // 自增列由数据库生成：不表达默认值。补丁管理时未声明 default = 目标态无默认值
     // （"" 是 differ 的「删除默认值」约定，见 src/differ.ts）。
-    default: autoIncrement || !patch.defaultManaged
-      ? undefined
-      : patch.default === undefined
-        ? ""
-        : renderColumnDefault(patch.default, { table: tableName, column: name, dialect }),
+    default:
+      autoIncrement || !patch.defaultManaged
+        ? undefined
+        : patch.default === undefined
+          ? ''
+          : renderColumnDefault(patch.default, { table: tableName, column: name, dialect }),
     autoIncrement,
     // 补丁已安装时 autoIncrement 参与 diff；否则不管理（false 只表示「未声明」）
     ...(patch.autoIncrementManaged ? { autoIncrementManaged: true } : {}),
@@ -121,30 +145,26 @@ function toColumn(
   };
 }
 
-function toConstraint(
-  constraint: ConstraintDef,
-  driver: SchemaDriver,
-  dialect: DialectName,
-): Constraint {
+function toConstraint(constraint: ConstraintDef, dialect: DialectName): Constraint {
   const name: string | undefined = undefined;
   switch (constraint.kind) {
-    case "PRIMARY_KEY":
+    case 'PRIMARY_KEY':
       return {
-        kind: "PRIMARY_KEY",
+        kind: 'PRIMARY_KEY',
         name,
         columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         implicit: constraint.implicit,
       };
-    case "UNIQUE":
+    case 'UNIQUE':
       return {
-        kind: "UNIQUE",
+        kind: 'UNIQUE',
         name,
         columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         implicit: constraint.implicit,
       };
-    case "FOREIGN_KEY": {
+    case 'FOREIGN_KEY': {
       return {
-        kind: "FOREIGN_KEY",
+        kind: 'FOREIGN_KEY',
         name,
         columns: constraint.columns.map((c) => toPhysicalName(c.name, dialect)),
         referencedTable: toPhysicalName(
@@ -158,21 +178,24 @@ function toConstraint(
         implicit: constraint.implicit,
       };
     }
-    case "CHECK": {
+    case 'CHECK': {
       const check: CheckConstraint = {
-        kind: "CHECK",
+        kind: 'CHECK',
         name,
         values: constraint.values,
         expression: checkExpression(constraint),
-        ...(dialect === "mysql" ? { comparisonExpression: normalizeMysqlCheck(checkExpression(constraint)) }
-          : dialect === "mssql" || dialect === "oracle" ? { comparisonExpression: normalizeServerExpression(checkExpression(constraint)) } : {}),
+        ...(dialect === 'mysql'
+          ? { comparisonExpression: normalizeMysqlCheck(checkExpression(constraint)) }
+          : dialect === 'mssql' || dialect === 'oracle'
+            ? { comparisonExpression: normalizeServerExpression(checkExpression(constraint)) }
+            : {}),
         implicit: constraint.implicit,
       };
       return check;
     }
     default:
       // 原生联合中的 "INDEX" 类型存在但 ts-grm 从不创建，防御处理
-      throw diagnostic("schema_adapter_3", String((constraint as { kind?: unknown }).kind));
+      throw diagnostic('schema_adapter_3', String((constraint as { kind?: unknown }).kind));
   }
 }
 
@@ -181,7 +204,7 @@ function toTable(tableDef: TableDef, driver: SchemaDriver, dialect: DialectName)
   return {
     name,
     columns: tableDef.columns.map((c, i) => toColumn(c, i + 1, driver, dialect, name)),
-    constraints: tableDef.constraints.map((c) => toConstraint(c, driver, dialect)),
+    constraints: tableDef.constraints.map((c) => toConstraint(c, dialect)),
     // ts-grm 模型无索引概念，migrate 侧补充声明 / introspection 另行填充
     indexes: [],
     indexesManaged: false,
@@ -200,7 +223,7 @@ export function tableDefsToSchema(
   options: { readonly dialect?: DialectName } = {},
 ): Schema {
   // 标识符折叠规则属于方言知识，默认按 PG（当前唯一端到端可用的方言）
-  const dialect = options.dialect ?? "postgres";
+  const dialect = options.dialect ?? 'postgres';
   return {
     tables: tableDefs.map((td) => toTable(td, driver, dialect)),
   };

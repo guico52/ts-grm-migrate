@@ -1,6 +1,6 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
-import { createHash } from "node:crypto";
-import type { MigrationCompletion, SqlExecutor } from "../executor.js";
+import { createHash } from 'node:crypto';
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { MigrationCompletion, SqlExecutor } from '../executor.js';
 
 export interface MysqlConnectionLike {
   query(sql: string, params?: ReadonlyArray<unknown>): Promise<readonly [unknown, unknown]>;
@@ -21,14 +21,21 @@ export interface MysqlPoolLike {
  */
 export class MysqlSqlExecutor implements SqlExecutor {
   private _locked: MysqlConnectionLike | undefined;
-  constructor(private readonly _pool: MysqlPoolLike, private readonly _lockTimeout = 10) {}
+  constructor(
+    private readonly _pool: MysqlPoolLike,
+    private readonly _lockTimeout = 10,
+  ) {}
 
   private async _prepare(connection: MysqlConnectionLike): Promise<void> {
     // Preserve server modes (especially STRICT_TRANS_TABLES) and make string escaping deterministic.
-    await connection.query("set session sql_mode = concat_ws(',', nullif(@@sql_mode, ''), 'NO_BACKSLASH_ESCAPES')");
+    await connection.query(
+      "set session sql_mode = concat_ws(',', nullif(@@sql_mode, ''), 'NO_BACKSLASH_ESCAPES')",
+    );
   }
 
-  private async _withConnection<T>(fn: (connection: MysqlConnectionLike) => Promise<T>): Promise<T> {
+  private async _withConnection<T>(
+    fn: (connection: MysqlConnectionLike) => Promise<T>,
+  ): Promise<T> {
     if (this._locked) return await fn(this._locked);
     const connection = await this._pool.getConnection();
     try {
@@ -39,43 +46,57 @@ export class MysqlSqlExecutor implements SqlExecutor {
     }
   }
 
-  async query(sql: string, params?: ReadonlyArray<unknown>): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
+  async query(
+    sql: string,
+    params?: ReadonlyArray<unknown>,
+  ): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
     return await this._withConnection(async (connection) => {
       const [result] = params?.length
         ? await connection.execute(sql, params)
         : await connection.query(sql);
-      return { rows: Array.isArray(result) ? result as Array<Record<string, unknown>> : [] };
+      return { rows: Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [] };
     });
   }
 
-  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
+  async executeStatements(
+    statements: ReadonlyArray<string>,
+    complete?: MigrationCompletion,
+  ): Promise<void> {
     await this._withConnection(async (connection) => {
       try {
         for (const sql of statements) await connection.query(sql);
-        await complete?.({ query: async (sql, params) => {
-          const [result] = params?.length ? await connection.execute(sql, params) : await connection.query(sql);
-          return { rows: Array.isArray(result) ? result as Array<Record<string, unknown>> : [] };
-        } });
+        await complete?.({
+          query: async (sql, params) => {
+            const [result] = params?.length
+              ? await connection.execute(sql, params)
+              : await connection.query(sql);
+            return {
+              rows: Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [],
+            };
+          },
+        });
       } catch (e) {
-        throw diagnostic("executor_mysql_1", asError(e));
+        throw diagnostic('executor_mysql_1', asError(e));
       }
     });
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this._locked) throw diagnostic("executor_mysql_2");
+    if (this._locked) throw diagnostic('executor_mysql_2');
     const connection = await this._pool.getConnection();
     let name: string;
     try {
       await this._prepare(connection);
-      const [result] = await connection.query("select database() as db");
+      const [result] = await connection.query('select database() as db');
       const db = (result as Array<{ db: string | null }>)[0]?.db;
-      if (!db) throw diagnostic("executor_mysql_3");
+      if (!db) throw diagnostic('executor_mysql_3');
       // Lock identity is the database, not a machine-local path.
-      name = `tgm:${createHash("sha256").update(db).digest("hex").slice(0, 60)}`;
-      const [rows] = await connection.query(`select get_lock('${name}', ${this._lockTimeout}) as acquired`);
+      name = `tgm:${createHash('sha256').update(db).digest('hex').slice(0, 60)}`;
+      const [rows] = await connection.query(
+        `select get_lock('${name}', ${this._lockTimeout}) as acquired`,
+      );
       if (Number((rows as Array<{ acquired: unknown }>)[0]?.acquired) !== 1) {
-        throw diagnostic("executor_mysql_4", this._lockTimeout);
+        throw diagnostic('executor_mysql_4', this._lockTimeout);
       }
       this._locked = connection;
     } catch (e) {

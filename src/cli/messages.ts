@@ -1,4 +1,4 @@
-import { CONFIG_FILENAMES, type OutputLanguage } from "../config.js";
+import { CONFIG_FILENAMES, type OutputLanguage } from '../config.js';
 
 const en = {
   usage: `ts-grm-migrate — Database migrations for ts-grm
@@ -26,53 +26,62 @@ Options:
   -h, --help                   Show help
 
 Configuration files:
-  ${CONFIG_FILENAMES.join("\n  ")}
+  ${CONFIG_FILENAMES.join('\n  ')}
 `,
-  seedMissing: 'No seed configured. Add seed: { command: "node", args: ["./src/ts-grm/seed.ts"] } to your configuration.',
-  seedOption: (flag: string) => `Unsupported seed option --${flag}. Pass script arguments after --.`,
-  seedStarted: "Running seed script...",
-  seedCompleted: "Seed completed.",
+  seedMissing:
+    'No seed configured. Add seed: { command: "node", args: ["./src/ts-grm/seed.ts"] } to your configuration.',
+  seedOption: (flag: string) =>
+    `Unsupported seed option --${flag}. Pass script arguments after --.`,
+  seedStarted: 'Running seed script...',
+  seedCompleted: 'Seed completed.',
   seedFailed: (code: number) => `Seed failed (exit code ${code}).`,
-  dataCondition: (table: string) => `Existing data in ${table} must satisfy the new NOT NULL, key or CHECK constraints. SQL may fail; non-transactional DDL may partially apply.`,
-  dryRunPush: "Option --dry-run is only supported by push.",
+  dataCondition: (table: string) =>
+    `Existing data in ${table} must satisfy the new NOT NULL, key or CHECK constraints. SQL may fail; non-transactional DDL may partially apply.`,
+  dryRunPush: 'Option --dry-run is only supported by push.',
   invalidLanguage: (value: string) => `Unsupported language "${value}". Use en or zh-CN.`,
   invalidOption: (flag: string) => `Option --${flag} does not take a value.`,
   unknownCommand: (command: string) => `Unknown command "${command}".`,
   config: (file: string) => `Config: ${file}`,
   target: (target: string) => `Target: ${target}`,
-  cancelled: "Cancelled.",
-  error: "Error",
-  connectionStringLabel: "(connection string)",
-  defaultDatabaseLabel: "(default database)",
+  cancelled: 'Cancelled.',
+  error: 'Error',
+  connectionStringLabel: '(connection string)',
+  defaultDatabaseLabel: '(default database)',
   devApplied: (id: string, target: string) => `Generated and applied migration ${id} to ${target}.`,
-  createOnlyDev: "--create-only is only supported by dev.",
+  createOnlyDev: '--create-only is only supported by dev.',
   devCreated: (id: string) => `Generated migration ${id}; review the SQL, then run tgm deploy.`,
   checkPassed: (target: string) => `${target} matches the model.`,
   devNoop: (target: string) => `${target} is up to date; no migration needed.`,
-  deployApplied: (count: number, target: string) => `Applied ${count} migration${count === 1 ? "" : "s"} to ${target}.`,
+  deployApplied: (count: number, target: string) =>
+    `Applied ${count} migration${count === 1 ? '' : 's'} to ${target}.`,
   deployNoop: (target: string) => `No pending migrations for ${target}.`,
-  pushApplied: (count: number, target: string) => `Synced ${target} (${count} statement${count === 1 ? "" : "s"}).`,
+  pushApplied: (count: number, target: string) =>
+    `Synced ${target} (${count} statement${count === 1 ? '' : 's'}).`,
   pushNoop: (target: string) => `${target} is up to date; no sync needed.`,
   drift: (target: string) => `Warning: ${target} differs from the model:`,
   driftTable: (table: string, summary: string) => `  - Table ${table}: ${summary}`,
-  driftHint: "Check for a partial migration or manual database changes.",
-  knownDrift: (count: number) => `Ignored ${count} difference${count === 1 ? "" : "s"} that cannot be compared reliably.`,
-  noMigrations: "No migrations found.",
-  appliedHeading: "Applied:",
-  pendingHeading: "Pending:",
-  failed: "failed",
-  noPending: "No pending migrations.",
+  driftHint: 'Check for a partial migration or manual database changes.',
+  knownDrift: (count: number) =>
+    `Ignored ${count} difference${count === 1 ? '' : 's'} that cannot be compared reliably.`,
+  noMigrations: 'No migrations found.',
+  appliedHeading: 'Applied:',
+  pendingHeading: 'Pending:',
+  failed: 'failed',
+  noPending: 'No pending migrations.',
   resolvedApplied: (id: string) => `Marked ${id} as applied.`,
   resolvedRolledBack: (id: string) => `Marked ${id} as rolled back.`,
-  resolveConflict: "Choose only one of --applied and --rolled-back.",
-  resolveRequired: "resolve requires --applied <id> or --rolled-back <id>.",
-  nonInteractive: "Cannot confirm in a non-interactive session. Retry with --force after reviewing the change.",
-  confirm: "Continue? (y/N) ",
-  destructive: "Potentially destructive changes:",
+  resolveConflict: 'Choose only one of --applied and --rolled-back.',
+  resolveRequired: 'resolve requires --applied <id> or --rolled-back <id>.',
+  nonInteractive:
+    'Cannot confirm in a non-interactive session. Retry with --force after reviewing the change.',
+  confirm: 'Continue? (y/N) ',
+  destructive: 'Potentially destructive changes:',
   dropTable: (table: string) => `  - Drop table ${table}`,
   dropColumn: (table: string, column: string) => `  - Drop column ${table}.${column}`,
-  dropIndex: (table: string, index: string) => `  - Drop unique index ${table}.${index} (removes uniqueness enforcement)`,
-  alterColumn: (table: string, column: string, type: string) => `  - Alter column type ${table}.${column} → ${type}`,
+  dropIndex: (table: string, index: string) =>
+    `  - Drop unique index ${table}.${index} (removes uniqueness enforcement)`,
+  alterColumn: (table: string, column: string, type: string) =>
+    `  - Alter column type ${table}.${column} → ${type}`,
   detailProcessLock: (path: string) => `Acquired process lock: ${path}`,
   detailDatabaseLock: (key: string) => `Acquired database lock: ${key}`,
   detailSql: (sql: string) => `Executing SQL:\n${sql}`,
@@ -84,13 +93,15 @@ Configuration files:
 export type CliMessages = typeof en;
 
 const zhCN = {
-  seedMissing: '未配置 seed。请在配置中添加 seed: { command: "node", args: ["./src/ts-grm/seed.ts"] }。',
+  seedMissing:
+    '未配置 seed。请在配置中添加 seed: { command: "node", args: ["./src/ts-grm/seed.ts"] }。',
   seedOption: (flag: string) => `seed 不支持选项 --${flag}。脚本参数请放在 -- 之后。`,
-  seedStarted: "正在运行 seed 脚本……",
-  seedCompleted: "Seed 执行完成。",
+  seedStarted: '正在运行 seed 脚本……',
+  seedCompleted: 'Seed 执行完成。',
   seedFailed: (code: number) => `Seed 执行失败（退出码 ${code}）。`,
-  dataCondition: (table: string) => `${table} 的已有数据必须满足新的非空、键或 CHECK 约束。SQL 可能失败；非事务型 DDL 可能部分生效。`,
-  dryRunPush: "--dry-run 仅支持 push。",
+  dataCondition: (table: string) =>
+    `${table} 的已有数据必须满足新的非空、键或 CHECK 约束。SQL 可能失败；非事务型 DDL 可能部分生效。`,
+  dryRunPush: '--dry-run 仅支持 push。',
   usage: `ts-grm-migrate — ts-grm 的数据库迁移工具
 
 用法: tgm <命令> [选项]
@@ -116,19 +127,19 @@ const zhCN = {
   -h, --help                   显示帮助
 
 配置文件:
-  ${CONFIG_FILENAMES.join("\n  ")}
+  ${CONFIG_FILENAMES.join('\n  ')}
 `,
   invalidLanguage: (value: string) => `不支持语言 "${value}"。请使用 en 或 zh-CN。`,
   invalidOption: (flag: string) => `选项 --${flag} 不需要参数。`,
   unknownCommand: (command: string) => `未知命令 "${command}"。`,
   config: (file: string) => `配置：${file}`,
   target: (target: string) => `目标：${target}`,
-  cancelled: "已取消。",
-  error: "错误",
-  connectionStringLabel: "（连接字符串）",
-  defaultDatabaseLabel: "（默认数据库）",
+  cancelled: '已取消。',
+  error: '错误',
+  connectionStringLabel: '（连接字符串）',
+  defaultDatabaseLabel: '（默认数据库）',
   devApplied: (id: string, target: string) => `已在 ${target} 生成并应用迁移 ${id}。`,
-  createOnlyDev: "--create-only 仅用于 dev。",
+  createOnlyDev: '--create-only 仅用于 dev。',
   devCreated: (id: string) => `已生成迁移 ${id}；审核 SQL 后运行 tgm deploy。`,
   checkPassed: (target: string) => `${target} 与模型一致。`,
   devNoop: (target: string) => `${target} 已是最新，无需迁移。`,
@@ -138,24 +149,26 @@ const zhCN = {
   pushNoop: (target: string) => `${target} 已是最新，无需同步。`,
   drift: (target: string) => `警告：${target} 与模型不一致：`,
   driftTable: (table: string, summary: string) => `  - 表 ${table}：${summary}`,
-  driftHint: "请检查迁移是否完整执行，或数据库是否被手工修改。",
+  driftHint: '请检查迁移是否完整执行，或数据库是否被手工修改。',
   knownDrift: (count: number) => `另有 ${count} 处差异因已知限制无法比对，已忽略。`,
-  noMigrations: "没有任何迁移。",
-  appliedHeading: "已应用：",
-  pendingHeading: "待应用：",
-  failed: "失败",
-  noPending: "没有待应用的迁移。",
+  noMigrations: '没有任何迁移。',
+  appliedHeading: '已应用：',
+  pendingHeading: '待应用：',
+  failed: '失败',
+  noPending: '没有待应用的迁移。',
   resolvedApplied: (id: string) => `已标记为已应用：${id}`,
   resolvedRolledBack: (id: string) => `已标记回滚：${id}`,
-  resolveConflict: "--applied 与 --rolled-back 只能选一个。",
-  resolveRequired: "resolve 需要 --applied <id> 或 --rolled-back <id>。",
-  nonInteractive: "当前不是交互环境；确认后请加 --force 重试。",
-  confirm: "是否继续？(y/N) ",
-  destructive: "检测到可能丢失数据的变更：",
+  resolveConflict: '--applied 与 --rolled-back 只能选一个。',
+  resolveRequired: 'resolve 需要 --applied <id> 或 --rolled-back <id>。',
+  nonInteractive: '当前不是交互环境；确认后请加 --force 重试。',
+  confirm: '是否继续？(y/N) ',
+  destructive: '检测到可能丢失数据的变更：',
   dropTable: (table: string) => `  - 删除表 ${table}`,
   dropColumn: (table: string, column: string) => `  - 删除列 ${table}.${column}`,
-  dropIndex: (table: string, index: string) => `  - 删除唯一索引 ${table}.${index}（取消唯一性约束）`,
-  alterColumn: (table: string, column: string, type: string) => `  - 修改列类型 ${table}.${column} → ${type}`,
+  dropIndex: (table: string, index: string) =>
+    `  - 删除唯一索引 ${table}.${index}（取消唯一性约束）`,
+  alterColumn: (table: string, column: string, type: string) =>
+    `  - 修改列类型 ${table}.${column} → ${type}`,
   detailProcessLock: (path: string) => `已获取进程锁：${path}`,
   detailDatabaseLock: (key: string) => `已获取数据库锁：${key}`,
   detailSql: (sql: string) => `执行 SQL:\n${sql}`,
@@ -164,7 +177,7 @@ const zhCN = {
   detailSkipped: (count: number) => `跳过 ${count} 个已应用迁移。`,
 } satisfies CliMessages;
 
-const CATALOG = { en, "zh-CN": zhCN } satisfies Record<OutputLanguage, CliMessages>;
+const CATALOG = { en, 'zh-CN': zhCN } satisfies Record<OutputLanguage, CliMessages>;
 
 export type CliLanguage = OutputLanguage;
 

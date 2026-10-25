@@ -1,6 +1,6 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
-import { createHash } from "node:crypto";
-import type { MigrationCompletion, SqlExecutor } from "../executor.js";
+import { createHash } from 'node:crypto';
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { MigrationCompletion, SqlExecutor } from '../executor.js';
 
 export interface OracleSession {
   execute(
@@ -27,39 +27,35 @@ export class OracleSqlExecutor implements SqlExecutor {
     // OUT_FORMAT_OBJECT=4002. Runtime enables CLOB-to-string fetching on this connection's queries.
     const result = await this.session.execute(
       sql,
-      Object.fromEntries(
-        params.map((value, index) => [String(index + 1), value]),
-      ),
+      Object.fromEntries(params.map((value, index) => [String(index + 1), value])),
       { autoCommit: true, outFormat: 4002 },
     );
     return { rows: result.rows ?? [] };
   }
-  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
+  async executeStatements(
+    statements: ReadonlyArray<string>,
+    complete?: MigrationCompletion,
+  ): Promise<void> {
     // Parse the whole input first: unsupported PL/SQL must not leave a half-executed file.
     const parsed = statements.flatMap(splitOracleSql);
     try {
       for (const sql of parsed) await this.query(sql);
       await complete?.(this);
     } catch (e) {
-      throw diagnostic("executor_oracle_1", asError(e));
+      throw diagnostic('executor_oracle_1', asError(e));
     }
   }
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (this.locked) throw diagnostic("executor_oracle_2");
+    if (this.locked) throw diagnostic('executor_oracle_2');
     // A deterministic numeric ID avoids ALLOCATE_UNIQUE's implicit commit and extra catalog writes.
     const id =
-      createHash("sha256")
-        .update(`ts-grm:${this.schema}`)
-        .digest()
-        .readUInt32BE(0) % 1073741824;
-    await this
-      .query(`declare result integer; begin result := dbms_lock.request(${id}, 6, ${this.lockTimeout}, false);
+      createHash('sha256').update(`ts-grm:${this.schema}`).digest().readUInt32BE(0) % 1073741824;
+    await this.query(`declare result integer; begin result := dbms_lock.request(${id}, 6, ${this.lockTimeout}, false);
       if result <> 0 then raise_application_error(-20001, 'Migration lock failed: ' || result); end if; end;`);
     this.locked = true;
     return async () => {
       if (!this.locked) return;
-      await this
-        .query(`declare result integer; begin result := dbms_lock.release(${id});
+      await this.query(`declare result integer; begin result := dbms_lock.release(${id});
         if result <> 0 then raise_application_error(-20002, 'Migration unlock failed: ' || result); end if; end;`);
       this.locked = false;
     };
@@ -73,38 +69,38 @@ export class OracleSqlExecutor implements SqlExecutor {
  */
 export function splitOracleSql(source: string): string[] {
   const statements: string[] = [];
-  let current = "",
-    quote = "",
-    comment = "",
-    alternativeEnd = "";
+  let current = '',
+    quote = '',
+    comment = '',
+    alternativeEnd = '';
   const finish = (): void => {
     const sql = current.trim();
-    current = "";
+    current = '';
     if (!sql) return;
     if (
       /^(begin|declare|create\s+(or\s+replace\s+)?(procedure|function|package|trigger|type)|\/|set\s+|prompt\s+|exec(?:ute)?\s+)/i.test(
         sql,
       )
     ) {
-      throw diagnostic("executor_oracle_3");
+      throw diagnostic('executor_oracle_3');
     }
     statements.push(sql);
   };
   for (let i = 0; i < source.length; i++) {
     const c = source[i]!,
       next = source[i + 1];
-    if (comment === "line") {
-      if (c === "\n") {
-        comment = "";
-        current += "\n";
+    if (comment === 'line') {
+      if (c === '\n') {
+        comment = '';
+        current += '\n';
       }
       continue;
     }
-    if (comment === "block") {
-      if (c === "*" && next === "/") {
-        comment = "";
+    if (comment === 'block') {
+      if (c === '*' && next === '/') {
+        comment = '';
         i++;
-        current += " ";
+        current += ' ';
       }
       continue;
     }
@@ -113,7 +109,7 @@ export function splitOracleSql(source: string): string[] {
       if (c === alternativeEnd && next === "'") {
         current += "'";
         i++;
-        alternativeEnd = "";
+        alternativeEnd = '';
       }
       continue;
     }
@@ -123,27 +119,26 @@ export function splitOracleSql(source: string): string[] {
         if (next === quote) {
           current += next;
           i++;
-        } else quote = "";
+        } else quote = '';
       }
       continue;
     }
-    if ((c === "q" || c === "Q") && next === "'" && source[i + 2]) {
+    if ((c === 'q' || c === 'Q') && next === "'" && source[i + 2]) {
       const delimiter = source[i + 2]!;
       alternativeEnd =
-        ({ "[": "]", "{": "}", "(": ")", "<": ">" } as Record<string, string>)[
-          delimiter
-        ] ?? delimiter;
+        ({ '[': ']', '{': '}', '(': ')', '<': '>' } as Record<string, string>)[delimiter] ??
+        delimiter;
       current += source.slice(i, i + 3);
       i += 2;
       continue;
     }
-    if (c === "-" && next === "-") {
-      comment = "line";
+    if (c === '-' && next === '-') {
+      comment = 'line';
       i++;
       continue;
     }
-    if (c === "/" && next === "*") {
-      comment = "block";
+    if (c === '/' && next === '*') {
+      comment = 'block';
       i++;
       continue;
     }
@@ -152,11 +147,10 @@ export function splitOracleSql(source: string): string[] {
       current += c;
       continue;
     }
-    if (c === ";") finish();
+    if (c === ';') finish();
     else current += c;
   }
-  if (quote || alternativeEnd || comment === "block")
-    throw diagnostic("executor_oracle_4");
+  if (quote || alternativeEnd || comment === 'block') throw diagnostic('executor_oracle_4');
   finish();
   return statements;
 }

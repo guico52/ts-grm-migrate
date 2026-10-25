@@ -1,8 +1,8 @@
-import { diagnostic } from "../diagnostics/error.js";
-import type { DatabaseConfig } from "../config.js";
-import { SqlServerSqlExecutor } from "../executor/sqlserver.js";
-import { OracleSqlExecutor } from "../executor/oracle.js";
-import { ServerSql } from "./sql.js";
+import type { DatabaseConfig } from '../config.js';
+import { diagnostic } from '../diagnostics/error.js';
+import { OracleSqlExecutor } from '../executor/oracle.js';
+import { SqlServerSqlExecutor } from '../executor/sqlserver.js';
+import { ServerSql } from './sql.js';
 
 /**
  * mssql exposes acquire/release for pinning connections. Keep this boundary in one place.
@@ -11,15 +11,15 @@ import { ServerSql } from "./sql.js";
  * @see https://github.com/tediousjs/node-mssql/blob/master/lib/base/transaction.js
  */
 export async function openSqlServer(database: DatabaseConfig, schema: string, readOnly = false) {
-  let runtime: typeof import("mssql");
+  let runtime: typeof import('mssql');
   try {
-    runtime = await import("mssql");
+    runtime = await import('mssql');
   } catch {
-    throw diagnostic("server_connections_1");
+    throw diagnostic('server_connections_1');
   }
   const pool = new runtime.ConnectionPool(
     database.connectionString ?? {
-      server: database.host ?? "localhost",
+      server: database.host ?? 'localhost',
       port: database.port ?? 1433,
       user: database.user,
       password: database.password,
@@ -32,7 +32,7 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
       requestTimeout: 30_000,
     },
   );
-  pool.on("error", () => {
+  pool.on('error', () => {
     /* Requests retain the original connection error. */
   });
   const pinnedPool = pool as unknown as {
@@ -71,19 +71,14 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
     const version = await executor.query(
       "select cast(serverproperty('ProductMajorVersion') as int) as version",
     );
-    if (Number(version.rows[0]?.version) < 13)
-      throw diagnostic("server_connections_2");
-    const { rows } = await executor.query("select schema_id(@p1) as id", [
-      schema,
-    ]);
+    if (Number(version.rows[0]?.version) < 13) throw diagnostic('server_connections_2');
+    const { rows } = await executor.query('select schema_id(@p1) as id', [schema]);
     if (rows[0]?.id == null && !readOnly) {
-      const sql = new ServerSql("mssql", schema);
-      await executor.query(
-        `exec(${sql.literal(`create schema ${sql.identifier(schema)}`)})`,
-      );
+      const sql = new ServerSql('mssql', schema);
+      await executor.query(`exec(${sql.literal(`create schema ${sql.identifier(schema)}`)})`);
     }
     const canonical = await executor.query(
-      "select name from sys.schemas where schema_id=schema_id(@p1)",
+      'select name from sys.schemas where schema_id=schema_id(@p1)',
       [schema],
     );
     const canonicalSchema = String(canonical.rows[0]?.name ?? schema);
@@ -98,19 +93,16 @@ export async function openSqlServer(database: DatabaseConfig, schema: string, re
   }
 }
 
-export async function openOracle(
-  database: DatabaseConfig,
-  requestedSchema?: string,
-) {
-  let runtime: typeof import("oracledb");
+export async function openOracle(database: DatabaseConfig, requestedSchema?: string) {
+  let runtime: typeof import('oracledb');
   try {
-    runtime = (await import("oracledb")).default;
+    runtime = (await import('oracledb')).default;
   } catch {
-    throw diagnostic("server_connections_3");
+    throw diagnostic('server_connections_3');
   }
   const connectString =
     database.connectionString ??
-    `${database.host ?? "localhost"}:${database.port ?? 1521}/${database.database ?? "FREEPDB1"}`;
+    `${database.host ?? 'localhost'}:${database.port ?? 1521}/${database.database ?? 'FREEPDB1'}`;
   const connection = await runtime.getConnection({
     user: database.user,
     password: database.password,
@@ -121,20 +113,18 @@ export async function openOracle(
     await connection.close();
   };
   try {
-    if (Number(connection.oracleServerVersionString.split(".")[0]) < 19)
-      throw diagnostic("server_connections_4");
+    if (Number(connection.oracleServerVersionString.split('.')[0]) < 19)
+      throw diagnostic('server_connections_4');
     const who = await connection.execute<{ NAME: string }>(
       "select sys_context('USERENV', 'CURRENT_SCHEMA') as name from dual",
       [],
       { outFormat: runtime.OUT_FORMAT_OBJECT },
     );
     const schema = requestedSchema ?? who.rows?.[0]?.NAME;
-    if (!schema) throw diagnostic("server_connections_5");
-    const sql = new ServerSql("oracle", schema);
-    await connection.execute(
-      `alter session set current_schema=${sql.identifier(schema)}`,
-    );
-    await connection.execute("alter session set nls_length_semantics=BYTE");
+    if (!schema) throw diagnostic('server_connections_5');
+    const sql = new ServerSql('oracle', schema);
+    await connection.execute(`alter session set current_schema=${sql.identifier(schema)}`);
+    await connection.execute('alter session set nls_length_semantics=BYTE');
     const executor = new OracleSqlExecutor(
       {
         execute: async (statement, binds, options) => {

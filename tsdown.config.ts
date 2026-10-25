@@ -8,5 +8,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   outDir: 'dist',
-  deps: { neverBundle: [/^@ts-grm\//, 'pg', 'mysql2/promise', 'better-sqlite3', 'mssql', 'oracledb'] },
+  deps: {
+    neverBundle: [/^@ts-grm\//, 'pg', 'mysql2/promise', 'better-sqlite3', 'mssql', 'oracledb'],
+  },
 });

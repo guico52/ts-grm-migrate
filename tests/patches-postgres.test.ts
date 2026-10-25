@@ -9,26 +9,27 @@
  * 补上 `::character varying` 之类的 cast），只有真实 introspect 才能证明
  * 「模型声明 → DDL → 读回」三者对齐。无 PG_HOST 时整体跳过。
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { lookup } from 'node:dns/promises';
 import { Pool, type PoolClient } from 'pg';
 import { applyPatches } from 'ts-grm-patches';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { SqlQueryable } from '../src';
+import { PostgresDdlGenerator } from '../src/ddl/postgres';
+import { SchemaDiffer } from '../src/differ';
+import { PostgresIntrospector } from '../src/introspector/postgres';
+import { tableDefsToSchema } from '../src/schema/adapter';
+import type { Schema } from '../src/schema/model';
+import type { SqlClientImplementor } from '../src/vendor/ts-grm';
 import {
-  EntityManager,
   createSchema,
   dsl,
+  EntityManager,
   model,
   newSqlClient,
   PostgresDriver,
   prop,
 } from '../src/vendor/ts-grm';
-import { tableDefsToSchema } from '../src/schema/adapter';
-import { SchemaDiffer } from '../src/differ';
-import { PostgresDdlGenerator } from '../src/ddl/postgres';
-import { PostgresIntrospector } from '../src/introspector/postgres';
-import type { SqlQueryable } from '../src';
-import type { SqlClientImplementor } from '../src/vendor/ts-grm';
-import type { Schema } from '../src/schema/model';
 
 const PG_HOST = process.env.PG_HOST;
 const PG_CONFIG = {
@@ -139,28 +140,45 @@ describePg('列级补丁（真实 PostgreSQL）', () => {
   }, 60_000);
 
   it('textual digits and large integer default changes converge without loss', async () => {
-    await inFreshSchema(async client => {
+    await inFreshSchema(async (client) => {
       const generator = new PostgresDdlGenerator();
       const target = await targetSchema();
       for (const statement of generator.createStatements(target)) await client.query(statement);
       const introspector = new PostgresIntrospector({ query: client, schema: TEST_SCHEMA });
-      const differ = new SchemaDiffer("postgres");
+      const differ = new SchemaDiffer('postgres');
       for (const literal of ["'01'", "'1'"]) {
         const from = await introspector.introspect();
-        const to: Schema = { tables: target.tables.map(t => ({ ...t, columns: t.columns.map(c => c.name === 'status' ? { ...c, default: literal } : c) })) };
+        const to: Schema = {
+          tables: target.tables.map((t) => ({
+            ...t,
+            columns: t.columns.map((c) => (c.name === 'status' ? { ...c, default: literal } : c)),
+          })),
+        };
         const statements = generator.statements(differ.diff(from, to), { from, to });
-        expect(statements.some(s => s.includes(`set default ${literal}`))).toBe(true);
+        expect(statements.some((s) => s.includes(`set default ${literal}`))).toBe(true);
         for (const statement of statements) await client.query(statement);
         expect(differ.diff(await introspector.introspect(), to).changes).toEqual([]);
       }
-      await client.query('create table exact_default (value bigint not null default 9007199254740992)');
+      await client.query(
+        'create table exact_default (value bigint not null default 9007199254740992)',
+      );
       const from = await introspector.introspect();
-      const to: Schema = { tables: from.tables.map(t => t.name === 'exact_default' ? { ...t, columns: t.columns.map(c => ({ ...c, default: '9007199254740993' })) } : t) };
+      const to: Schema = {
+        tables: from.tables.map((t) =>
+          t.name === 'exact_default'
+            ? { ...t, columns: t.columns.map((c) => ({ ...c, default: '9007199254740993' })) }
+            : t,
+        ),
+      };
       const statements = generator.statements(differ.diff(from, to), { from, to });
-      expect(statements).toContain('alter table "exact_default" alter column "value" set default 9007199254740993');
+      expect(statements).toContain(
+        'alter table "exact_default" alter column "value" set default 9007199254740993',
+      );
       for (const statement of statements) await client.query(statement);
       await client.query('insert into exact_default default values');
-      expect((await client.query('select value::text from exact_default')).rows).toEqual([{ value: '9007199254740993' }]);
+      expect((await client.query('select value::text from exact_default')).rows).toEqual([
+        { value: '9007199254740993' },
+      ]);
       expect(differ.diff(await introspector.introspect(), to).changes).toEqual([]);
     });
   });

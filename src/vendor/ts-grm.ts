@@ -1,4 +1,4 @@
-import { diagnostic } from "../diagnostics/error.js";
+import type { CascadeType, ScalarType, SqlClient, spi } from '@ts-grm/core';
 /**
  * ts-grm 依赖的唯一入口（适配层）。
  * TableDef、ColumnDef 与约束类型声明改写自 ts-grm 的 schema_def.ts：
@@ -26,27 +26,27 @@ import { diagnostic } from "../diagnostics/error.js";
  * - `TableDef` / `ColumnDef` / `ConstraintDef` 上游未导出，此处按 dist 类型声明
  *   镜像（结构等价；子类型一律引用 core 的公开类型，不引入 any）。
  */
-import { MySqlDriver as UpstreamMySqlDriver } from "@ts-grm/sql";
-import type { CascadeType, ScalarType, SqlClient, spi } from "@ts-grm/core";
+import { MySqlDriver as UpstreamMySqlDriver } from '@ts-grm/sql';
+import { diagnostic } from '../diagnostics/error.js';
 
 // ---- 上游公开 API 的再导出（值）--------------------------------------------
 
+export type { CascadeType, SqlClient } from '@ts-grm/core';
+export { dsl, EntityManager, model, prop, ScalarType } from '@ts-grm/core';
+export type { SqlClientOptions } from '@ts-grm/sql';
 export {
   newSqlClient,
-  PostgresDriver,
-  SqliteDriver,
-  OracleDriver,
   // 上游拼写就是 Drivier（不是笔误），此处沿用
   Oracle12Drivier,
-  SqlServerDriver,
-  SqlServer2012Driver,
+  OracleDriver,
   // 驱动配套的连接池（Oracle / SQL Server 不走 pg 的连接池）
   OraclePool,
+  PostgresDriver,
+  SqliteDriver,
+  SqlServer2012Driver,
+  SqlServerDriver,
   SqlServerPool,
-} from "@ts-grm/sql";
-export { ScalarType, EntityManager, model, prop, dsl } from "@ts-grm/core";
-export type { SqlClientOptions } from "@ts-grm/sql";
-export type { CascadeType, SqlClient } from "@ts-grm/core";
+} from '@ts-grm/sql';
 
 // ---- 目标态结构类型（上游未导出，按 dist 声明镜像）--------------------------
 
@@ -76,7 +76,7 @@ export interface ColumnDef {
   readonly declaringTable: TableDef;
   readonly prop: spi.EntityProp | undefined;
   readonly name: string;
-  readonly type: ScalarType<any>;
+  readonly type: ScalarType<unknown>;
   readonly nullable: boolean;
   readonly length: number | undefined;
   readonly precision: number | undefined;
@@ -85,34 +85,32 @@ export interface ColumnDef {
 }
 
 /** 上游 ConstraintDef 的结构镜像（判别联合，保序：PRIMARY_KEY/INDEX → UNIQUE → CHECK → FOREIGN_KEY） */
-export type ConstraintDef =
-  | SimpleConstraintDef
-  | ForeignKeyConstraintDef;
+export type ConstraintDef = SimpleConstraintDef | ForeignKeyConstraintDef;
 
 export type SimpleConstraintDef =
   | {
-      readonly kind: "PRIMARY_KEY" | "INDEX";
+      readonly kind: 'PRIMARY_KEY' | 'INDEX';
       readonly columns: ReadonlyArray<ColumnDef>;
-      readonly implicit: "MIDDLE_TABLE" | undefined;
+      readonly implicit: 'MIDDLE_TABLE' | undefined;
     }
   | {
-      readonly kind: "UNIQUE";
+      readonly kind: 'UNIQUE';
       readonly columns: ReadonlyArray<ColumnDef>;
-      readonly implicit: "ASSOCIATION" | "MIDDLE_ENTITY" | undefined;
+      readonly implicit: 'ASSOCIATION' | 'MIDDLE_ENTITY' | undefined;
     }
   | {
-      readonly kind: "CHECK";
+      readonly kind: 'CHECK';
       readonly column: ColumnDef;
       readonly values: ReadonlyArray<string | number>;
-      readonly implicit: "POLYMORPHISM" | undefined;
+      readonly implicit: 'POLYMORPHISM' | undefined;
     };
 
 export type ForeignKeyConstraintDef = {
-  readonly kind: "FOREIGN_KEY";
+  readonly kind: 'FOREIGN_KEY';
   readonly columns: ReadonlyArray<ColumnDef>;
   readonly referencedColumns: ReadonlyArray<ColumnDef>;
   readonly cascade: CascadeType;
-  readonly implicit: "INHERITANCE" | undefined;
+  readonly implicit: 'INHERITANCE' | undefined;
 };
 
 /**
@@ -134,15 +132,12 @@ export interface SqlClientImplementor extends SqlClient {
  *
  * 读不到时抛可读错误（外部输入路径不 fail-fast 的原则，见 schema/model.ts）。
  */
-export async function createSchema(
-  client: SqlClient,
-): Promise<ReadonlyArray<TableDef>> {
+export async function createSchema(client: SqlClient): Promise<ReadonlyArray<TableDef>> {
   const schema = await client.createSchema();
-  const tableDefs = (
-    schema as unknown as { readonly tableDefs?: ReadonlyArray<TableDef> }
-  ).tableDefs;
+  const tableDefs = (schema as unknown as { readonly tableDefs?: ReadonlyArray<TableDef> })
+    .tableDefs;
   if (tableDefs == null) {
-    throw diagnostic("vendor_ts_grm_1");
+    throw diagnostic('vendor_ts_grm_1');
   }
   return tableDefs;
 }
@@ -151,7 +146,7 @@ export async function createSchema(
  * @see https://github.com/babyfish-ct/ts-grm/blob/main/packages/sql/src/driver/mysql_driver.ts
  */
 export class MySqlDriver extends UpstreamMySqlDriver {
-  override typeName(column: Parameters<UpstreamMySqlDriver["typeName"]>[0]): string {
-    return column.type.kind === "F32" ? "float" : super.typeName(column);
+  override typeName(column: Parameters<UpstreamMySqlDriver['typeName']>[0]): string {
+    return column.type.kind === 'F32' ? 'float' : super.typeName(column);
   }
 }

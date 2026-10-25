@@ -1,4 +1,6 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { Dialect, Introspector, SqlQueryable } from '../introspector.js';
+import type { Column, Constraint, Index, OnDelete, Schema } from '../schema/model.js';
 /**
  * Postgres Introspector —— 从 pg_catalog 读取数据库现状，产出 migrate 的 `Schema`。
  *
@@ -28,15 +30,7 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  * CHECK comparison normalizes supported literal membership forms conservatively.
  * Unsupported generated/partitioned structures and constraint semantics are rejected.
  */
-import type { CascadeType } from "../vendor/ts-grm.js";
-import type { Dialect, Introspector, SqlQueryable } from "../introspector.js";
-import type {
-  Column,
-  Constraint,
-  Index,
-  OnDelete,
-  Schema,
-} from "../schema/model.js";
+import type { CascadeType } from '../vendor/ts-grm.js';
 
 export interface PostgresIntrospectorOptions {
   /** 数据库查询能力（通常传 pg 的 Pool / Client） */
@@ -46,12 +40,12 @@ export interface PostgresIntrospectorOptions {
 }
 
 export class PostgresIntrospector implements Introspector {
-  readonly dialect: Dialect = "postgres";
+  readonly dialect: Dialect = 'postgres';
 
   constructor(private readonly _options: PostgresIntrospectorOptions) {}
 
   async introspect(): Promise<Schema> {
-    const schemaName = this._options.schema ?? "public";
+    const schemaName = this._options.schema ?? 'public';
     const { query } = this._options;
     try {
       // 串行执行：调用方可能传单个连接（pg 的 Client），并发查同一连接是未定义行为
@@ -62,37 +56,43 @@ export class PostgresIntrospector implements Introspector {
       const constraints = await query.query(CONSTRAINTS_SQL, [schemaName]);
       const indexes = await query.query(INDEXES_SQL, [schemaName]);
       for (const row of tables.rows) {
-        if (row["kind"] === "p" || row["inherited"] === true) {
-          throw diagnostic("unsupported_structure", row["name"], diagnostic("structure_table"));
+        if (row['kind'] === 'p' || row['inherited'] === true) {
+          throw diagnostic('unsupported_structure', row['name'], diagnostic('structure_table'));
         }
       }
       for (const row of columns.rows) {
-        if (row["generated"] || row["custom_collation"] === true) {
-          throw diagnostic("unsupported_structure", `${row["table_name"]}.${row["name"]}`, diagnostic("structure_column"));
+        if (row['generated'] || row['custom_collation'] === true) {
+          throw diagnostic(
+            'unsupported_structure',
+            `${row['table_name']}.${row['name']}`,
+            diagnostic('structure_column'),
+          );
         }
       }
       for (const row of constraints.rows) {
-        const unsupportedForeignKey = row["kind"] === "f" && (
-          (row["referenced_schema"] && row["referenced_schema"] !== schemaName) ||
-          (row["update_action"] && row["update_action"] !== "a") ||
-          row["initially_deferred"] === true
-        );
-        const unsupported = row["kind"] === "x" || row["validated"] === false ||
-          (row["kind"] === "c" && row["no_inherit"] === true) ||
-          row["nulls_not_distinct"] === true || unsupportedForeignKey ||
-          (row["kind"] !== "f" && row["deferrable"] === true);
+        const unsupportedForeignKey =
+          row['kind'] === 'f' &&
+          ((row['referenced_schema'] && row['referenced_schema'] !== schemaName) ||
+            (row['update_action'] && row['update_action'] !== 'a') ||
+            row['initially_deferred'] === true);
+        const unsupported =
+          row['kind'] === 'x' ||
+          row['validated'] === false ||
+          (row['kind'] === 'c' && row['no_inherit'] === true) ||
+          row['nulls_not_distinct'] === true ||
+          unsupportedForeignKey ||
+          (row['kind'] !== 'f' && row['deferrable'] === true);
         if (unsupported) {
-          throw diagnostic("unsupported_structure", `${row["table_name"]}.${row["name"]}`, diagnostic("structure_constraint"));
+          throw diagnostic(
+            'unsupported_structure',
+            `${row['table_name']}.${row['name']}`,
+            diagnostic('structure_constraint'),
+          );
         }
       }
-      return assemble(
-        tables.rows,
-        columns.rows,
-        constraints.rows,
-        indexes.rows,
-      );
+      return assemble(tables.rows, columns.rows, constraints.rows, indexes.rows);
     } catch (e) {
-      throw diagnostic("introspector_postgres_1", schemaName, asError(e));
+      throw diagnostic('introspector_postgres_1', schemaName, asError(e));
     }
   }
 }
@@ -218,7 +218,7 @@ function assemble(
 ): Schema {
   const columnsByTable = new Map<string, Array<Column>>();
   for (const row of columnRows) {
-    const table = asString(row["table_name"]);
+    const table = asString(row['table_name']);
     const list = columnsByTable.get(table) ?? [];
     list.push(toColumn(row));
     columnsByTable.set(table, list);
@@ -230,7 +230,7 @@ function assemble(
     if (constraint == null) {
       continue;
     }
-    const table = asString(row["table_name"]);
+    const table = asString(row['table_name']);
     const list = constraintsByTable.get(table) ?? [];
     list.push(constraint);
     constraintsByTable.set(table, list);
@@ -238,7 +238,7 @@ function assemble(
 
   const indexesByTable = new Map<string, Array<Index>>();
   for (const row of indexRows) {
-    const table = asString(row["table_name"]);
+    const table = asString(row['table_name']);
     const list = indexesByTable.get(table) ?? [];
     list.push(toIndex(row));
     indexesByTable.set(table, list);
@@ -246,7 +246,7 @@ function assemble(
 
   return {
     tables: tableRows.map((row) => {
-      const name = asString(row["name"]);
+      const name = asString(row['name']);
       return {
         name,
         columns: columnsByTable.get(name) ?? [],
@@ -258,55 +258,53 @@ function assemble(
 }
 
 function toColumn(row: Row): Column {
-  const defaultExpr = row["default_expr"] == null ? undefined : asString(row["default_expr"]);
-  const identity = asString(row["identity"]);
+  const defaultExpr = row['default_expr'] == null ? undefined : asString(row['default_expr']);
+  const identity = asString(row['identity']);
   return {
-    name: asString(row["name"]),
-    type: normalizeType(asString(row["type"])),
-    nullable: row["nullable"] === true,
+    name: asString(row['name']),
+    type: normalizeType(asString(row['type'])),
+    nullable: row['nullable'] === true,
     // 长度/精度已编码在 type 字符串里（"varchar(50)" / "numeric(10, 2)"），不重复承载
     length: undefined,
     default: defaultExpr,
     // identity 列（generated ... as identity）或 serial（默认值 nextval）都算自增
     autoIncrement:
-      identity === "a" ||
-      identity === "d" ||
-      (defaultExpr?.startsWith("nextval(") ?? false),
-    ordinal: Number(row["ordinal"]),
-    comment: row["comment"] == null ? undefined : asString(row["comment"]),
+      identity === 'a' || identity === 'd' || (defaultExpr?.startsWith('nextval(') ?? false),
+    ordinal: Number(row['ordinal']),
+    comment: row['comment'] == null ? undefined : asString(row['comment']),
   };
 }
 
 function toConstraint(row: Row): Constraint | null {
-  const name = asString(row["name"]);
-  const columns = asStringArray(row["columns"]);
-  switch (asString(row["kind"])) {
-    case "p":
-      return { kind: "PRIMARY_KEY", name, columns, implicit: undefined };
-    case "u":
-      return { kind: "UNIQUE", name, columns, implicit: undefined };
-    case "f": {
-      const onDelete = toOnDelete(asString(row["delete_action"]));
+  const name = asString(row['name']);
+  const columns = asStringArray(row['columns']);
+  switch (asString(row['kind'])) {
+    case 'p':
+      return { kind: 'PRIMARY_KEY', name, columns, implicit: undefined };
+    case 'u':
+      return { kind: 'UNIQUE', name, columns, implicit: undefined };
+    case 'f': {
+      const onDelete = toOnDelete(asString(row['delete_action']));
       return {
-        kind: "FOREIGN_KEY",
+        kind: 'FOREIGN_KEY',
         name,
         columns,
-        referencedTable: asString(row["referenced_table"]),
-        referencedColumns: asStringArray(row["referenced_columns"]),
+        referencedTable: asString(row['referenced_table']),
+        referencedColumns: asStringArray(row['referenced_columns']),
         onDelete,
-        deferrable: row["deferrable"] === true,
+        deferrable: row['deferrable'] === true,
         // ORM 侧级联语义在数据库里不可见，由 ON DELETE 反推（diff 只比较 onDelete）
         cascade: toCascade(onDelete),
         implicit: undefined,
       };
     }
-    case "c":
+    case 'c':
       return {
-        kind: "CHECK",
+        kind: 'CHECK',
         name,
         // PG 的 CHECK 是任意表达式，不是「列 in 值集」；values 无对应来源
         values: [],
-        expression: checkExpression(asString(row["definition"])),
+        expression: checkExpression(asString(row['definition'])),
         implicit: undefined,
       };
     default:
@@ -317,11 +315,11 @@ function toConstraint(row: Row): Constraint | null {
 
 function toIndex(row: Row): Index {
   return {
-    name: asString(row["name"]),
-    ...(row["unsupported"] === true ? { unsupported: "POSTGRES_SPECIAL_INDEX" } : {}),
-    columns: asStringArray(row["columns"]),
-    unique: row["is_unique"] === true,
-    predicate: row["predicate"] == null ? undefined : asString(row["predicate"]),
+    name: asString(row['name']),
+    ...(row['unsupported'] === true ? { unsupported: 'POSTGRES_SPECIAL_INDEX' } : {}),
+    columns: asStringArray(row['columns']),
+    unique: row['is_unique'] === true,
+    predicate: row['predicate'] == null ? undefined : asString(row['predicate']),
   };
 }
 
@@ -332,8 +330,8 @@ function toIndex(row: Row): Index {
  * 只做「等价写法」归一化，不改变语义 —— 见文件头注释第 1 点。
  */
 export function normalizeType(raw: string): string {
-  if (raw === "timestamp with time zone") {
-    return "timestamptz";
+  if (raw === 'timestamp with time zone') {
+    return 'timestamptz';
   }
   const numeric = /^numeric\((\d+),(\d+)\)$/.exec(raw);
   if (numeric != null) {
@@ -344,12 +342,12 @@ export function normalizeType(raw: string): string {
 
 /** `${'CHECK ((expr))'}` → `expr`（剥掉前缀与最外层括号） */
 function checkExpression(definition: string): string {
-  const prefix = "CHECK ";
+  const prefix = 'CHECK ';
   if (!definition.startsWith(prefix)) {
     return definition;
   }
   const body = definition.slice(prefix.length).trim();
-  if (body.startsWith("(") && body.endsWith(")")) {
+  if (body.startsWith('(') && body.endsWith(')')) {
     return body.slice(1, -1);
   }
   return body;
@@ -358,33 +356,33 @@ function checkExpression(definition: string): string {
 /** pg 的 confdeltype → migrate 的 OnDelete */
 function toOnDelete(code: string): OnDelete {
   switch (code) {
-    case "c":
-      return "CASCADE";
-    case "n":
-      return "SET_NULL";
-    case "d":
-      return "SET_DEFAULT";
-    case "r":
-      return "RESTRICT";
+    case 'c':
+      return 'CASCADE';
+    case 'n':
+      return 'SET_NULL';
+    case 'd':
+      return 'SET_DEFAULT';
+    case 'r':
+      return 'RESTRICT';
     default:
-      return "NO_ACTION";
+      return 'NO_ACTION';
   }
 }
 
 /** migrate 的 OnDelete → ts-grm 的 ORM 级联语义（introspection 只能反推） */
 function toCascade(onDelete: OnDelete): CascadeType {
   switch (onDelete) {
-    case "CASCADE":
-      return "DELETE";
-    case "SET_NULL":
-      return "SET_NULL";
+    case 'CASCADE':
+      return 'DELETE';
+    case 'SET_NULL':
+      return 'SET_NULL';
     default:
-      return "NONE";
+      return 'NONE';
   }
 }
 
 function asString(value: unknown): string {
-  return typeof value === "string" ? value : String(value ?? "");
+  return typeof value === 'string' ? value : String(value ?? '');
 }
 
 function asStringArray(value: unknown): Array<string> {
@@ -394,7 +392,7 @@ function asStringArray(value: unknown): Array<string> {
   // 实测：pg 只对已注册解析器的数组类型（如 text[]）返回 JS 数组；
   // array_agg(attname) 的类型是 name[]，会被原样返回成 "{a,b}" 字符串。
   // SQL 里已用 ::text 规避，这里再兜一层（introspection 是外部输入路径）。
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     return parsePgArrayLiteral(value);
   }
   return [];
@@ -403,17 +401,15 @@ function asStringArray(value: unknown): Array<string> {
 /** 解析 PG 数组字面量（`{a,b}` / `{"a b",c}`）；空数组 `{}` → [] */
 function parsePgArrayLiteral(raw: string): Array<string> {
   const trimmed = raw.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
     return [];
   }
   const body = trimmed.slice(1, -1);
-  if (body === "") {
+  if (body === '') {
     return [];
   }
-  return body.split(",").map((item) => {
+  return body.split(',').map((item) => {
     const s = item.trim();
-    return s.startsWith('"') && s.endsWith('"')
-      ? s.slice(1, -1).replaceAll('""', '"')
-      : s;
+    return s.startsWith('"') && s.endsWith('"') ? s.slice(1, -1).replaceAll('""', '"') : s;
   });
 }

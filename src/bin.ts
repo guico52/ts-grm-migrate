@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-import { parseArgs, run } from "./cli.js";
-import { messages, type CliLanguage } from "./cli/messages.js";
-import { MigrationAbortedError } from "./migrator.js";
-import { formatError } from "./diagnostics/error.js";
+import { type CliLanguage, messages } from './cli/messages.js';
+import { parseArgs, run } from './cli.js';
+import { formatError } from './diagnostics/error.js';
+import { MigrationAbortedError } from './migrator.js';
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  let language: CliLanguage = parseArgs(argv).flags.get("lang") === "zh-CN" ? "zh-CN" : "en";
+  let language: CliLanguage = parseArgs(argv).flags.get('lang') === 'zh-CN' ? 'zh-CN' : 'en';
   try {
-    process.exitCode = await run(argv, process.cwd(), { onLanguage: (selected) => { language = selected; } });
+    process.exitCode = await run(argv, process.cwd(), {
+      onLanguage: (selected) => {
+        language = selected;
+      },
+    });
   } catch (e) {
     const m = messages(language);
     if (e instanceof MigrationAbortedError) {
@@ -16,7 +20,7 @@ async function main(): Promise<void> {
       process.exitCode = 0;
       return;
     }
-    console.error(`${m.error}: ${formatError(e, language, parseArgs(argv).flags.has("detail"))}`);
+    console.error(`${m.error}: ${formatError(e, language, parseArgs(argv).flags.has('detail'))}`);
     process.exitCode = 1;
   }
 }

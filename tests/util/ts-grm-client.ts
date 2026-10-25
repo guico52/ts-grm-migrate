@@ -17,24 +17,24 @@
  * node CJS require 与 ESM import 会得到两份 EntityManager/model/prop
  * （实测 ESM !== CJS），混用会导致 entityManager.entities 丢失、instanceof 错乱。
  */
-import Database from "better-sqlite3";
-import { afterAll } from "vitest";
-import { Pool } from "pg";
+import Database from 'better-sqlite3';
+import { Pool } from 'pg';
+import { afterAll } from 'vitest';
 import {
   EntityManager,
   newSqlClient,
   PostgresDriver,
-  SqliteDriver,
   type SqlClientImplementor,
-} from "../../src/vendor/ts-grm";
-import { AUTHOR, BOOK, TAG } from "../model/model";
+  SqliteDriver,
+} from '../../src/vendor/ts-grm';
+import { AUTHOR, BOOK, TAG } from '../model/model';
 
 /**
  * 创建配置好的 sqlite 内存 sqlClient（含 entityManager）。
  * 返回类型即 createSchema 的参数类型。
  */
 export function createTestSqlClient(): SqlClientImplementor {
-  const database = new Database(":memory:");
+  const database = new Database(':memory:');
   const client = newSqlClient(new SqliteDriver(database), {
     // combine 的 AtLeastTwo 恰好接受两个 part，三个实体用嵌套组合
     entityManager: EntityManager.combine(EntityManager.combine(AUTHOR, BOOK), TAG),

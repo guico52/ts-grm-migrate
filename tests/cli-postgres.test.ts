@@ -6,31 +6,32 @@
  *
  * 运行：`PG_HOST=... PG_PASSWORD=... yarn vitest run tests/cli-postgres.test.ts`
  */
-import { describe, it, expect, afterAll, afterEach, beforeEach, beforeAll } from "vitest";
-import { lookup } from "node:dns/promises";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { Pool } from "pg";
-import { run } from "../src/cli";
+
+import { lookup } from 'node:dns/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Pool } from 'pg';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { run } from '../src/cli';
 
 const PG_HOST = process.env.PG_HOST;
 const PG_CONFIG = {
-  host: PG_HOST ?? "",
+  host: PG_HOST ?? '',
   port: Number(process.env.PG_PORT ?? 5432),
-  database: process.env.PG_DATABASE ?? "ts_grm_migrate_test",
-  user: process.env.PG_USER ?? "postgres",
-  password: process.env.PG_PASSWORD ?? "",
+  database: process.env.PG_DATABASE ?? 'ts_grm_migrate_test',
+  user: process.env.PG_USER ?? 'postgres',
+  password: process.env.PG_PASSWORD ?? '',
 };
 
 /** 模型相对 CWD 解析，因此 CWD 固定为仓库根 */
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
 // 注：这些用例会建/删 schema，需连真实数据库；无 PG_HOST 时整体跳过。
-describePg("CLI 端到端（真实数据库）", () => {
+describePg('CLI 端到端（真实数据库）', () => {
   let pool: Pool;
   let dir: string;
   let configPath: string;
@@ -56,7 +57,7 @@ describePg("CLI 端到端（真实数据库）", () => {
     // 与 migrate 逻辑无关）。解析一次既保留域名的配置方式，
     // 又不让 DNS 抖动污染测试结论。
     try {
-      const { address } = await lookup(PG_HOST ?? "");
+      const { address } = await lookup(PG_HOST ?? '');
       PG_CONFIG.host = address;
     } catch {
       // 解析失败就保留域名，让连接错误自然暴露
@@ -71,30 +72,31 @@ describePg("CLI 端到端（真实数据库）", () => {
   beforeEach(async () => {
     logs.length = 0;
     errors.length = 0;
-    dir = await mkdtemp(path.join(tmpdir(), "tsgrm-cli-e2e-"));
-    schemaName = `cli_e2e_${path.basename(dir).replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
-    configPath = path.join(dir, "ts-grm-migrate.config.ts");
+    dir = await mkdtemp(path.join(tmpdir(), 'tsgrm-cli-e2e-'));
+    schemaName = `cli_e2e_${path
+      .basename(dir)
+      .replace(/[^a-z0-9]/gi, '')
+      .toLowerCase()}`;
+    configPath = path.join(dir, 'ts-grm-migrate.config.ts');
     await writeFile(
       configPath,
       `export default ${JSON.stringify(
         {
           database: PG_CONFIG,
-          models: ["./tests/model/model.ts"],
-          migrationsDir: path.join(dir, "migrations"),
+          models: ['./tests/model/model.ts'],
+          migrationsDir: path.join(dir, 'migrations'),
           schema: schemaName,
-          lockPath: path.join(dir, "migrate.lock"),
+          lockPath: path.join(dir, 'migrate.lock'),
         },
         null,
         2,
       )};\n`,
-      "utf8",
+      'utf8',
     );
   });
 
   afterEach(async () => {
-    await pool
-      .query(`drop schema if exists "${schemaName}" cascade`)
-      .catch(() => undefined);
+    await pool.query(`drop schema if exists "${schemaName}" cascade`).catch(() => undefined);
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -104,195 +106,191 @@ describePg("CLI 端到端（真实数据库）", () => {
        where table_schema = $1 and table_name <> '_migrations' order by table_name`,
       [schemaName],
     );
-    return rows.map((r) => String(r["table_name"]));
+    return rows.map((r) => String(r['table_name']));
   }
 
-  it("dev：生成并应用迁移，表真的建出来", async () => {
-    const code = await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('dev：生成并应用迁移，表真的建出来', async () => {
+    const code = await runCli(['dev', '--name', 'init', '--config', configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toMatch(/Generated and applied migration \d{17}_init/);
-    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
+    expect(logs.join('\n')).toMatch(/Generated and applied migration \d{17}_init/);
+    expect(await tables()).toEqual(['author', 'book', 'book_tag_mapping', 'tag']);
   });
 
-  it("check does not initialize a missing target schema or history", async () => {
-    expect(await runCli(["check", "--config", configPath])).toBe(1);
-    expect(errors.join("\n")).toContain("Table is missing");
-    expect((await pool.query('select nspname from pg_namespace where nspname=$1', [schemaName])).rows).toEqual([]);
+  it('check does not initialize a missing target schema or history', async () => {
+    expect(await runCli(['check', '--config', configPath])).toBe(1);
+    expect(errors.join('\n')).toContain('Table is missing');
+    expect(
+      (await pool.query('select nspname from pg_namespace where nspname=$1', [schemaName])).rows,
+    ).toEqual([]);
     expect(await tables()).toEqual([]);
   });
 
-  it("dev：省略名字时迁移只用时间戳命名", async () => {
-    const code = await runCli(["dev", "--config", configPath]);
+  it('dev：省略名字时迁移只用时间戳命名', async () => {
+    const code = await runCli(['dev', '--config', configPath]);
 
     expect(code).toBe(0);
     // 迁移 id 是纯 14 位时间戳，不带下划线后缀
-    expect(logs.join("\n")).toMatch(/Generated and applied migration \d{17}\b/);
-    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
+    expect(logs.join('\n')).toMatch(/Generated and applied migration \d{17}\b/);
+    expect(await tables()).toEqual(['author', 'book', 'book_tag_mapping', 'tag']);
   });
 
-  it("status：无迁移 / 已应用 / 待应用都能正确汇报", async () => {
-    await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("No migrations found");
+  it('status：无迁移 / 已应用 / 待应用都能正确汇报', async () => {
+    await runCli(['status', '--config', configPath]);
+    expect(logs.join('\n')).toContain('No migrations found');
 
     logs.length = 0;
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
     logs.length = 0;
-    await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("Applied:");
-    expect(logs.join("\n")).toContain("No pending migrations");
+    await runCli(['status', '--config', configPath]);
+    expect(logs.join('\n')).toContain('Applied:');
+    expect(logs.join('\n')).toContain('No pending migrations');
   });
 
-  it("dev：模型未变时第二次运行不产生新迁移", async () => {
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('dev：模型未变时第二次运行不产生新迁移', async () => {
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
     logs.length = 0;
 
-    const code = await runCli(["dev", "--name", "again", "--config", configPath]);
+    const code = await runCli(['dev', '--name', 'again', '--config', configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toContain("no migration needed");
+    expect(logs.join('\n')).toContain('no migration needed');
   });
 
-  it("deploy：幂等，重复运行不重复应用", async () => {
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('deploy：幂等，重复运行不重复应用', async () => {
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
     logs.length = 0;
 
-    const code = await runCli(["deploy", "--config", configPath]);
+    const code = await runCli(['deploy', '--config', configPath]);
 
     expect(code).toBe(0);
-    expect(logs.join("\n")).toContain("No pending migrations");
-    expect(await tables()).toEqual(["author", "book", "book_tag_mapping", "tag"]);
+    expect(logs.join('\n')).toContain('No pending migrations');
+    expect(await tables()).toEqual(['author', 'book', 'book_tag_mapping', 'tag']);
   });
 
-  it("push：破坏性变更被拒绝（非 --force）；--force 后执行", async () => {
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('push：破坏性变更被拒绝（非 --force）；--force 后执行', async () => {
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
     await pool.query(`create table "${schemaName}".temp_extra (x int)`);
 
     logs.length = 0;
     errors.length = 0;
-    const refused = await runCli(["push", "--config", configPath]);
+    const refused = await runCli(['push', '--config', configPath]);
 
     expect(refused).toBe(1); // Cancellation did not complete synchronization
-    expect(errors.join("\n")).toContain("Drop table temp_extra");
-    expect(await tables()).toContain("temp_extra"); // 未被执行
+    expect(errors.join('\n')).toContain('Drop table temp_extra');
+    expect(await tables()).toContain('temp_extra'); // 未被执行
 
     logs.length = 0;
-    const forced = await runCli(["push", "--force", "--config", configPath]);
+    const forced = await runCli(['push', '--force', '--config', configPath]);
 
     expect(forced).toBe(0);
-    expect(await tables()).not.toContain("temp_extra");
+    expect(await tables()).not.toContain('temp_extra');
   });
 
-  it("resolve --applied：标记为已应用后不再待应用", async () => {
-    const migrationsDir = path.join(dir, "migrations");
+  it('resolve --applied：标记为已应用后不再待应用', async () => {
+    const migrationsDir = path.join(dir, 'migrations');
     await mkdir(migrationsDir, { recursive: true });
-    const id = "20260911T120000_manual";
+    const id = '20260911T120000_manual';
     await writeFile(
       path.join(migrationsDir, `${id}.sql`),
       'create table "MANUAL" (x int);\n',
-      "utf8",
+      'utf8',
     );
 
     logs.length = 0;
-    await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain(id);
+    await runCli(['status', '--config', configPath]);
+    expect(logs.join('\n')).toContain(id);
 
-    const code = await runCli(["resolve", "--applied", id, "--config", configPath]);
+    const code = await runCli(['resolve', '--applied', id, '--config', configPath]);
     expect(code).toBe(0);
 
     logs.length = 0;
-    await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("Applied:");
-    expect(logs.join("\n")).not.toContain("Pending:");
+    await runCli(['status', '--config', configPath]);
+    expect(logs.join('\n')).toContain('Applied:');
+    expect(logs.join('\n')).not.toContain('Pending:');
 
     logs.length = 0;
-    const deployed = await runCli(["deploy", "--config", configPath]);
+    const deployed = await runCli(['deploy', '--config', configPath]);
     expect(deployed).toBe(0);
-    expect(logs.join("\n")).toContain("No pending migrations");
+    expect(logs.join('\n')).toContain('No pending migrations');
   });
 
-  it("resolve --rolled-back：失败迁移阻塞 deploy，清除后恢复", async () => {
+  it('resolve --rolled-back：失败迁移阻塞 deploy，清除后恢复', async () => {
     // 放一个执行时会失败的迁移（第二条语句建重复表，事务整体回滚）
-    const migrationsDir = path.join(dir, "migrations");
+    const migrationsDir = path.join(dir, 'migrations');
     await mkdir(migrationsDir, { recursive: true });
-    const badId = "20260911T120000_bad";
+    const badId = '20260911T120000_bad';
     const badFile = path.join(migrationsDir, `${badId}.sql`);
     await writeFile(
       badFile,
       'create table "TMP_A" (x int);\n\ncreate table "TMP_A" (y int);\n',
-      "utf8",
+      'utf8',
     );
 
     // 1) 首次 deploy 失败并记入历史
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/failed/);
+    await expect(runCli(['deploy', '--config', configPath])).rejects.toThrow(/failed/);
 
     logs.length = 0;
-    await runCli(["status", "--config", configPath]);
-    expect(logs.join("\n")).toContain("[failed]");
+    await runCli(['status', '--config', configPath]);
+    expect(logs.join('\n')).toContain('[failed]');
 
     // 2) 再 deploy：被失败记录拦下（而不是重复执行）
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/attempts failed/);
+    await expect(runCli(['deploy', '--config', configPath])).rejects.toThrow(/attempts failed/);
 
     // 3) resolve --rolled-back 清除失败记录
     logs.length = 0;
-    const resolved = await runCli([
-      "resolve",
-      "--rolled-back",
-      badId,
-      "--config",
-      configPath,
-    ]);
+    const resolved = await runCli(['resolve', '--rolled-back', badId, '--config', configPath]);
     expect(resolved).toBe(0);
-    expect(logs.join("\n")).toContain("rolled back");
+    expect(logs.join('\n')).toContain('rolled back');
 
     // 4) 修好迁移后 deploy 成功
-    await writeFile(badFile, 'create table "TMP_A" (x int);\n', "utf8");
+    await writeFile(badFile, 'create table "TMP_A" (x int);\n', 'utf8');
     logs.length = 0;
-    const deployed = await runCli(["deploy", "--config", configPath]);
+    const deployed = await runCli(['deploy', '--config', configPath]);
 
     expect(deployed).toBe(0);
-    expect(logs.join("\n")).toContain("Applied 1 migration");
-    expect(await tables()).toContain("TMP_A");
+    expect(logs.join('\n')).toContain('Applied 1 migration');
+    expect(await tables()).toContain('TMP_A');
   });
 
-  it("对账：迁移后数据库被手工改动，会告警并指出表与具体差异", async () => {
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('对账：迁移后数据库被手工改动，会告警并指出表与具体差异', async () => {
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
     // 模拟「有人直连数据库改了结构」
     await pool.query(`alter table "${schemaName}"."author" add column "LEGACY" int`);
 
     logs.length = 0;
     errors.length = 0;
-    const code = await runCli(["deploy", "--config", configPath]);
+    const code = await runCli(['deploy', '--config', configPath]);
 
     expect(code).toBe(0);
-    const reported = errors.join("\n");
-    expect(reported).toContain("differs from the model");
+    const reported = errors.join('\n');
+    expect(reported).toContain('differs from the model');
     expect(reported).toContain(`postgres/${PG_CONFIG.database}`);
-    expect(reported).toContain("Table author");
-    expect(reported).toContain("Extra column LEGACY");
+    expect(reported).toContain('Table author');
+    expect(reported).toContain('Extra column LEGACY');
   });
 
-  it("对账：结构正常时不产生噪声告警", async () => {
-    await runCli(["dev", "--name", "init", "--config", configPath]);
+  it('对账：结构正常时不产生噪声告警', async () => {
+    await runCli(['dev', '--name', 'init', '--config', configPath]);
 
     logs.length = 0;
     errors.length = 0;
-    await runCli(["deploy", "--config", configPath]);
+    await runCli(['deploy', '--config', configPath]);
 
-    expect(errors.join("\n")).not.toContain("differs from the model");
+    expect(errors.join('\n')).not.toContain('differs from the model');
   });
 
-  it("历史表：失败留 error 摘要 + logs 详情；回滚写 rolled_back_at 且保留记录", async () => {
-    const migrationsDir = path.join(dir, "migrations");
+  it('历史表：失败留 error 摘要 + logs 详情；回滚写 rolled_back_at 且保留记录', async () => {
+    const migrationsDir = path.join(dir, 'migrations');
     await mkdir(migrationsDir, { recursive: true });
-    const badId = "20260911T120000_bad";
+    const badId = '20260911T120000_bad';
     await writeFile(
       path.join(migrationsDir, `${badId}.sql`),
       'create table "TMP_C" (x int);\n\ncreate table "TMP_C" (y int);\n',
-      "utf8",
+      'utf8',
     );
 
-    await expect(runCli(["deploy", "--config", configPath])).rejects.toThrow(/failed/);
+    await expect(runCli(['deploy', '--config', configPath])).rejects.toThrow(/failed/);
 
     const history = `"${schemaName}"."_migrations"`;
     const failed = await pool.query(
@@ -300,12 +298,12 @@ describePg("CLI 端到端（真实数据库）", () => {
       [badId],
     );
     expect(failed.rows[0]!.failed).toBe(true);
-    expect(String(failed.rows[0]!.error)).toContain("already exists"); // 摘要
+    expect(String(failed.rows[0]!.error)).toContain('already exists'); // 摘要
     expect(String(failed.rows[0]!.logs)).toContain(badId); // 详情里有迁移名
-    expect(String(failed.rows[0]!.logs)).toContain("rolled back");
+    expect(String(failed.rows[0]!.logs)).toContain('rolled back');
     expect(failed.rows[0]!.rolled_back_at).toBeNull();
 
-    await runCli(["resolve", "--rolled-back", badId, "--config", configPath]);
+    await runCli(['resolve', '--rolled-back', badId, '--config', configPath]);
 
     const rolledBack = await pool.query(
       `select failed, rolled_back_at from ${history} where id = $1`,
@@ -316,15 +314,15 @@ describePg("CLI 端到端（真实数据库）", () => {
     expect(rolledBack.rows[0]!.failed).toBe(false);
   });
 
-  it("resolve：缺参数时报错并返回 1", async () => {
-    const code = await runCli(["resolve", "--config", configPath]);
+  it('resolve：缺参数时报错并返回 1', async () => {
+    const code = await runCli(['resolve', '--config', configPath]);
     expect(code).toBe(1);
-    expect(errors.join("\n")).toContain("--applied");
+    expect(errors.join('\n')).toContain('--applied');
   });
 
-  it("未知命令返回 1", async () => {
-    const code = await runCli(["frobnicate", "--config", configPath]);
+  it('未知命令返回 1', async () => {
+    const code = await runCli(['frobnicate', '--config', configPath]);
     expect(code).toBe(1);
-    expect(errors.join("\n")).toContain("Unknown command");
+    expect(errors.join('\n')).toContain('Unknown command');
   });
 });

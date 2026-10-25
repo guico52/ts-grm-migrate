@@ -1,4 +1,4 @@
-import { diagnostic, asError } from './diagnostics/error.js';
+import { asError, diagnostic } from './diagnostics/error.js';
 
 /** Add advice only when the upstream failure identifies an actionable cause. */
 export function modelLoadError(error: unknown): Error {

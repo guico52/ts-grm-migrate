@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { modelLoadError } from '../src/model-load-error.js';
 import { formatError } from '../src/diagnostics/error.js';
+import { modelLoadError } from '../src/model-load-error.js';
 
 describe('model loading diagnostics', () => {
   const namingError = new Error(

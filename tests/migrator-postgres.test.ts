@@ -9,36 +9,37 @@
  * 在独立 schema 中执行（不触碰 public）：给连接池设 `search_path`，这样迁移 SQL
  * 里不带 schema 前缀也能落对位置 —— 与真实用法一致（migrate 生成的 SQL 就是不带前缀的）。
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { Pool } from "pg";
-import { PostgresSqlExecutor } from "../src/executor/postgres";
-import type { PgPoolLike } from "../src/executor/postgres";
-import { PostgresIntrospector } from "../src/introspector/postgres";
-import { PostgresDdlGenerator } from "../src/ddl/postgres";
-import { Migrator } from "../src/migrator";
-import { DatabaseMigrationHistoryStore, FileMigrationStore } from "../src/store";
-import { createSchema } from "../src/vendor/ts-grm";
-import { tableDefsToSchema } from "../src/schema/adapter";
-import { createTestPostgresClient } from "./util/ts-grm-client";
+
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Pool } from 'pg';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PostgresDdlGenerator } from '../src/ddl/postgres';
+import type { PgPoolLike } from '../src/executor/postgres';
+import { PostgresSqlExecutor } from '../src/executor/postgres';
+import { PostgresIntrospector } from '../src/introspector/postgres';
+import { Migrator } from '../src/migrator';
+import { tableDefsToSchema } from '../src/schema/adapter';
+import { DatabaseMigrationHistoryStore, FileMigrationStore } from '../src/store';
+import { createSchema } from '../src/vendor/ts-grm';
+import { createTestPostgresClient } from './util/ts-grm-client';
 
 const PG_HOST = process.env.PG_HOST;
 const PG_CONFIG = {
-  host: PG_HOST ?? "",
+  host: PG_HOST ?? '',
   port: Number(process.env.PG_PORT ?? 5432),
-  database: process.env.PG_DATABASE ?? "ts_grm_migrate_test",
-  user: process.env.PG_USER ?? "postgres",
-  password: process.env.PG_PASSWORD ?? "",
+  database: process.env.PG_DATABASE ?? 'ts_grm_migrate_test',
+  user: process.env.PG_USER ?? 'postgres',
+  password: process.env.PG_PASSWORD ?? '',
 };
 
-const TEST_SCHEMA = "ts_grm_migrate_e2e";
-const MODEL_TABLES = ["author", "book", "book_tag_mapping", "tag"];
+const TEST_SCHEMA = 'ts_grm_migrate_e2e';
+const MODEL_TABLES = ['author', 'book', 'book_tag_mapping', 'tag'];
 
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
 
-describePg("Migrator 集成（真实数据库）", () => {
+describePg('Migrator 集成（真实数据库）', () => {
   const { sqlClient, pool } = createTestPostgresClient(PG_CONFIG);
   let execPool: Pool;
   let executor: PostgresSqlExecutor;
@@ -62,8 +63,8 @@ describePg("Migrator 集成（真实数据库）", () => {
   beforeEach(async () => {
     await pool.query(`drop schema if exists "${TEST_SCHEMA}" cascade`);
     await pool.query(`create schema "${TEST_SCHEMA}"`);
-    dir = await mkdtemp(path.join(tmpdir(), "tsgrm-e2e-"));
-    fileStore = new FileMigrationStore(path.join(dir, "migrations"));
+    dir = await mkdtemp(path.join(tmpdir(), 'tsgrm-e2e-'));
+    fileStore = new FileMigrationStore(path.join(dir, 'migrations'));
   });
 
   afterEach(async () => {
@@ -83,32 +84,38 @@ describePg("Migrator 集成（真实数据库）", () => {
         const tableDefs = await createSchema(sqlClient);
         return tableDefsToSchema(tableDefs, sqlClient.driver);
       },
-      migrationsDir: path.join(dir, "migrations"),
-      lockPath: path.join(dir, "migrate.lock"),
+      migrationsDir: path.join(dir, 'migrations'),
+      lockPath: path.join(dir, 'migrate.lock'),
     });
   }
 
-  it("rolls back DDL if recording success fails on the transaction connection", async () => {
+  it('rolls back DDL if recording success fails on the transaction connection', async () => {
     const history = new DatabaseMigrationHistoryStore({ executor });
     await history.ensureTable();
-    await history.markFailed("atomic", "unfinished");
-    await expect(executor.executeStatements(['create table atomic_test (id int)'], async connection => {
-      await history.recordApplied({ id: "atomic", sortKey: "atomic", sql: "", checksum: "ok" }, connection);
-      throw new Error("history failure");
-    })).rejects.toThrow("history failure");
-    expect(await tablesInSchema()).not.toContain("atomic_test");
+    await history.markFailed('atomic', 'unfinished');
+    await expect(
+      executor.executeStatements(['create table atomic_test (id int)'], async (connection) => {
+        await history.recordApplied(
+          { id: 'atomic', sortKey: 'atomic', sql: '', checksum: 'ok' },
+          connection,
+        );
+        throw new Error('history failure');
+      }),
+    ).rejects.toThrow('history failure');
+    expect(await tablesInSchema()).not.toContain('atomic_test');
     expect((await history.listApplied())[0]?.failed).toBe(true);
   });
 
-  it("database lock is exclusive on the same schema and independent across schemas", async () => {
-    const release = await executor.acquireMigrationLock("ts-grm-migrate");
+  it('database lock is exclusive on the same schema and independent across schemas', async () => {
+    const release = await executor.acquireMigrationLock('ts-grm-migrate');
     const client = await execPool.connect();
     try {
-      const sql = "select pg_try_advisory_lock(hashtext(current_database()), hashtext(current_schema() || ':' || $1)) as acquired";
-      expect((await client.query(sql, ["ts-grm-migrate"])).rows[0].acquired).toBe(false);
-      await client.query("set search_path=public");
-      expect((await client.query(sql, ["ts-grm-migrate"])).rows[0].acquired).toBe(true);
-      await client.query("select pg_advisory_unlock_all()");
+      const sql =
+        "select pg_try_advisory_lock(hashtext(current_database()), hashtext(current_schema() || ':' || $1)) as acquired";
+      expect((await client.query(sql, ['ts-grm-migrate'])).rows[0].acquired).toBe(false);
+      await client.query('set search_path=public');
+      expect((await client.query(sql, ['ts-grm-migrate'])).rows[0].acquired).toBe(true);
+      await client.query('select pg_advisory_unlock_all()');
     } finally {
       await client.query(`set search_path=${TEST_SCHEMA}`);
       client.release();
@@ -123,13 +130,13 @@ describePg("Migrator 集成（真实数据库）", () => {
        order by table_name`,
       [TEST_SCHEMA],
     );
-    return rows.map((r) => String(r["table_name"]));
+    return rows.map((r) => String(r['table_name']));
   }
 
-  it("dev：从模型生成迁移、应用，表真的建出来了", async () => {
+  it('dev：从模型生成迁移、应用，表真的建出来了', async () => {
     const migrator = makeMigrator();
 
-    const result = await migrator.dev({ name: "init" });
+    const result = await migrator.dev({ name: 'init' });
 
     expect(result.applied).toBe(true);
     expect(result.migrationId).toBeDefined();
@@ -138,14 +145,14 @@ describePg("Migrator 集成（真实数据库）", () => {
     // 迁移文件写入磁盘
     const files = await fileStore.listFiles();
     expect(files.map((f) => f.id)).toEqual([result.migrationId]);
-    expect(files[0]!.sql).toContain("create table");
+    expect(files[0]!.sql).toContain('create table');
   });
 
-  it("dev：模型未变时第二次运行不再产生迁移（introspect ≡ 模型）", async () => {
+  it('dev：模型未变时第二次运行不再产生迁移（introspect ≡ 模型）', async () => {
     const migrator = makeMigrator();
-    await migrator.dev({ name: "init" });
+    await migrator.dev({ name: 'init' });
 
-    const second = await migrator.dev({ name: "again" });
+    const second = await migrator.dev({ name: 'again' });
 
     expect(second.diff.changes).toEqual([]);
     expect(second.migrationId).toBeUndefined();
@@ -153,16 +160,16 @@ describePg("Migrator 集成（真实数据库）", () => {
     expect((await fileStore.listFiles()).length).toBe(1);
   });
 
-  it("migrate 建的表能被「无引号查询」命中（与 ts-grm 运行时一致）", async () => {
+  it('migrate 建的表能被「无引号查询」命中（与 ts-grm 运行时一致）', async () => {
     // ts-grm 生成的 SQL 不带引号（如 `select ... from AUTHOR`，PG 会折叠为小写）。
     // 若 migrate 建出的是带引号的大写表 "AUTHOR"，下面这些查询会找不到表 ——
     // 这正是「应用跑不起来」的现场复现。
     const migrator = makeMigrator();
-    await migrator.dev({ name: "init" });
+    await migrator.dev({ name: 'init' });
 
     const client = await execPool.connect(); // search_path 已指向测试 schema
     try {
-      for (const table of ["AUTHOR", "BOOK", "TAG", "book_tag_mapping"]) {
+      for (const table of ['AUTHOR', 'BOOK', 'TAG', 'book_tag_mapping']) {
         const { rows } = await client.query(`select * from ${table} limit 0`);
         expect(rows).toEqual([]);
       }
@@ -171,9 +178,9 @@ describePg("Migrator 集成（真实数据库）", () => {
     }
   });
 
-  it("deploy：重复运行幂等（不重复应用）", async () => {
+  it('deploy：重复运行幂等（不重复应用）', async () => {
     const migrator = makeMigrator();
-    await migrator.dev({ name: "init" });
+    await migrator.dev({ name: 'init' });
 
     const result = await migrator.deploy();
 
@@ -182,32 +189,32 @@ describePg("Migrator 集成（真实数据库）", () => {
     expect(await tablesInSchema()).toEqual(MODEL_TABLES);
   });
 
-  it("deploy：历史表记录了已应用的迁移与 checksum", async () => {
+  it('deploy：历史表记录了已应用的迁移与 checksum', async () => {
     const migrator = makeMigrator();
-    const dev = await migrator.dev({ name: "init" });
+    const dev = await migrator.dev({ name: 'init' });
 
     const { rows } = await executeQuery(
       `select id, checksum, failed from "${TEST_SCHEMA}"."_migrations"`,
     );
 
     expect(rows.length).toBe(1);
-    expect(rows[0]!["id"]).toBe(dev.migrationId);
-    expect(rows[0]!["failed"]).toBe(false);
+    expect(rows[0]!['id']).toBe(dev.migrationId);
+    expect(rows[0]!['failed']).toBe(false);
     const files = await fileStore.listFiles();
-    expect(rows[0]!["checksum"]).toBe(files[0]!.checksum);
+    expect(rows[0]!['checksum']).toBe(files[0]!.checksum);
   });
 
-  it("deploy：已应用迁移被改动后拒绝继续（漂移检测）", async () => {
+  it('deploy：已应用迁移被改动后拒绝继续（漂移检测）', async () => {
     const migrator = makeMigrator();
-    await migrator.dev({ name: "init" });
+    await migrator.dev({ name: 'init' });
 
     const [file] = await fileStore.listFiles();
-    await writeFile(path.join(dir, "migrations", `${file!.id}.sql`), `${file!.sql}\n-- tampered\n`);
+    await writeFile(path.join(dir, 'migrations', `${file!.id}.sql`), `${file!.sql}\n-- tampered\n`);
 
     await expect(migrator.deploy()).rejects.toThrow(/checksum/);
   });
 
-  it("push：直接同步，不写迁移文件也不建历史表", async () => {
+  it('push：直接同步，不写迁移文件也不建历史表', async () => {
     const migrator = makeMigrator();
 
     const result = await migrator.push();
@@ -228,35 +235,94 @@ describePg("Migrator 集成（真实数据库）", () => {
   async function executeQuery(sql: string) {
     return await pool.query(sql);
   }
-  it("supports a one-connection pool and CHECK create/read/sync round trips", async () => {
-    const single = new Pool({ ...PG_CONFIG, max: 1, connectionTimeoutMillis: 1000, options: `-c search_path=${TEST_SCHEMA}` });
+  it('supports a one-connection pool and CHECK create/read/sync round trips', async () => {
+    const single = new Pool({
+      ...PG_CONFIG,
+      max: 1,
+      connectionTimeoutMillis: 1000,
+      options: `-c search_path=${TEST_SCHEMA}`,
+    });
     const executor = new PostgresSqlExecutor(single);
-    const release = await executor.acquireMigrationLock("single");
+    const release = await executor.acquireMigrationLock('single');
     try {
-      const target = {tables:[{name:"roundtrip", columns:[
-        {name:"TYPE", type:"character varying(30)", nullable:false, length:undefined, default:undefined, autoIncrement:false, ordinal:1, comment:undefined},
-        {name:"v", type:"integer", nullable:true, length:undefined, default:undefined, autoIncrement:false, ordinal:2, comment:undefined}
-      ], constraints:[
-        {kind:"CHECK" as const, name:"roundtrip_type", implicit:undefined, values:["Book","O'Brien, X"], expression:`"TYPE" in ('Book', 'O''Brien, X')`},
-        {kind:"CHECK" as const, name:"roundtrip_v", implicit:undefined, values:[1,2], expression:'"v" in (1, 2)'}
-      ], indexes:[]}]};
+      const target = {
+        tables: [
+          {
+            name: 'roundtrip',
+            columns: [
+              {
+                name: 'TYPE',
+                type: 'character varying(30)',
+                nullable: false,
+                length: undefined,
+                default: undefined,
+                autoIncrement: false,
+                ordinal: 1,
+                comment: undefined,
+              },
+              {
+                name: 'v',
+                type: 'integer',
+                nullable: true,
+                length: undefined,
+                default: undefined,
+                autoIncrement: false,
+                ordinal: 2,
+                comment: undefined,
+              },
+            ],
+            constraints: [
+              {
+                kind: 'CHECK' as const,
+                name: 'roundtrip_type',
+                implicit: undefined,
+                values: ['Book', "O'Brien, X"],
+                expression: `"TYPE" in ('Book', 'O''Brien, X')`,
+              },
+              {
+                kind: 'CHECK' as const,
+                name: 'roundtrip_v',
+                implicit: undefined,
+                values: [1, 2],
+                expression: '"v" in (1, 2)',
+              },
+            ],
+            indexes: [],
+          },
+        ],
+      };
       const ddl = new PostgresDdlGenerator();
       await executor.executeStatements(ddl.createStatements(target));
-      await executor.query('alter table roundtrip add constraint roundtrip_pk primary key ("TYPE")');
-      await executor.query('create table related(kind character varying(30) references roundtrip("TYPE") deferrable initially immediate)');
-      const initial = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
-      const related = initial.tables.find(t => t.name === "related")!;
-      expect(related.constraints.some(c => c.kind === "FOREIGN_KEY" && c.deferrable)).toBe(true);
-      await executor.query("drop table related");
-      await executor.query("alter table roundtrip drop constraint roundtrip_pk");
-      const actual = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
-      const { SchemaDiffer } = await import("../src/differ");
-      expect(new SchemaDiffer().diff(actual,target).changes).toEqual([]);
+      await executor.query(
+        'alter table roundtrip add constraint roundtrip_pk primary key ("TYPE")',
+      );
+      await executor.query(
+        'create table related(kind character varying(30) references roundtrip("TYPE") deferrable initially immediate)',
+      );
+      const initial = await new PostgresIntrospector({
+        query: executor,
+        schema: TEST_SCHEMA,
+      }).introspect();
+      const related = initial.tables.find((t) => t.name === 'related')!;
+      expect(related.constraints.some((c) => c.kind === 'FOREIGN_KEY' && c.deferrable)).toBe(true);
+      await executor.query('drop table related');
+      await executor.query('alter table roundtrip drop constraint roundtrip_pk');
+      const actual = await new PostgresIntrospector({
+        query: executor,
+        schema: TEST_SCHEMA,
+      }).introspect();
+      const { SchemaDiffer } = await import('../src/differ');
+      expect(new SchemaDiffer().diff(actual, target).changes).toEqual([]);
       await executor.query('create index special_idx on roundtrip(lower("TYPE"))');
-      const special = await new PostgresIntrospector({query:executor,schema:TEST_SCHEMA}).introspect();
+      const special = await new PostgresIntrospector({
+        query: executor,
+        schema: TEST_SCHEMA,
+      }).introspect();
       expect(special.tables[0]!.indexes[0]!.unsupported).toBeDefined();
-      expect(()=>new SchemaDiffer().diff(special,target)).toThrow(/special index/);
-    } finally {await release();await single.end();}
+      expect(() => new SchemaDiffer().diff(special, target)).toThrow(/special index/);
+    } finally {
+      await release();
+      await single.end();
+    }
   });
-
 });

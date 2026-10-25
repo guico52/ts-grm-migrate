@@ -1,20 +1,18 @@
-import { diagnostic, asError } from "../diagnostics/error.js";
-import type { Introspector, SqlQueryable } from "../introspector.js";
-import type { Column, Constraint, Index, Schema } from "../schema/model.js";
+import { asError, diagnostic } from '../diagnostics/error.js';
+import type { Introspector, SqlQueryable } from '../introspector.js';
+import type { Column, Constraint, Index, Schema } from '../schema/model.js';
 import {
   groupRows,
-  stringValue as s,
   normalizeServerExpression,
   type CatalogRow as Row,
-} from "../server/catalog.js";
-import { normalizeServerType } from "../server/sql.js";
+  stringValue as s,
+} from '../server/catalog.js';
+import { normalizeServerType } from '../server/sql.js';
 
 /** @see https://docs.oracle.com/en/database/oracle/oracle-database/23/refrn/ALL_TAB_COLUMNS.html */
 export class OracleIntrospector implements Introspector {
-  readonly dialect = "oracle" as const;
-  constructor(
-    private readonly options: { query: SqlQueryable; schema: string },
-  ) {}
+  readonly dialect = 'oracle' as const;
+  constructor(private readonly options: { query: SqlQueryable; schema: string }) {}
   async introspect(): Promise<Schema> {
     const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
       (await this.options.query.query(sql, [this.options.schema])).rows;
@@ -40,12 +38,12 @@ export class OracleIntrospector implements Introspector {
         tables: tables.map((table) => {
           const name = s(table.TABLE_NAME);
           if (
-            table.TEMPORARY !== "N" ||
-            table.NESTED !== "NO" ||
-            table.SECONDARY !== "N" ||
+            table.TEMPORARY !== 'N' ||
+            table.NESTED !== 'NO' ||
+            table.SECONDARY !== 'N' ||
             table.IOT_TYPE != null
           )
-            throw diagnostic("introspector_oracle_1", name);
+            throw diagnostic('introspector_oracle_1', name);
           const forTable = (rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
             rows.filter((r) => r.TABLE_NAME === name);
           const tableColumns = forTable(columns).map(column);
@@ -53,69 +51,67 @@ export class OracleIntrospector implements Introspector {
           const constraintIndexes = new Set<string>();
           for (const [constraintName, rows] of groupRows(
             forTable(constraints),
-            "CONSTRAINT_NAME",
+            'CONSTRAINT_NAME',
           )) {
             const c = rows[0]!;
             if (
-              c.STATUS !== "ENABLED" ||
-              c.VALIDATED !== "VALIDATED" ||
-              c.DEFERRABLE !== "NOT DEFERRABLE"
+              c.STATUS !== 'ENABLED' ||
+              c.VALIDATED !== 'VALIDATED' ||
+              c.DEFERRABLE !== 'NOT DEFERRABLE'
             )
-              throw diagnostic("introspector_oracle_2", constraintName);
+              throw diagnostic('introspector_oracle_2', constraintName);
             const names = rows.map((r) => s(r.COLUMN_NAME));
             switch (c.CONSTRAINT_TYPE) {
-              case "P":
-              case "U":
+              case 'P':
+              case 'U':
                 constraintIndexes.add(s(c.INDEX_NAME));
                 tableConstraints.push({
-                  kind: c.CONSTRAINT_TYPE === "P" ? "PRIMARY_KEY" : "UNIQUE",
+                  kind: c.CONSTRAINT_TYPE === 'P' ? 'PRIMARY_KEY' : 'UNIQUE',
                   name: constraintName,
                   columns: names,
                   implicit: undefined,
                 });
                 break;
-              case "R": {
+              case 'R': {
                 if (c.REF_OWNER !== this.options.schema)
-                  throw diagnostic("introspector_oracle_3", constraintName);
+                  throw diagnostic('introspector_oracle_3', constraintName);
                 const onDelete =
-                  c.DELETE_RULE === "CASCADE"
-                    ? "CASCADE"
-                    : c.DELETE_RULE === "SET NULL"
-                      ? "SET_NULL"
-                      : "NO_ACTION";
+                  c.DELETE_RULE === 'CASCADE'
+                    ? 'CASCADE'
+                    : c.DELETE_RULE === 'SET NULL'
+                      ? 'SET_NULL'
+                      : 'NO_ACTION';
                 tableConstraints.push({
-                  kind: "FOREIGN_KEY",
+                  kind: 'FOREIGN_KEY',
                   name: constraintName,
                   columns: names,
                   referencedTable: s(c.REF_TABLE),
                   referencedColumns: rows.map((r) => s(r.REF_COLUMN)),
                   onDelete,
                   cascade:
-                    onDelete === "CASCADE"
-                      ? "DELETE"
-                      : onDelete === "SET_NULL"
-                        ? "SET_NULL"
-                        : "NONE",
+                    onDelete === 'CASCADE'
+                      ? 'DELETE'
+                      : onDelete === 'SET_NULL'
+                        ? 'SET_NULL'
+                        : 'NONE',
                   deferrable: false,
                   implicit: undefined,
                 });
                 break;
               }
-              case "C": {
+              case 'C': {
                 const expression = s(c.SEARCH_CONDITION_VC);
                 // Oracle represents NOT NULL as a CHECK; nullability already expresses it.
                 if (
                   /^"(?:""|[^"])+" IS NOT NULL$/i.test(expression.trim()) &&
                   names.length === 1 &&
-                  tableColumns.some(
-                    (col) => col.name === names[0] && !col.nullable,
-                  )
+                  tableColumns.some((col) => col.name === names[0] && !col.nullable)
                 )
                   break;
                 if (expression.length >= 4000)
-                  throw diagnostic("introspector_oracle_4", constraintName);
+                  throw diagnostic('introspector_oracle_4', constraintName);
                 tableConstraints.push({
-                  kind: "CHECK",
+                  kind: 'CHECK',
                   name: constraintName,
                   expression,
                   comparisonExpression: normalizeServerExpression(expression),
@@ -125,30 +121,24 @@ export class OracleIntrospector implements Introspector {
                 break;
               }
               default:
-                throw diagnostic("introspector_oracle_5", s(c.CONSTRAINT_TYPE));
+                throw diagnostic('introspector_oracle_5', s(c.CONSTRAINT_TYPE));
             }
           }
           const tableIndexes: Index[] = [];
-          for (const [indexName, rows] of groupRows(
-            forTable(indexes),
-            "INDEX_NAME",
-          )) {
+          for (const [indexName, rows] of groupRows(forTable(indexes), 'INDEX_NAME')) {
             if (constraintIndexes.has(indexName)) continue;
             // LOB storage indexes are internal implementation details.
-            if (rows[0]!.INDEX_TYPE === "LOB") continue;
+            if (rows[0]!.INDEX_TYPE === 'LOB') continue;
             if (
               rows.some(
-                (r) =>
-                  r.INDEX_TYPE !== "NORMAL" ||
-                  r.DESCEND !== "ASC" ||
-                  r.STATUS !== "VALID",
+                (r) => r.INDEX_TYPE !== 'NORMAL' || r.DESCEND !== 'ASC' || r.STATUS !== 'VALID',
               )
             )
-              throw diagnostic("introspector_oracle_6", indexName);
+              throw diagnostic('introspector_oracle_6', indexName);
             tableIndexes.push({
               name: indexName,
               columns: rows.map((r) => s(r.COLUMN_NAME)),
-              unique: rows[0]!.UNIQUENESS === "UNIQUE",
+              unique: rows[0]!.UNIQUENESS === 'UNIQUE',
               predicate: undefined,
             });
           }
@@ -161,38 +151,29 @@ export class OracleIntrospector implements Introspector {
         }),
       };
     } catch (e) {
-      throw diagnostic("introspector_oracle_7", asError(e));
+      throw diagnostic('introspector_oracle_7', asError(e));
     }
   }
 }
 function column(row: Row): Column {
-  if (row.VIRTUAL_COLUMN === "YES" || row.HIDDEN_COLUMN === "YES")
-    throw diagnostic("introspector_oracle_8", s(row.COLUMN_NAME));
+  if (row.VIRTUAL_COLUMN === 'YES' || row.HIDDEN_COLUMN === 'YES')
+    throw diagnostic('introspector_oracle_8', s(row.COLUMN_NAME));
   let type = s(row.DATA_TYPE).toLowerCase();
-  if (["varchar2", "char"].includes(type))
-    type +=
-      row.CHAR_USED === "C"
-        ? `(${s(row.CHAR_LENGTH)} char)`
-        : `(${s(row.DATA_LENGTH)})`;
-  else if (["nvarchar2", "nchar"].includes(type))
-    type += `(${s(row.CHAR_LENGTH)})`;
-  else if (type === "raw") type += `(${s(row.DATA_LENGTH)})`;
-  else if (type === "number" && row.DATA_PRECISION != null)
+  if (['varchar2', 'char'].includes(type))
+    type += row.CHAR_USED === 'C' ? `(${s(row.CHAR_LENGTH)} char)` : `(${s(row.DATA_LENGTH)})`;
+  else if (['nvarchar2', 'nchar'].includes(type)) type += `(${s(row.CHAR_LENGTH)})`;
+  else if (type === 'raw') type += `(${s(row.DATA_LENGTH)})`;
+  else if (type === 'number' && row.DATA_PRECISION != null)
     type += `(${s(row.DATA_PRECISION)},${s(row.DATA_SCALE ?? 0)})`;
-  else if (type === "float" && row.DATA_PRECISION != null)
-    type += `(${s(row.DATA_PRECISION)})`;
-  const identity = row.IDENTITY_COLUMN === "YES";
-  const defaultValue =
-    row.DATA_DEFAULT == null ? undefined : s(row.DATA_DEFAULT).trim();
+  else if (type === 'float' && row.DATA_PRECISION != null) type += `(${s(row.DATA_PRECISION)})`;
+  const identity = row.IDENTITY_COLUMN === 'YES';
+  const defaultValue = row.DATA_DEFAULT == null ? undefined : s(row.DATA_DEFAULT).trim();
   return {
     name: s(row.COLUMN_NAME),
-    type: normalizeServerType(type, "oracle"),
-    nullable: row.NULLABLE === "Y",
+    type: normalizeServerType(type, 'oracle'),
+    nullable: row.NULLABLE === 'Y',
     length: undefined,
-    default:
-      identity || defaultValue?.toLowerCase() === "null"
-        ? undefined
-        : defaultValue,
+    default: identity || defaultValue?.toLowerCase() === 'null' ? undefined : defaultValue,
     autoIncrement: identity,
     ordinal: Number(row.COLUMN_ID),
     comment: undefined,

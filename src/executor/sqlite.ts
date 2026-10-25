@@ -1,6 +1,5 @@
-import { realpath } from "node:fs/promises";
-import { acquireProcessLock } from "../lock.js";
-import { diagnostic, asError } from "../diagnostics/error.js";
+import { realpath } from 'node:fs/promises';
+import { asError, diagnostic } from '../diagnostics/error.js';
 /**
  * SQLite 版 `SqlExecutor`。
  *
@@ -15,7 +14,8 @@ import { diagnostic, asError } from "../diagnostics/error.js";
  *    including introspection and planning. Memory databases need no external lock.
  *    Programmatic callers should pass the file path as the second constructor argument.
  */
-import type { MigrationCompletion, SqlExecutor } from "../executor.js";
+import type { MigrationCompletion, SqlExecutor } from '../executor.js';
+import { acquireProcessLock } from '../lock.js';
 
 /** better-sqlite3 的 Database（只声明用到的部分） */
 export interface SqliteDatabaseLike {
@@ -35,7 +35,10 @@ export interface SqliteStatementLike {
 }
 
 export class SqliteSqlExecutor implements SqlExecutor {
-  constructor(private readonly _database: SqliteDatabaseLike, private readonly _file: string | undefined = _database.name) {}
+  constructor(
+    private readonly _database: SqliteDatabaseLike,
+    private readonly _file: string | undefined = _database.name,
+  ) {}
 
   async query(
     sql: string,
@@ -52,27 +55,30 @@ export class SqliteSqlExecutor implements SqlExecutor {
     return { rows: statement.all(...(params ?? [])) };
   }
 
-  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
-    this._database.exec("begin");
+  async executeStatements(
+    statements: ReadonlyArray<string>,
+    complete?: MigrationCompletion,
+  ): Promise<void> {
+    this._database.exec('begin');
     try {
       for (const sql of statements) {
         // exec 而非 prepare：迁移文件里往往是整段 SQL 文本（可能含多条语句）
         this._database.exec(sql);
       }
       await complete?.(this);
-      this._database.exec("commit");
+      this._database.exec('commit');
     } catch (e) {
       try {
-        this._database.exec("rollback");
+        this._database.exec('rollback');
       } catch {
         // 回滚失败不掩盖主流程真正的错误
       }
-      throw diagnostic("executor_sqlite_1", asError(e));
+      throw diagnostic('executor_sqlite_1', asError(e));
     }
   }
 
   async acquireMigrationLock(_key: string): Promise<() => Promise<void>> {
-    if (!this._file || this._file === ":memory:") return async () => {};
+    if (!this._file || this._file === ':memory:') return async () => {};
     const file = await realpath(this._file);
     const lock = await acquireProcessLock(`${file}.tgm-lock`);
     return () => lock.release();

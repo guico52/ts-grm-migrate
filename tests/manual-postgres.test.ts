@@ -1,12 +1,12 @@
-import { describe, it, expect, afterAll } from "vitest";
-import type { Pool } from "pg";
-import { createSchema } from "../src/vendor/ts-grm";
-import { tableDefsToSchema } from "../src/schema/adapter";
-import { SchemaDiffer } from "../src/differ";
-import { PostgresDdlGenerator } from "../src/ddl/postgres";
-import { toSnapshot, fromSnapshot } from "../src";
-import type { Column, Schema, Table as SchemaTable } from "../src/schema/model";
-import { createTestPostgresClient } from "./util/ts-grm-client";
+import type { Pool } from 'pg';
+import { afterAll, describe, expect, it } from 'vitest';
+import { fromSnapshot, toSnapshot } from '../src';
+import { PostgresDdlGenerator } from '../src/ddl/postgres';
+import { SchemaDiffer } from '../src/differ';
+import { tableDefsToSchema } from '../src/schema/adapter';
+import type { Column, Schema, Table as SchemaTable } from '../src/schema/model';
+import { createSchema } from '../src/vendor/ts-grm';
+import { createTestPostgresClient } from './util/ts-grm-client';
 
 /**
  * 手动测试：Postgres 数据库初始化 / 变更。
@@ -27,11 +27,11 @@ import { createTestPostgresClient } from "./util/ts-grm-client";
  */
 const PG_HOST = process.env.PG_HOST;
 const PG_CONFIG = {
-  host: PG_HOST ?? "",
+  host: PG_HOST ?? '',
   port: Number(process.env.PG_PORT ?? 5432),
-  database: process.env.PG_DATABASE ?? "ts_grm_migrate_test",
-  user: process.env.PG_USER ?? "postgres",
-  password: process.env.PG_PASSWORD ?? "",
+  database: process.env.PG_DATABASE ?? 'ts_grm_migrate_test',
+  user: process.env.PG_USER ?? 'postgres',
+  password: process.env.PG_PASSWORD ?? '',
 };
 
 // ---- 执行与验证辅助 --------------------------------------------------------
@@ -39,13 +39,13 @@ const PG_CONFIG = {
 async function executeStatements(pool: Pool, statements: ReadonlyArray<string>): Promise<void> {
   const client = await pool.connect();
   try {
-    await client.query("begin");
+    await client.query('begin');
     for (const sql of statements) {
       await client.query(sql);
     }
-    await client.query("commit");
+    await client.query('commit');
   } catch (e) {
-    await client.query("rollback").catch(() => undefined);
+    await client.query('rollback').catch(() => undefined);
     throw e;
   } finally {
     client.release();
@@ -70,7 +70,7 @@ async function columnExists(pool: Pool, table: string, column: string): Promise<
 
 async function indexExists(pool: Pool, table: string, index: string): Promise<boolean> {
   const { rows } = await pool.query(
-    "select count(*)::int as n from pg_indexes where tablename = $1 and indexname = $2",
+    'select count(*)::int as n from pg_indexes where tablename = $1 and indexname = $2',
     [table, index],
   );
   return rows[0]!.n > 0;
@@ -90,7 +90,9 @@ function makeColumn(name: string, type: string, nullable: boolean): Column {
 }
 
 /** 目标态（当前模型）走快照往返，模拟真实链路 */
-async function targetSchema(sqlClient: ReturnType<typeof createTestPostgresClient>["sqlClient"]): Promise<Schema> {
+async function targetSchema(
+  sqlClient: ReturnType<typeof createTestPostgresClient>['sqlClient'],
+): Promise<Schema> {
   const tableDefs = await createSchema(sqlClient);
   const schema = tableDefsToSchema(tableDefs, sqlClient.driver);
   return fromSnapshot(toSnapshot(schema));
@@ -107,14 +109,16 @@ function nextVersionSchema(base: Schema): Schema {
   });
   return {
     tables: base.tables.map((t) => {
-      if (t.name === "author") {
+      if (t.name === 'author') {
         return clone(t, {
-          columns: [...t.columns, makeColumn("email", "text", true)],
-          indexes: [{ name: "author_name_idx", columns: ["name"], unique: false, predicate: undefined }],
+          columns: [...t.columns, makeColumn('email', 'text', true)],
+          indexes: [
+            { name: 'author_name_idx', columns: ['name'], unique: false, predicate: undefined },
+          ],
         });
       }
-      if (t.name === "book") {
-        return clone(t, { columns: [...t.columns, makeColumn("published", "boolean", false)] });
+      if (t.name === 'book') {
+        return clone(t, { columns: [...t.columns, makeColumn('published', 'boolean', false)] });
       }
       return t;
     }),
@@ -125,12 +129,12 @@ function nextVersionSchema(base: Schema): Schema {
 function nextNextVersionSchema(prev: Schema): Schema {
   return {
     tables: prev.tables.map((t) => {
-      if (t.name === "author") {
+      if (t.name === 'author') {
         return {
           ...t,
-          columns: t.columns.filter((c) => c.name !== "age"),
+          columns: t.columns.filter((c) => c.name !== 'age'),
           indexes: [
-            { name: "author_name_uq_idx", columns: ["name"], unique: true, predicate: undefined },
+            { name: 'author_name_uq_idx', columns: ['name'], unique: true, predicate: undefined },
           ],
         };
       }
@@ -143,35 +147,33 @@ function nextNextVersionSchema(prev: Schema): Schema {
 
 // 无 PG_HOST 时整体跳过（不建立连接）；设置则顺序执行（用例间有状态依赖）
 const describePg = PG_HOST != null ? describe.sequential : describe.skip;
-describePg("手动测试：Postgres 初始化与变更", () => {
+describePg('手动测试：Postgres 初始化与变更', () => {
   const { sqlClient, pool } = createTestPostgresClient(PG_CONFIG);
   afterAll(() => pool.end());
 
   /** 变更 A 后的目标态（测试 2 产生，测试 3 依赖） */
   let version1: Schema | undefined;
 
-  it("初始化：从模型生成并应用全部建表 SQL", async () => {
+  it('初始化：从模型生成并应用全部建表 SQL', async () => {
     // 幂等清理（保留子表先删）
-    await pool.query(
-      'drop table if exists "book_tag_mapping", "tag", "book", "author" cascade',
-    );
+    await pool.query('drop table if exists "book_tag_mapping", "tag", "book", "author" cascade');
 
     const schema = await targetSchema(sqlClient);
     const gen = new PostgresDdlGenerator();
     const statements = gen.createStatements(schema);
 
-    console.log("\n===== 初始化 SQL =====");
-    console.log(statements.join(";\n"));
+    console.log('\n===== 初始化 SQL =====');
+    console.log(statements.join(';\n'));
     await executeStatements(pool, statements);
 
     // 验证：4 张表 + 关键列
-    for (const name of ["author", "book", "tag", "book_tag_mapping"]) {
+    for (const name of ['author', 'book', 'tag', 'book_tag_mapping']) {
       expect(await tableExists(pool, name), `表 ${name} 应存在`).toBe(true);
     }
-    expect(await columnExists(pool, "book", "author_id")).toBe(true);
+    expect(await columnExists(pool, 'book', 'author_id')).toBe(true);
   });
 
-  it("变更：diff 生成增量 SQL 并应用（加列 / 加索引）", async () => {
+  it('变更：diff 生成增量 SQL 并应用（加列 / 加索引）', async () => {
     const base = await targetSchema(sqlClient);
     const next = nextVersionSchema(base);
     version1 = next;
@@ -179,36 +181,34 @@ describePg("手动测试：Postgres 初始化与变更", () => {
     const diff = new SchemaDiffer().diff(base, next);
     const statements = new PostgresDdlGenerator().statements(diff);
 
-    console.log("\n===== 增量 SQL（加列 / 加索引） =====");
-    console.log(statements.join(";\n"));
+    console.log('\n===== 增量 SQL（加列 / 加索引） =====');
+    console.log(statements.join(';\n'));
     await executeStatements(pool, statements);
 
     // 验证：新列与索引已生效
-    expect(await columnExists(pool, "author", "email")).toBe(true);
-    expect(await columnExists(pool, "book", "published")).toBe(true);
-    expect(await indexExists(pool, "author", "author_name_idx")).toBe(true);
+    expect(await columnExists(pool, 'author', 'email')).toBe(true);
+    expect(await columnExists(pool, 'book', 'published')).toBe(true);
+    expect(await indexExists(pool, 'author', 'author_name_idx')).toBe(true);
     // 无破坏性操作
     expect(diff.destructive).toEqual([]);
   });
 
-  it("变更：删除列、删除索引并添加新索引", async () => {
+  it('变更：删除列、删除索引并添加新索引', async () => {
     const prev = version1!;
     const next = nextNextVersionSchema(prev);
 
     const diff = new SchemaDiffer().diff(prev, next);
     const statements = new PostgresDdlGenerator().statements(diff);
 
-    console.log("\n===== 增量 SQL（删列 / 换索引） =====");
-    console.log(statements.join(";\n"));
+    console.log('\n===== 增量 SQL（删列 / 换索引） =====');
+    console.log(statements.join(';\n'));
     await executeStatements(pool, statements);
 
     // 验证：AGE 列已删除、旧索引已删除、新唯一索引已创建
-    expect(await columnExists(pool, "author", "age")).toBe(false);
-    expect(await indexExists(pool, "author", "author_name_idx")).toBe(false);
-    expect(await indexExists(pool, "author", "author_name_uq_idx")).toBe(true);
+    expect(await columnExists(pool, 'author', 'age')).toBe(false);
+    expect(await indexExists(pool, 'author', 'author_name_idx')).toBe(false);
+    expect(await indexExists(pool, 'author', 'author_name_uq_idx')).toBe(true);
     // 删列是破坏性操作
-    expect(diff.destructive).toEqual([
-      { kind: "DROP_COLUMN", table: "author", column: "age" },
-    ]);
+    expect(diff.destructive).toEqual([{ kind: 'DROP_COLUMN', table: 'author', column: 'age' }]);
   });
 });

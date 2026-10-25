@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { constants } from 'node:os';
 import path from 'node:path';
-import { validateSeedConfig, type SeedConfig } from './config.js';
+import { type SeedConfig, validateSeedConfig } from './config.js';
 import { asError, diagnostic } from './diagnostics/error.js';
 
 /** Run a user-owned seed process without creating a migration runtime.
@@ -21,7 +21,7 @@ export async function runSeed(
     if (path.dirname(dir) === dir) break;
   }
   const env = { ...process.env };
-  const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
+  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
   env[pathKey] = [...bins, env[pathKey] ?? ''].join(path.delimiter);
 
   return new Promise<number>((resolve, reject) => {
@@ -64,7 +64,7 @@ export async function runSeed(
     };
     process.on('SIGINT', onInterrupt);
     process.on('SIGTERM', onTerminate);
-    child.once('error', error => {
+    child.once('error', (error) => {
       cleanup();
       reject(diagnostic('seed_start', seed.command, asError(error)));
     });
@@ -73,7 +73,7 @@ export async function runSeed(
       if (interrupted && grouped) terminate('SIGKILL');
       cleanup();
       const termination = interrupted ?? signal;
-      resolve(termination ? 128 + (constants.signals[termination] ?? 1) : code ?? 1);
+      resolve(termination ? 128 + (constants.signals[termination] ?? 1) : (code ?? 1));
     });
   });
 }

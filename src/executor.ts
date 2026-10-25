@@ -4,7 +4,7 @@
  * 在 `SqlQueryable`（只读查询）之上补两件事：事务内执行语句、迁移互斥锁。
  * 方言实现见 `src/executor/`。
  */
-import type { SqlQueryable } from "./sql.js";
+import type { SqlQueryable } from './sql.js';
 
 export type MigrationCompletion = (connection: SqlQueryable) => Promise<void>;
 

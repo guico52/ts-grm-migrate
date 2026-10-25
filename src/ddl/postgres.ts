@@ -1,10 +1,4 @@
-import { diagnostic } from "../diagnostics/error.js";
-/** PostgreSQL DDL uses physical quoted names and defers foreign keys until all keys exist.
- * Dependency removal precedes column/table changes; keys and indexes precede foreign keys.
- */
-import type { ColumnChange, ConstraintChange, IndexChange } from '../diff/types.js';
-import type { Diff } from '../diff/types.js';
-import type { Schema } from '../schema/model.js';
+import type { DdlContext, DdlGenerator } from '../ddl.js';
 import {
   columnSql,
   constraintName,
@@ -12,8 +6,13 @@ import {
   createTableSql,
   quoteIdentifier,
 } from '../ddl.js';
-import type { DdlContext, DdlGenerator } from '../ddl.js';
+import { diagnostic } from '../diagnostics/error.js';
+/** PostgreSQL DDL uses physical quoted names and defers foreign keys until all keys exist.
+ * Dependency removal precedes column/table changes; keys and indexes precede foreign keys.
+ */
+import type { ColumnChange, ConstraintChange, Diff, IndexChange } from '../diff/types.js';
 import type { Dialect } from '../introspector.js';
+import type { Schema } from '../schema/model.js';
 
 const q = quoteIdentifier;
 
@@ -158,7 +157,7 @@ export class PostgresDdlGenerator implements DdlGenerator {
         // 且可能需要对存量数据回填；删 identity 会连带删除序列。因此报错让人
         // 手写迁移，而不是生成有副作用的语句（同 server/ddl.ts 的既有取舍）。
         if (col.autoIncrement !== undefined) {
-          throw diagnostic("ddl_postgres_1", col.column);
+          throw diagnostic('ddl_postgres_1', col.column);
         }
         if (col.type != null) {
           // 类型转换：PG 对 text→int 等需要 USING；diff 只记录「类型变了」，USING 暂由迁移 SQL 手写补充

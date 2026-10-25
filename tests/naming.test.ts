@@ -1,5 +1,5 @@
-import { it, expect } from "vitest";
-import Database from "better-sqlite3";
+import Database from 'better-sqlite3';
+import { expect, it } from 'vitest';
 import {
   createSchema,
   EntityManager,
@@ -7,7 +7,7 @@ import {
   newSqlClient,
   prop,
   SqliteDriver,
-} from "../src/vendor/ts-grm";
+} from '../src/vendor/ts-grm';
 
 /**
  * 表名/列名的**来源**（记录上游契约，防止误判为 migrate 的缺陷）。
@@ -24,33 +24,51 @@ import {
  */
 
 // 第一组：m2m 显式声明 joinTable（故意用小写，模拟常见写法）
-const TagExplicit = model("TagExplicit", "id", class {
-  id = prop.i64();
-  books = prop.m2m(BookExplicit).mappedBy("tags");
-});
+const TagExplicit = model(
+  'TagExplicit',
+  'id',
+  class {
+    id = prop.i64();
+    // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: ts-grm 延迟解析关联模型，循环引用在实例化时已完成声明
+    books = prop.m2m(BookExplicit).mappedBy('tags');
+  },
+);
 
-const BookExplicit = model("BookExplicit", "id", class {
-  id = prop.i64();
-  tags = prop.m2m(TagExplicit).joinTable({
-    name: "custom_lower_mapping",
-    joinThisColumns: ["book_lower_id"],
-    joinTargetColumns: ["tag_lower_id"],
-  });
-});
+const BookExplicit = model(
+  'BookExplicit',
+  'id',
+  class {
+    id = prop.i64();
+    tags = prop.m2m(TagExplicit).joinTable({
+      name: 'custom_lower_mapping',
+      joinThisColumns: ['book_lower_id'],
+      joinTargetColumns: ['tag_lower_id'],
+    });
+  },
+);
 
 // 第二组：m2m 不声明 joinTable（完全交给命名策略）
-const TagDefault = model("TagDefault", "id", class {
-  id = prop.i64();
-  books = prop.m2m(BookDefault).mappedBy("tags");
-});
+const TagDefault = model(
+  'TagDefault',
+  'id',
+  class {
+    id = prop.i64();
+    // biome-ignore lint/correctness/noInvalidUseBeforeDeclaration: ts-grm 延迟解析关联模型，循环引用在实例化时已完成声明
+    books = prop.m2m(BookDefault).mappedBy('tags');
+  },
+);
 
-const BookDefault = model("BookDefault", "id", class {
-  id = prop.i64();
-  tags = prop.m2m(TagDefault);
-});
+const BookDefault = model(
+  'BookDefault',
+  'id',
+  class {
+    id = prop.i64();
+    tags = prop.m2m(TagDefault);
+  },
+);
 
 async function tableNames(): Promise<Map<string, ReadonlyArray<string>>> {
-  const db = new Database(":memory:");
+  const db = new Database(':memory:');
   const client = newSqlClient(new SqliteDriver(db), {
     entityManager: EntityManager.combine(
       EntityManager.combine(BookExplicit, TagExplicit),
@@ -69,22 +87,22 @@ async function tableNames(): Promise<Map<string, ReadonlyArray<string>>> {
   return map;
 }
 
-it("实体表与实体列走命名策略（默认 UPPER_SNAKE_CASE）", async () => {
+it('实体表与实体列走命名策略（默认 UPPER_SNAKE_CASE）', async () => {
   const tables = await tableNames();
-  expect(tables.get("BOOK_EXPLICIT")).toEqual(["ID"]);
-  expect(tables.get("TAG_EXPLICIT")).toEqual(["ID"]);
-  expect(tables.get("BOOK_DEFAULT")).toEqual(["ID"]);
+  expect(tables.get('BOOK_EXPLICIT')).toEqual(['ID']);
+  expect(tables.get('TAG_EXPLICIT')).toEqual(['ID']);
+  expect(tables.get('BOOK_DEFAULT')).toEqual(['ID']);
 });
 
-it("显式声明的中间表：表名与列名原样保留（不做大小写转换）", async () => {
+it('显式声明的中间表：表名与列名原样保留（不做大小写转换）', async () => {
   const tables = await tableNames();
-  expect(tables.get("custom_lower_mapping")).toEqual(["book_lower_id", "tag_lower_id"]);
+  expect(tables.get('custom_lower_mapping')).toEqual(['book_lower_id', 'tag_lower_id']);
 });
 
-it("未声明的中间表：同样走命名策略（后缀 MAPPING、列名大写）", async () => {
+it('未声明的中间表：同样走命名策略（后缀 MAPPING、列名大写）', async () => {
   const tables = await tableNames();
-  expect(tables.get("BOOK_DEFAULT_TAG_DEFAULT_MAPPING")).toEqual([
-    "BOOK_DEFAULT_ID",
-    "TAG_DEFAULT_ID",
+  expect(tables.get('BOOK_DEFAULT_TAG_DEFAULT_MAPPING')).toEqual([
+    'BOOK_DEFAULT_ID',
+    'TAG_DEFAULT_ID',
   ]);
 });

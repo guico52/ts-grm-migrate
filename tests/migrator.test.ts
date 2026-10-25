@@ -1,29 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { checksumOf, FileMigrationStore } from "../src/store";
-import { generateMigrationId, Migrator, toSqlFile } from "../src/migrator";
-import type {
-  AppliedMigration,
-  MigrationFile,
-  MigrationHistoryStore,
-} from "../src/store";
-import type { MigrationCompletion, SqlExecutor } from "../src/executor";
-import type { Dialect, Introspector } from "../src/introspector";
-import type { DdlGenerator } from "../src/ddl";
-import type { Diff } from "../src/diff/types";
-import type { Schema } from "../src/schema/model";
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DdlGenerator } from '../src/ddl';
+import type { Diff } from '../src/diff/types';
+import type { MigrationCompletion, SqlExecutor } from '../src/executor';
+import type { Dialect, Introspector } from '../src/introspector';
+import { generateMigrationId, Migrator, toSqlFile } from '../src/migrator';
+import type { Schema } from '../src/schema/model';
+import type { AppliedMigration, MigrationFile, MigrationHistoryStore } from '../src/store';
+import { checksumOf, FileMigrationStore } from '../src/store';
 
 const EMPTY: Schema = { tables: [] };
 const ONE_TABLE: Schema = {
   tables: [
     {
-      name: "T",
+      name: 'T',
       columns: [
         {
-          name: "ID",
-          type: "bigint",
+          name: 'ID',
+          type: 'bigint',
           nullable: false,
           length: undefined,
           default: undefined,
@@ -39,7 +35,7 @@ const ONE_TABLE: Schema = {
 };
 
 class FakeHistory implements MigrationHistoryStore {
-  readonly tableName = "_migrations";
+  readonly tableName = '_migrations';
   readonly applied: Array<AppliedMigration> = [];
   readonly failures: Array<{ id: string; error: string; logs: string | undefined }> = [];
   readonly rolledBack: Array<string> = [];
@@ -71,7 +67,15 @@ class FakeHistory implements MigrationHistoryStore {
   async markFailed(id: string, error: string, logs?: string): Promise<void> {
     this.failures.push({ id, error, logs });
     const old = this.applied.findIndex((a) => a.id === id);
-    const record = { id, checksum: "", appliedAt: new Date(), rolledBackAt: undefined, failed: true, error, logs };
+    const record = {
+      id,
+      checksum: '',
+      appliedAt: new Date(),
+      rolledBackAt: undefined,
+      failed: true,
+      error,
+      logs,
+    };
     if (old >= 0) this.applied[old] = record;
     else this.applied.push(record);
   }
@@ -98,10 +102,13 @@ class FakeExecutor implements SqlExecutor {
   async query(): Promise<{ readonly rows: ReadonlyArray<Record<string, unknown>> }> {
     return { rows: [] };
   }
-  async executeStatements(statements: ReadonlyArray<string>, complete?: MigrationCompletion): Promise<void> {
+  async executeStatements(
+    statements: ReadonlyArray<string>,
+    complete?: MigrationCompletion,
+  ): Promise<void> {
     const failWhen = this.failWhen;
     if (failWhen != null && statements.some((s) => s.includes(failWhen))) {
-      throw new Error("语句执行失败（已回滚）：boom");
+      throw new Error('语句执行失败（已回滚）：boom');
     }
     this.executed.push(statements);
     await complete?.(this);
@@ -112,7 +119,7 @@ class FakeExecutor implements SqlExecutor {
 }
 
 class FakeIntrospector implements Introspector {
-  readonly dialect: Dialect = "postgres";
+  readonly dialect: Dialect = 'postgres';
   schema: Schema = EMPTY;
   async introspect(): Promise<Schema> {
     return this.schema;
@@ -120,7 +127,7 @@ class FakeIntrospector implements Introspector {
 }
 
 class FakeDdl implements DdlGenerator {
-  readonly dialect: Dialect = "postgres";
+  readonly dialect: Dialect = 'postgres';
   statements(_diff: Diff): ReadonlyArray<string> {
     return ['create table "T" ("ID" bigint not null)'];
   }
@@ -129,7 +136,7 @@ class FakeDdl implements DdlGenerator {
   }
 }
 
-describe("Migrator", () => {
+describe('Migrator', () => {
   let dir: string;
   let files: FileMigrationStore;
   let history: FakeHistory;
@@ -137,8 +144,8 @@ describe("Migrator", () => {
   let introspector: FakeIntrospector;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "tsgrm-migrator-"));
-    files = new FileMigrationStore(path.join(dir, "migrations"));
+    dir = await mkdtemp(path.join(tmpdir(), 'tsgrm-migrator-'));
+    files = new FileMigrationStore(path.join(dir, 'migrations'));
     history = new FakeHistory();
     executor = new FakeExecutor();
     introspector = new FakeIntrospector();
@@ -156,8 +163,8 @@ describe("Migrator", () => {
       introspector,
       ddl: new FakeDdl(),
       targetSchema: async () => target,
-      migrationsDir: path.join(dir, "migrations"),
-      lockPath: path.join(dir, "migrate.lock"),
+      migrationsDir: path.join(dir, 'migrations'),
+      lockPath: path.join(dir, 'migrate.lock'),
     });
   }
 
@@ -179,108 +186,118 @@ describe("Migrator", () => {
     });
   }
 
-  it("dev validates checksums and missing applied files even when models match", async () => {
-    const file = await writeMigration("init", "select 1;");
-    markApplied(file, "changed");
+  it('dev validates checksums and missing applied files even when models match', async () => {
+    const file = await writeMigration('init', 'select 1;');
+    markApplied(file, 'changed');
     await expect(makeMigrator().dev({})).rejects.toThrow(/checksum mismatch/);
-    await rm(path.join(dir, "migrations", "init.sql"));
+    await rm(path.join(dir, 'migrations', 'init.sql'));
     await expect(makeMigrator().dev({})).rejects.toThrow(/missing from disk/);
     expect(executor.executed).toEqual([]);
   });
 
-  it("dev rejects pending migrations before introspection or file generation", async () => {
-    await writeMigration("pending", "select 1;");
-    const read = vi.spyOn(introspector, "introspect");
+  it('dev rejects pending migrations before introspection or file generation', async () => {
+    await writeMigration('pending', 'select 1;');
+    const read = vi.spyOn(introspector, 'introspect');
     await expect(makeMigrator(ONE_TABLE).dev({})).rejects.toThrow(/Run tgm deploy first/);
     expect(read).not.toHaveBeenCalled();
     expect(await files.listFiles()).toHaveLength(1);
     expect(executor.executed).toEqual([]);
   });
 
-  it("createOnly writes SQL without executing it or creating history", async () => {
-    const ensure = vi.spyOn(history, "ensureTable");
-    const result = await makeMigrator(ONE_TABLE).dev({ name: "review", createOnly: true });
+  it('createOnly writes SQL without executing it or creating history', async () => {
+    const ensure = vi.spyOn(history, 'ensureTable');
+    const result = await makeMigrator(ONE_TABLE).dev({ name: 'review', createOnly: true });
     expect(result.migrationId).toMatch(/_review$/);
     expect(result.applied).toBe(false);
     expect(await files.listFiles()).toHaveLength(1);
     expect(ensure).not.toHaveBeenCalled();
     expect(history.applied).toEqual([]);
     expect(executor.executed).toEqual([]);
-    await expect(makeMigrator(ONE_TABLE).dev({ createOnly: true })).rejects.toThrow(/Pending migrations/);
+    await expect(makeMigrator(ONE_TABLE).dev({ createOnly: true })).rejects.toThrow(
+      /Pending migrations/,
+    );
     await makeMigrator(ONE_TABLE).deploy();
     expect(executor.executed).toHaveLength(1);
   });
 
-  it("history failure blocks replay even when failure reporting also fails", async () => {
-    await writeMigration("first", "select 1;");
-    vi.spyOn(history, "recordApplied").mockRejectedValue(new Error("history unavailable"));
+  it('history failure blocks replay even when failure reporting also fails', async () => {
+    await writeMigration('first', 'select 1;');
+    vi.spyOn(history, 'recordApplied').mockRejectedValue(new Error('history unavailable'));
     const mark = history.markFailed.bind(history);
-    vi.spyOn(history, "markFailed").mockImplementationOnce(mark).mockRejectedValue(new Error("connection lost"));
+    vi.spyOn(history, 'markFailed')
+      .mockImplementationOnce(mark)
+      .mockRejectedValue(new Error('connection lost'));
     await expect(makeMigrator().deploy()).rejects.toThrow(/recording the failure also failed/);
     await expect(makeMigrator().deploy()).rejects.toThrow(/attempts failed/);
     expect(executor.executed).toHaveLength(1);
   });
 
-  it("does not execute SQL if the durable guard cannot be written", async () => {
-    await writeMigration("first", "select 1;");
-    vi.spyOn(history, "markFailed").mockRejectedValue(new Error("permission denied"));
-    await expect(makeMigrator().deploy()).rejects.toThrow("permission denied");
+  it('does not execute SQL if the durable guard cannot be written', async () => {
+    await writeMigration('first', 'select 1;');
+    vi.spyOn(history, 'markFailed').mockRejectedValue(new Error('permission denied'));
+    await expect(makeMigrator().deploy()).rejects.toThrow('permission denied');
     expect(executor.executed).toHaveLength(0);
   });
 
-  it("rejects executors that omit the completion callback", async () => {
-    await writeMigration("first", "select 1;");
-    vi.spyOn(executor, "executeStatements").mockResolvedValue(undefined);
+  it('rejects executors that omit the completion callback', async () => {
+    await writeMigration('first', 'select 1;');
+    vi.spyOn(executor, 'executeStatements').mockResolvedValue(undefined);
     await expect(makeMigrator().deploy()).rejects.toThrow(/did not confirm migration completion/);
     expect(history.applied[0]?.failed).toBe(true);
   });
 
-  it("status propagates database errors", async () => {
-    vi.spyOn(history, "listApplied").mockRejectedValue(new Error("permission denied"));
-    await expect(makeMigrator().status()).rejects.toThrow("permission denied");
+  it('status propagates database errors', async () => {
+    vi.spyOn(history, 'listApplied').mockRejectedValue(new Error('permission denied'));
+    await expect(makeMigrator().status()).rejects.toThrow('permission denied');
   });
 
-  it("dev allocates increasing IDs under a frozen clock", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-21T12:00:00Z"));
+  it('dev allocates increasing IDs under a frozen clock', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-21T12:00:00Z'));
     try {
-      const first = await makeMigrator(ONE_TABLE).dev({name: "z"});
-      const second = await makeMigrator(ONE_TABLE).dev({name: "a"});
+      const first = await makeMigrator(ONE_TABLE).dev({ name: 'z' });
+      const second = await makeMigrator(ONE_TABLE).dev({ name: 'a' });
       expect(second.migrationId! > first.migrationId!).toBe(true);
       expect(await files.listFiles()).toHaveLength(2);
-    } finally { clock.mockRestore(); }
+    } finally {
+      clock.mockRestore();
+    }
   });
 
-  it("uses the same database lock resource across different local directories", async () => {
-    const lock = vi.spyOn(executor, "acquireMigrationLock");
+  it('uses the same database lock resource across different local directories', async () => {
+    const lock = vi.spyOn(executor, 'acquireMigrationLock');
     await makeMigrator().deploy();
     const previousDir = dir;
-    dir = path.join(dir, "another-checkout");
+    dir = path.join(dir, 'another-checkout');
     await mkdir(dir);
-    try { await makeMigrator().deploy(); } finally { dir = previousDir; }
+    try {
+      await makeMigrator().deploy();
+    } finally {
+      dir = previousDir;
+    }
     expect(lock.mock.calls[0]).toEqual(lock.mock.calls[1]);
-    expect(lock.mock.calls[0]).toEqual(["ts-grm-migrate"]);
+    expect(lock.mock.calls[0]).toEqual(['ts-grm-migrate']);
   });
 
-  it("rejects pending migrations inserted before an applied migration", async () => {
-    const later = await writeMigration("002", "select 2;");
+  it('rejects pending migrations inserted before an applied migration', async () => {
+    const later = await writeMigration('002', 'select 2;');
     markApplied(later);
-    await writeMigration("001", "select 1;");
+    await writeMigration('001', 'select 1;');
     await expect(makeMigrator().deploy()).rejects.toThrow(/continuous prefix/);
     expect(executor.executed).toEqual([]);
   });
 
-  it("push refuses pending and failed migrations even in preview", async () => {
-    const file = await writeMigration("001", "select 1;");
+  it('push refuses pending and failed migrations even in preview', async () => {
+    const file = await writeMigration('001', 'select 1;');
     await expect(makeMigrator().push()).rejects.toThrow(/Pending migrations/);
-    await expect(makeMigrator().push({dryRun:true})).rejects.toThrow(/Pending migrations/);
-    await history.markFailed(file.id, "failed");
+    await expect(makeMigrator().push({ dryRun: true })).rejects.toThrow(/Pending migrations/);
+    await history.markFailed(file.id, 'failed');
     await expect(makeMigrator().push()).rejects.toThrow(/attempts failed/);
     expect(executor.executed).toEqual([]);
   });
 
-  it("push preview validates SQL without confirming, executing or creating history", async () => {
-    const ensure = vi.spyOn(history, "ensureTable");
-    const result = await makeMigrator(ONE_TABLE).push({dryRun:true});
+  it('push preview validates SQL without confirming, executing or creating history', async () => {
+    const ensure = vi.spyOn(history, 'ensureTable');
+    const result = await makeMigrator(ONE_TABLE).push({ dryRun: true });
     expect(result.statements).toHaveLength(1);
     expect(executor.executed).toEqual([]);
     expect(history.applied).toEqual([]);
@@ -288,57 +305,53 @@ describe("Migrator", () => {
     expect(await files.listFiles()).toEqual([]);
   });
 
-  it("reports cleanup failures without hiding the migration error and releases the local lease", async () => {
-    vi.spyOn(executor, "acquireMigrationLock").mockResolvedValue(async()=>{throw new Error("unlock failed");});
-    vi.spyOn(history, "listApplied").mockRejectedValue(new Error("history failed"));
+  it('reports cleanup failures without hiding the migration error and releases the local lease', async () => {
+    vi.spyOn(executor, 'acquireMigrationLock').mockResolvedValue(async () => {
+      throw new Error('unlock failed');
+    });
+    vi.spyOn(history, 'listApplied').mockRejectedValue(new Error('history failed'));
     await expect(makeMigrator().deploy()).rejects.toThrow(/history failed.*unlock failed/);
-    const { stat } = await import("node:fs/promises");
-    await expect(stat(path.join(dir,"migrate.lock"))).rejects.toThrow();
+    const { stat } = await import('node:fs/promises');
+    await expect(stat(path.join(dir, 'migrate.lock'))).rejects.toThrow();
   });
 
-  describe("deploy", () => {
-    it("按 sortKey 顺序应用未应用的迁移，并记录历史", async () => {
-      await writeMigration("20260911T120001_b", "select 2;");
-      await writeMigration("20260911T120000_a", "select 1;");
+  describe('deploy', () => {
+    it('按 sortKey 顺序应用未应用的迁移，并记录历史', async () => {
+      await writeMigration('20260911T120001_b', 'select 2;');
+      await writeMigration('20260911T120000_a', 'select 1;');
 
       const result = await makeMigrator().deploy();
 
-      expect(result.applied).toEqual([
-        "20260911T120000_a",
-        "20260911T120001_b",
-      ]);
+      expect(result.applied).toEqual(['20260911T120000_a', '20260911T120001_b']);
       expect(result.skipped).toBe(0);
-      expect(executor.executed.map((s) => s[0])).toEqual(["select 1;", "select 2;"]);
-      expect(history.applied.map((a) => a.id)).toEqual([
-        "20260911T120000_a",
-        "20260911T120001_b",
-      ]);
+      expect(executor.executed.map((s) => s[0])).toEqual(['select 1;', 'select 2;']);
+      expect(history.applied.map((a) => a.id)).toEqual(['20260911T120000_a', '20260911T120001_b']);
     });
 
-    it("跳过已应用且 checksum 一致的迁移", async () => {
-      const a = await writeMigration("20260911T120000_a", "select 1;");
-      await writeMigration("20260911T120001_b", "select 2;");
+    it('跳过已应用且 checksum 一致的迁移', async () => {
+      const a = await writeMigration('20260911T120000_a', 'select 1;');
+      await writeMigration('20260911T120001_b', 'select 2;');
       markApplied(a);
 
       const result = await makeMigrator().deploy();
 
-      expect(result.applied).toEqual(["20260911T120001_b"]);
+      expect(result.applied).toEqual(['20260911T120001_b']);
       expect(result.skipped).toBe(1);
-      expect(executor.executed).toEqual([["select 2;"]]);
+      expect(executor.executed).toEqual([['select 2;']]);
     });
 
-    it("已应用迁移的文件被改动 → 拒绝继续（checksum 漂移）", async () => {
-      const a = await writeMigration("20260911T120000_a", "select 1;");
-      markApplied(a, "deadbeef");
+    it('已应用迁移的文件被改动 → 拒绝继续（checksum 漂移）', async () => {
+      const a = await writeMigration('20260911T120000_a', 'select 1;');
+      markApplied(a, 'deadbeef');
 
       await expect(makeMigrator().deploy()).rejects.toThrow(/checksum/);
       expect(executor.executed).toEqual([]);
     });
 
-    it("历史里有、磁盘上缺失的迁移 → 拒绝继续", async () => {
+    it('历史里有、磁盘上缺失的迁移 → 拒绝继续', async () => {
       history.applied.push({
-        id: "20260911T000000_gone",
-        checksum: "x",
+        id: '20260911T000000_gone',
+        checksum: 'x',
         appliedAt: new Date(),
         rolledBackAt: undefined,
         failed: false,
@@ -349,26 +362,26 @@ describe("Migrator", () => {
       await expect(makeMigrator().deploy()).rejects.toThrow(/missing from disk/);
     });
 
-    it("迁移执行失败 → 记入历史、抛出，且后续迁移不再执行", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
-      await writeMigration("20260911T120001_b", "select 2;");
-      executor.failWhen = "select 1;";
+    it('迁移执行失败 → 记入历史、抛出，且后续迁移不再执行', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
+      await writeMigration('20260911T120001_b', 'select 2;');
+      executor.failWhen = 'select 1;';
 
       await expect(makeMigrator().deploy()).rejects.toThrow(/failed/);
 
-      expect(history.failures.map((f) => f.id)).toEqual(["20260911T120000_a", "20260911T120000_a"]);
+      expect(history.failures.map((f) => f.id)).toEqual(['20260911T120000_a', '20260911T120000_a']);
       expect(history.applied[0]?.failed).toBe(true);
     });
 
-    it("无迁移文件时是空操作", async () => {
+    it('无迁移文件时是空操作', async () => {
       const result = await makeMigrator().deploy();
       expect(result).toEqual({ applied: [], skipped: 0, drift: [] });
     });
   });
 
-  describe("dev", () => {
-    it("无差异时不生成任何文件", async () => {
-      const result = await makeMigrator(EMPTY).dev({ name: "init" });
+  describe('dev', () => {
+    it('无差异时不生成任何文件', async () => {
+      const result = await makeMigrator(EMPTY).dev({ name: 'init' });
 
       expect(result.migrationId).toBeUndefined();
       expect(result.applied).toBe(false);
@@ -376,117 +389,117 @@ describe("Migrator", () => {
       expect(await files.listFiles()).toEqual([]);
     });
 
-    it("有差异时生成迁移文件、应用并记录", async () => {
+    it('有差异时生成迁移文件、应用并记录', async () => {
       introspector.schema = EMPTY;
 
-      const result = await makeMigrator(ONE_TABLE).dev({ name: "init" });
+      const result = await makeMigrator(ONE_TABLE).dev({ name: 'init' });
 
       expect(result.migrationId).toBeDefined();
       expect(result.applied).toBe(true);
 
       const listed = await files.listFiles();
       expect(listed.map((f) => f.id)).toEqual([result.migrationId]);
-      expect(listed[0]!.sql).toContain("create table");
+      expect(listed[0]!.sql).toContain('create table');
       expect(history.applied.map((a) => a.id)).toEqual([result.migrationId]);
       expect(executor.executed.length).toBe(1);
     });
 
-    it("diff 时排除 migrate 自己的历史表（否则会生成 DROP 把它删掉）", async () => {
+    it('diff 时排除 migrate 自己的历史表（否则会生成 DROP 把它删掉）', async () => {
       // 现状：业务表 + migrate 自己的记账表；目标态只有业务表
       introspector.schema = {
         tables: [
-          { name: "_migrations", columns: [], constraints: [], indexes: [] },
+          { name: '_migrations', columns: [], constraints: [], indexes: [] },
           ...ONE_TABLE.tables,
         ],
       };
 
-      const result = await makeMigrator(ONE_TABLE).dev({ name: "init" });
+      const result = await makeMigrator(ONE_TABLE).dev({ name: 'init' });
 
       expect(result.diff.changes).toEqual([]);
       expect(result.migrationId).toBeUndefined();
     });
 
-    it("迁移 id 含名字 slug 且以时间戳开头", async () => {
-      const result = await makeMigrator(ONE_TABLE).dev({ name: "add user table" });
+    it('迁移 id 含名字 slug 且以时间戳开头', async () => {
+      const result = await makeMigrator(ONE_TABLE).dev({ name: 'add user table' });
       expect(result.migrationId).toMatch(/^\d{17}_add_user_table$/);
     });
   });
 
-  describe("resolve（失败后的恢复途径）", () => {
+  describe('resolve（失败后的恢复途径）', () => {
     async function markFailedRecord(id: string): Promise<void> {
       history.applied.push({
         id,
-        checksum: "",
+        checksum: '',
         appliedAt: new Date(),
         rolledBackAt: undefined,
         failed: true,
-        error: "boom",
+        error: 'boom',
         logs: undefined,
       });
     }
 
-    it("applied：记为已应用，checksum 取自磁盘当前内容", async () => {
-      const a = await writeMigration("20260911T120000_a", "select 1;");
+    it('applied：记为已应用，checksum 取自磁盘当前内容', async () => {
+      const a = await writeMigration('20260911T120000_a', 'select 1;');
 
-      await makeMigrator().resolve({ migration: a.id, action: "applied" });
+      await makeMigrator().resolve({ migration: a.id, action: 'applied' });
 
       expect(history.applied.map((x) => x.id)).toEqual([a.id]);
       expect(history.applied[0]!.checksum).toBe(a.checksum);
     });
 
-    it("rolled-back：标记回滚（保留记录），使它重新待应用", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
-      await markFailedRecord("20260911T120000_a");
+    it('rolled-back：标记回滚（保留记录），使它重新待应用', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
+      await markFailedRecord('20260911T120000_a');
 
       await makeMigrator().resolve({
-        migration: "20260911T120000_a",
-        action: "rolled-back",
+        migration: '20260911T120000_a',
+        action: 'rolled-back',
       });
 
-      expect(history.rolledBack).toEqual(["20260911T120000_a"]);
+      expect(history.rolledBack).toEqual(['20260911T120000_a']);
       // 记录保留下来作审计，但被标记为已回滚（不再算「已生效」）
       expect(history.applied).toHaveLength(1);
       expect(history.applied[0]!.rolledBackAt).toBeDefined();
       expect(history.applied[0]!.failed).toBe(false);
     });
 
-    it("rolled-back：没有历史记录时拒绝（可能 id 打错）", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
+    it('rolled-back：没有历史记录时拒绝（可能 id 打错）', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
 
       await expect(
-        makeMigrator().resolve({ migration: "20260911T120000_a", action: "rolled-back" }),
+        makeMigrator().resolve({ migration: '20260911T120000_a', action: 'rolled-back' }),
       ).rejects.toThrow(/no history record/);
     });
 
-    it("迁移不在磁盘上时拒绝", async () => {
+    it('迁移不在磁盘上时拒绝', async () => {
       await expect(
-        makeMigrator().resolve({ migration: "20260911T000000_nope", action: "applied" }),
+        makeMigrator().resolve({ migration: '20260911T000000_nope', action: 'applied' }),
       ).rejects.toThrow(/was not found/);
     });
 
-    it("闭环：失败迁移阻塞 deploy，resolve 后恢复可用", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
-      await markFailedRecord("20260911T120000_a");
+    it('闭环：失败迁移阻塞 deploy，resolve 后恢复可用', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
+      await markFailedRecord('20260911T120000_a');
 
       // 未处理前：deploy 被拒绝
       await expect(makeMigrator().deploy()).rejects.toThrow(/attempts failed/);
 
       // 清除失败记录后：重新变成待应用，deploy 正常
       await makeMigrator().resolve({
-        migration: "20260911T120000_a",
-        action: "rolled-back",
+        migration: '20260911T120000_a',
+        action: 'rolled-back',
       });
       const result = await makeMigrator().deploy();
 
-      expect(result.applied).toEqual(["20260911T120000_a"]);
-      expect(history.applied.map((a) => a.id)).toEqual(["20260911T120000_a"]);
+      expect(result.applied).toEqual(['20260911T120000_a']);
+      expect(history.applied.map((a) => a.id)).toEqual(['20260911T120000_a']);
     });
   });
 
-  describe("对账（迁移后确认数据库 == 模型）", () => {
+  describe('对账（迁移后确认数据库 == 模型）', () => {
     const extraColumn = {
-      name: "EXTRA",
-      type: "integer",
+      name: 'EXTRA',
+      type: 'integer',
       nullable: true,
       length: undefined,
       default: undefined,
@@ -495,19 +508,19 @@ describe("Migrator", () => {
       comment: undefined,
     };
 
-    it("一致时对账为空", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
+    it('一致时对账为空', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
       const result = await makeMigrator().deploy();
       expect(result.drift).toEqual([]);
     });
 
-    it("仍有差异时报告具体表与差异", async () => {
-      await writeMigration("20260911T120000_a", "select 1;");
+    it('仍有差异时报告具体表与差异', async () => {
+      await writeMigration('20260911T120000_a', 'select 1;');
       // 模拟：应用完之后数据库却多出一列（手工改动 / 迁移未达预期）
       introspector.schema = {
         tables: [
           {
-            name: "T",
+            name: 'T',
             columns: [...ONE_TABLE.tables[0]!.columns, extraColumn],
             constraints: [],
             indexes: [],
@@ -517,28 +530,26 @@ describe("Migrator", () => {
 
       const result = await makeMigrator(ONE_TABLE).deploy();
 
-      expect(result.drift).toEqual([
-        { table: "T", summary: "多出列 EXTRA", known: false },
-      ]);
+      expect(result.drift).toEqual([{ table: 'T', summary: '多出列 EXTRA', known: false }]);
     });
 
-    it("checkDrift 可单独调用（不应用任何迁移）", async () => {
+    it('checkDrift 可单独调用（不应用任何迁移）', async () => {
       introspector.schema = {
-        tables: [{ name: "GHOST", columns: [], constraints: [], indexes: [] }],
+        tables: [{ name: 'GHOST', columns: [], constraints: [], indexes: [] }],
       };
       const drift = await makeMigrator(EMPTY).checkDrift();
       expect(drift).toEqual([
         {
-          table: "GHOST",
-          summary: "数据库中多出这张表（模型里已不存在）",
+          table: 'GHOST',
+          summary: '数据库中多出这张表（模型里已不存在）',
           known: false,
         },
       ]);
     });
   });
 
-  describe("push", () => {
-    it("直接执行 diff 语句，不写迁移文件、不记历史", async () => {
+  describe('push', () => {
+    it('直接执行 diff 语句，不写迁移文件、不记历史', async () => {
       const result = await makeMigrator(ONE_TABLE).push();
 
       expect(result.statements.length).toBe(1);
@@ -549,24 +560,22 @@ describe("Migrator", () => {
   });
 });
 
-describe("generateMigrationId", () => {
-  it("UTC 时间戳 + 名字 slug", () => {
-    expect(generateMigrationId(new Date("2026-09-11T12:34:56Z"), "Add User Table")).toBe(
-      "20260911123456000_add_user_table",
+describe('generateMigrationId', () => {
+  it('UTC 时间戳 + 名字 slug', () => {
+    expect(generateMigrationId(new Date('2026-09-11T12:34:56Z'), 'Add User Table')).toBe(
+      '20260911123456000_add_user_table',
     );
   });
 
-  it("名字为空时只留时间戳", () => {
-    expect(generateMigrationId(new Date("2026-09-11T12:34:56Z"), "   ")).toBe(
-      "20260911123456000",
-    );
+  it('名字为空时只留时间戳', () => {
+    expect(generateMigrationId(new Date('2026-09-11T12:34:56Z'), '   ')).toBe('20260911123456000');
   });
 });
 
-describe("toSqlFile", () => {
-  it("语句间空行分隔，统一补分号，末尾换行", () => {
-    expect(toSqlFile(["create table A", "alter table B;"])).toBe(
-      "create table A;\n\nalter table B;\n",
+describe('toSqlFile', () => {
+  it('语句间空行分隔，统一补分号，末尾换行', () => {
+    expect(toSqlFile(['create table A', 'alter table B;'])).toBe(
+      'create table A;\n\nalter table B;\n',
     );
   });
 });

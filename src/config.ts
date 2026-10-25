@@ -1,4 +1,3 @@
-import { diagnostic, asError } from "./diagnostics/error.js";
 /**
  * CLI 配置 —— 在项目根放一个 `ts-grm-migrate.config.ts`（或 `.mts` / `.mjs` / `.js`）。
  *
@@ -13,16 +12,17 @@ import { diagnostic, asError } from "./diagnostics/error.js";
  *
  * 模型文件可以是 `.ts`（Node 22.18+ / 23.6+ 原生类型剥离）或编译后的 `.js`。
  */
-import { access } from "node:fs/promises";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { dialectInfo } from "./dialect.js";
+import { access } from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { asError, diagnostic } from './diagnostics/error.js';
+import { dialectInfo } from './dialect.js';
 
 // 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
-export type { DialectName } from "./dialect.js";
+export type { DialectName } from './dialect.js';
 
 /** CLI output language; the command-line --lang flag may override it. */
-export type OutputLanguage = "en" | "zh-CN";
+export type OutputLanguage = 'en' | 'zh-CN';
 
 /**
  * 数据库连接。
@@ -51,13 +51,19 @@ export interface SeedConfig {
 }
 
 export function validateSeedConfig(value: unknown): asserts value is SeedConfig {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw diagnostic("seed_config");
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw diagnostic('seed_config');
   }
   const seed = value as Partial<SeedConfig>;
-  if (typeof seed.command !== "string" || seed.command.trim() === "" || seed.command.includes("\0") ||
-      (seed.args !== undefined && (!Array.isArray(seed.args) || seed.args.some(arg => typeof arg !== "string" || arg.includes("\0"))))) {
-    throw diagnostic("seed_config");
+  if (
+    typeof seed.command !== 'string' ||
+    seed.command.trim() === '' ||
+    seed.command.includes('\0') ||
+    (seed.args !== undefined &&
+      (!Array.isArray(seed.args) ||
+        seed.args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))))
+  ) {
+    throw diagnostic('seed_config');
   }
 }
 
@@ -70,7 +76,7 @@ export interface MigrateConfig {
    * sqlite 时用 `database.file` 指定库文件（相对项目根，或 ":memory:"），
    * 且**不能**配 `schema`（SQLite 没有 schema 概念，配了会报错）。
    */
-  readonly dialect?: import("./dialect.js").DialectName;
+  readonly dialect?: import('./dialect.js').DialectName;
   /** CLI output language for this project. Defaults to English. */
   readonly language?: OutputLanguage;
   /** 数据库连接 */
@@ -97,10 +103,10 @@ export function defineConfig(config: MigrateConfig): MigrateConfig {
 
 /** 配置文件名候选（按顺序尝试） */
 export const CONFIG_FILENAMES: ReadonlyArray<string> = [
-  "ts-grm-migrate.config.ts",
-  "ts-grm-migrate.config.mts",
-  "ts-grm-migrate.config.mjs",
-  "ts-grm-migrate.config.js",
+  'ts-grm-migrate.config.ts',
+  'ts-grm-migrate.config.mts',
+  'ts-grm-migrate.config.mjs',
+  'ts-grm-migrate.config.js',
 ];
 
 export interface LoadedConfig {
@@ -115,15 +121,14 @@ export async function loadConfig(
   explicitPath?: string,
   onLanguage?: (language: OutputLanguage) => void,
 ): Promise<LoadedConfig> {
-  const file =
-    explicitPath != null ? path.resolve(cwd, explicitPath) : await findConfig(cwd);
+  const file = explicitPath != null ? path.resolve(cwd, explicitPath) : await findConfig(cwd);
   if (file == null) {
-    throw diagnostic("config_1", CONFIG_FILENAMES.join("\n  "));
+    throw diagnostic('config_1', CONFIG_FILENAMES.join('\n  '));
   }
   const exported = await importConfigModule(file);
-  if (exported != null && typeof exported === "object" && "language" in exported) {
+  if (exported != null && typeof exported === 'object' && 'language' in exported) {
     const language = exported.language;
-    if (language === "en" || language === "zh-CN") onLanguage?.(language);
+    if (language === 'en' || language === 'zh-CN') onLanguage?.(language);
   }
   return { config: validateConfig(exported, file), path: file };
 }
@@ -146,7 +151,7 @@ async function importConfigModule(file: string): Promise<unknown> {
   try {
     mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
   } catch (e) {
-    throw diagnostic("config_2", file, asError(e), configLoadHint(file, e));
+    throw diagnostic('config_2', file, asError(e), configLoadHint(file, e));
   }
   return mod.default;
 }
@@ -154,28 +159,28 @@ async function importConfigModule(file: string): Promise<unknown> {
 /** 针对常见失败给出可操作的提示，而不是把 Node 的原始报错直接丢给使用者 */
 function configLoadHint(file: string, error: unknown): Error | string {
   const message = asError(error).message;
-  if (message.includes("outside a module")) {
-    return diagnostic("config_hint_module");
+  if (message.includes('outside a module')) {
+    return diagnostic('config_hint_module');
   }
   if (/Cannot find (?:module|package)/.test(message)) {
-    return diagnostic("config_hint_missing", file);
+    return diagnostic('config_hint_missing', file);
   }
-  return "";
+  return '';
 }
 
 function validateConfig(value: unknown, file: string): MigrateConfig {
-  if (typeof value !== "object" || value === null) {
-    throw diagnostic("config_3", file);
+  if (typeof value !== 'object' || value === null) {
+    throw diagnostic('config_3', file);
   }
   const config = value as Partial<MigrateConfig>;
-  if (typeof config.database !== "object" || config.database === null) {
-    throw diagnostic("config_4", file);
+  if (typeof config.database !== 'object' || config.database === null) {
+    throw diagnostic('config_4', file);
   }
   if (!Array.isArray(config.models) || config.models.length === 0) {
-    throw diagnostic("config_5", file);
+    throw diagnostic('config_5', file);
   }
-  if (config.language != null && config.language !== "en" && config.language !== "zh-CN") {
-    throw diagnostic("config_6", file, String(config.language));
+  if (config.language != null && config.language !== 'en' && config.language !== 'zh-CN') {
+    throw diagnostic('config_6', file, String(config.language));
   }
   if (config.seed !== undefined) validateSeedConfig(config.seed);
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime

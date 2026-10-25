@@ -8,27 +8,28 @@
  *    这是能力真正落地的最强证据：只要 default / AUTOINCREMENT 的写法与
  *    introspection 对不上，往返 diff 就会非空。
  */
-import { describe, it, expect, afterAll } from 'vitest';
+
 import Database from 'better-sqlite3';
 import { applyPatches } from 'ts-grm-patches';
+import { afterAll, describe, expect, it } from 'vitest';
+import { SqliteDdlGenerator } from '../src/ddl/sqlite';
+import { SchemaDiffer } from '../src/differ';
+import { SqliteSqlExecutor } from '../src/executor/sqlite';
+import { SqliteIntrospector } from '../src/introspector/sqlite';
+import { tableDefsToSchema } from '../src/schema/adapter';
+import type { Schema } from '../src/schema/model';
+import { readColumnPatch, renderColumnDefault } from '../src/schema/patches';
+import type { ColumnDef, SchemaDriver, SqlClientImplementor, TableDef } from '../src/vendor/ts-grm';
 import {
+  createSchema,
+  dsl,
   EntityManager,
   model,
-  prop,
-  dsl,
   newSqlClient,
+  prop,
   ScalarType,
   SqliteDriver,
-  createSchema,
 } from '../src/vendor/ts-grm';
-import type { ColumnDef, SchemaDriver, SqlClientImplementor, TableDef } from '../src/vendor/ts-grm';
-import { tableDefsToSchema } from '../src/schema/adapter';
-import { readColumnPatch, renderColumnDefault } from '../src/schema/patches';
-import { SchemaDiffer } from '../src/differ';
-import { SqliteDdlGenerator } from '../src/ddl/sqlite';
-import { SqliteIntrospector } from '../src/introspector/sqlite';
-import { SqliteSqlExecutor } from '../src/executor/sqlite';
-import type { Schema } from '../src/schema/model';
 
 // 必须在任何 model(...) 定义之前安装（补丁的硬性要求）
 applyPatches();
@@ -121,9 +122,22 @@ describe('列级补丁适配', () => {
 
 describe('readColumnPatch 探测', () => {
   it('getter failure aborts rather than requesting a destructive change', () => {
-    const broken = { get default(): unknown { throw new Error('broken getter'); }, autoIncrement: false };
-    expect(() => adapt(fakeTableDef('T', [{ name: 'status', prop: broken }]))).toThrow(/t.status.*default.*broken getter/);
-    expect(() => readColumnPatch({ get autoIncrement(): boolean { throw new Error('broken identity'); } })).toThrow(/autoIncrement.*broken identity/);
+    const broken = {
+      get default(): unknown {
+        throw new Error('broken getter');
+      },
+      autoIncrement: false,
+    };
+    expect(() => adapt(fakeTableDef('T', [{ name: 'status', prop: broken }]))).toThrow(
+      /t.status.*default.*broken getter/,
+    );
+    expect(() =>
+      readColumnPatch({
+        get autoIncrement(): boolean {
+          throw new Error('broken identity');
+        },
+      }),
+    ).toThrow(/autoIncrement.*broken identity/);
   });
   it('普通对象（无补丁读取器）→ 不管理', () => {
     expect(readColumnPatch({})).toEqual({
