@@ -22,7 +22,7 @@ corepack yarn test:postgres-mysql
 corepack yarn test:servers
 ```
 
-`check` 包含 lint、类型检查、构建、本地测试。本地测试没有数据库环境变量时会跳过服务器测试，
+`check` 包含 Biome lint 与格式检查、类型检查、构建、本地测试。本地测试没有数据库环境变量时会跳过服务器测试，
 不能将其当作完整数据库验证。两个容器脚本默认使用 Podman，可设置 `CONTAINER_RUNTIME=docker`。
 脚本创建临时容器与随机端口，只清理自身资源；请预留镜像空间，不使用业务数据库测试。
 
@@ -37,7 +37,8 @@ corepack yarn test:servers
 - ts-grm 内部字段访问集中在 `src/vendor/ts-grm.ts`；改变 peer 范围前验证候选版本。
 - 发布包保持 ESM，避免宿主模型注册表被重复加载。不要把 ts-grm 打进 bundle。
 - 外部实现参考使用 `@see` 标注来源；引入代码需保留其适用的许可证和作者声明。
-- Biome 使用上游的格式偏好；`yarn check` 执行正确性 lint，避免仅为格式批量改写历史代码。
+- Biome 使用上游的格式偏好并启用 recommended lint 规则；`yarn check` 会执行 `biome check`（lint 与格式），提交前先运行 `yarn format`。每次提交前都要运行 `yarn check`：仓库没有 CI，问题不会在提交后被自动发现。
+- 代码注释使用中文；技术术语、标识符、代码示例和 `@see` 链接保留原文。面向使用者的文档仍以英文为主，并提供简体中文版本。
 
 本项目原创贡献使用 MIT；第三方适配声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
