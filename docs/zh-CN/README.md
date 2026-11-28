@@ -106,8 +106,8 @@ npx tgm baseline -n initial        # 生成初始迁移，并记录为已应用
   它决定使用哪个数据库驱动，以及结构读取、SQL 生成和迁移执行的具体实现；各方言的驱动依赖与支持范围见下表。
 - **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
 - **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
-  **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
-- `allowDropTables`：是否允许自动删表，默认 `true`。设为 `false` 后，生成迁移和 `push` SQL 时跳过 `DROP_TABLE`；严格 drift 检查、列变更和已有迁移 SQL 不受影响，见[自动删表控制](migrations.md#控制自动删表)
+  支持 `.ts`、`.mts`、`.js`、`.mjs`，跳过声明文件。**必须是 ESM** —— 项目声明 `"type": "module"`、使用 `.mts`/`.mjs`，或指向编译后的 ESM 产物（`.js`）。tgm 内部将文件路径转成 `file:` URL，支持 Windows 盘符及 UNC 路径；配置继续使用相对文件路径。
+- `allowDropTables`：是否允许自动删表，下一未发布版本起默认 `false`。仅显式设为 `true` 才自动删表；省略或设为 `false` 时，生成迁移和 `push` SQL 均跳过 `DROP_TABLE`；严格 drift 检查、列变更和已有迁移 SQL 不受影响，见[自动删表控制](migrations.md#控制自动删表)
 - `excludeTables`：可选的 `(string | RegExp)[]`，匹配物理表名；字符串使用 glob，RegExp 使用 JavaScript 语义且不能带 `g`/`y` flags。被排除表可以保留查询模型
 - `language`：项目的 CLI 默认语言，可选 `en` 或 `zh-CN`，默认 `en`；命令行 `--lang` 可临时覆盖
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
@@ -370,7 +370,7 @@ export const SYS_USER = model("SysUser", "id", class {
 
 - **迁移文件是人可读的 SQL**：`<migrationsDir>/<时间戳>_<名字>.sql`，可以手工编辑。
   但**已应用的迁移不能再改** —— 内容一旦变动，后续 `deploy` 会因 checksum 不匹配而拒绝继续
-- **破坏性变更会先问**：模型同步时删表 / 删列 / 改列类型及显式删除 unique index 会要求确认，非交互同步需加 `--force`。`deploy` 直接应用已审核文件，不进行交互确认。程序化调用 `Migrator` 时只有传入 `confirm` 钩子才会询问；不传时 `dev()` 和 `push()` 会直接执行破坏性变更。请传入 `confirm`，或先用 `push({ dryRun: true })`、`dev({ createOnly: true })` 审核 SQL。
+- **破坏性变更会先问**：模型同步时删列 / 改列类型及显式删除 unique index 会要求确认，非交互同步需加 `--force`。`deploy` 直接应用已审核文件，不进行交互确认。程序化调用 `Migrator` 时只有传入 `confirm` 钩子才会询问；不传时 `dev()` 和 `push()` 会直接执行允许生成的破坏性变更，自动删表还需显式设置 `allowDropTables: true`。请传入 `confirm`，或先用 `push({ dryRun: true })`、`dev({ createOnly: true })` 审核 SQL。
 - **迁移后自动对账**：`dev` / `deploy` / `push` 完成后会再读一次数据库与模型比对，
   仍有差异就报出具体位置，例如：
 

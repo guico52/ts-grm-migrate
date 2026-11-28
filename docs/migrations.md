@@ -15,7 +15,7 @@ export default defineConfig({
 });
 ```
 
-`excludeTables` accepts `(string | RegExp)[]` matching **physical table names** within the configured database/schema. Strings are full-name, case-sensitive globs. RegExp follows native JavaScript semantics: use `i` for case-insensitive matching and `^`/`$` to anchor the whole name. Stateful `g` and `y` flags are rejected. Any matching pattern excludes the table. Excluded tables are skipped by `dev`, `push`, `check`, and post-deploy drift checks, before unsupported structures are parsed. Excluded tables may remain in models for application queries; their existence and structural differences are ignored by tgm, and missing excluded tables are not created. The history table is always reserved. Other tables retain authoritative comparison: removing a model or finding database tables without models generates drops unless `allowDropTables: false` is configured.
+`excludeTables` accepts `(string | RegExp)[]` matching **physical table names** within the configured database/schema. Strings are full-name, case-sensitive globs. RegExp follows native JavaScript semantics: use `i` for case-insensitive matching and `^`/`$` to anchor the whole name. Stateful `g` and `y` flags are rejected. Any matching pattern excludes the table. Excluded tables are skipped by `dev`, `push`, `check`, and post-deploy drift checks, before unsupported structures are parsed. Excluded tables may remain in models for application queries; their existence and structural differences are ignored by tgm, and missing excluded tables are not created. The history table is always reserved. Other tables retain authoritative comparison: removing a model or finding database tables without models is still reported as drift, but only generates drops with explicit `allowDropTables: true`.
 
 String globs support `sys_*` (prefix), `*_log` (suffix), `report_????` (four characters), `report_[0-9][0-9]` (two digits), and `{order,payment}_*` (alternative prefixes). `*` and `?` do not cross `/`. Names are strings, not directories; `sys_**` is equivalent to `sys_*`. Leading `!` negation and extglob are not supported; parentheses and pipes in strings are literal, so use RegExp for complex expressions. To match a literal `*`, write `'sys_\\*'` in TypeScript. Unbalanced brackets/braces are rejected before operations start.
 
@@ -44,7 +44,7 @@ Exclusions do not rewrite existing SQL. `deploy` still executes migration files,
 
 ## Control automatic table deletion
 
-Available since `0.1.0-alpha.9`; `baseline` and pattern-based exclusions are available since `0.1.0-alpha.8`.
+Available since `0.1.0-alpha.9`; `baseline` and pattern-based exclusions are available since `0.1.0-alpha.8`. Published `0.1.0-alpha.9` defaults to `true`; the next unreleased version changes the default to `false`. To retain automatic table deletion after upgrading, explicitly configure `allowDropTables: true`.
 
 ```ts
 export default defineConfig({
@@ -54,7 +54,7 @@ export default defineConfig({
 });
 ```
 
-`allowDropTables` is a boolean and defaults to `true`. With `false`, `dev` (including `--create-only`) and `push` (including `--dry-run`) omit table drops from both generated SQL and destructive-change confirmations. Other operations, including creating tables, adding/dropping columns, and changing constraints/indexes, remain enabled. `--force` does not override this setting. Programmatic callers can pass the same option to `Migrator`.
+`allowDropTables` is a boolean and defaults to `false` in the next unreleased version. Only explicit `true` enables automatic table drops. When omitted or `false`, `dev` (including `--create-only`) and `push` (including `--dry-run`) omit table drops from both generated SQL and destructive-change confirmations. Other operations, including creating tables, adding/dropping columns, and changing constraints/indexes, remain enabled. `--force` does not override this setting. Programmatic callers can pass the same option to `Migrator`.
 
 This controls DDL generation, not management scope. `check` and post-application drift checks still report non-excluded tables absent from models. `push` exits with 1 if those differences remain; `dev` reports remaining differences and writes no empty migration when the only changes would be table drops. `baseline` still requires matching managed structures and will not silently include extra tables. Use `excludeTables` instead when those tables should be completely outside tgm's scope.
 

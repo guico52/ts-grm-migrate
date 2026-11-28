@@ -273,7 +273,7 @@ describe('CLI 可执行入口（需要先 build）', () => {
         models: ['./missing.js'],
       },
       args: ['check'],
-      expected: '找不到文件或依赖',
+      expected: '文件或目录不存在',
       absent: 'Illegal path',
     },
     {

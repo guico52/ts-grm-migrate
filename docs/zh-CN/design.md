@@ -6,7 +6,7 @@
 
 ## 从模型到 SQL
 
-`src/runtime.ts` 同时组装 CLI 和程序化入口。它加载 `models`，创建 ts-grm 的 `SqlClient`，再将模型转换成迁移器使用的 `Schema`：
+`src/runtime.ts` 同时组装 CLI 和程序化入口。它创建 ts-grm 的 `SqlClient`，在首次推导结构时通过 `src/model-loader.ts` 延迟加载 `models`，再将模型转换成迁移器使用的 `Schema`。导入使用 `pathToFileURL` 兼容 Windows；`status` 和 `resolve` 不导入模型文件：
 
 ```text
 ts-grm models → src/vendor/ts-grm.ts → src/schema/adapter.ts → Schema

@@ -1,5 +1,9 @@
 /** 成对的中英诊断模板。路径、SQL、标识符等取值不做翻译。 */
 export const diagnostics = {
+  model_relative_path: {
+    en: 'Model path {0} must be relative to the project root and start with ./ or ../.',
+    'zh-CN': '模型路径 {0} 必须相对于项目根目录，并以 ./ 或 ../ 开头。',
+  },
   allow_drop_tables_config: {
     en: 'allowDropTables must be a boolean (true or false).',
     'zh-CN': 'allowDropTables 必须为布尔值（true 或 false）。',

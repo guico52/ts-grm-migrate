@@ -6,7 +6,7 @@ See the [README](../README.md) for usage and database limitations. This page des
 
 ## From models to SQL
 
-`src/runtime.ts` assembles both CLI and programmatic entry points. It loads `models`, creates a ts-grm `SqlClient`, and converts the models to the migrator's `Schema`:
+`src/runtime.ts` assembles both CLI and programmatic entry points. It creates a ts-grm `SqlClient` and lazily loads `models` through `src/model-loader.ts` before converting them to the migrator's `Schema`. Imports use `pathToFileURL`, including on Windows; `status` and `resolve` do not import model files:
 
 ```text
 ts-grm models → src/vendor/ts-grm.ts → src/schema/adapter.ts → Schema

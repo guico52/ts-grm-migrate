@@ -26,8 +26,20 @@ import type { CascadeType, ScalarType, SqlClient, spi } from '@ts-grm/core';
  * - `TableDef` / `ColumnDef` / `ConstraintDef` 上游未导出，此处按 dist 类型声明
  *   镜像（结构等价；子类型一律引用 core 的公开类型，不引入 any）。
  */
+import { EntityManager } from '@ts-grm/core';
 import { MySqlDriver as UpstreamMySqlDriver } from '@ts-grm/sql';
 import { diagnostic } from '../diagnostics/error.js';
+
+/**
+ * 模型文件由 tgm 用 file URL 导入，避免上游 import(absPath) 在 Windows 失败。
+ * 支持的 core 版本运行时允许空 modelPaths，并读取同一全局注册表；
+ * 仅在此边界放宽 AtLeastOne 类型，不修改上游类或 node_modules。
+ * @see https://github.com/babyfish-ct/ts-grm/blob/main/packages/core/src/schema/entity_manager.ts
+ */
+export function registeredEntityManager(baseDir: string): EntityManager {
+  const of = EntityManager.of as (baseDir: string, ...modelPaths: string[]) => EntityManager;
+  return of(baseDir);
+}
 
 // ---- 上游公开 API 的再导出（值）--------------------------------------------
 

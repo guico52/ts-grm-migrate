@@ -43,7 +43,7 @@ export type { MigrationFile } from './store.js';
 
 export interface MigratorOptions {
   readonly excludeTables?: ReadonlyArray<TablePattern>;
-  /** false 时自动 DDL 跳过删表；默认 true，不影响严格结构检查和已有 SQL。 */
+  /** 默认 false，自动 DDL 跳过删表；仅 true 开启，不影响严格结构检查和已有 SQL。 */
   readonly allowDropTables?: boolean;
   /** 磁盘迁移文件 */
   readonly files: MigrationFileStore;
@@ -67,8 +67,8 @@ export interface MigratorOptions {
    * 破坏性变更的确认钩子。返回 false 则中止（抛 `MigrationAbortedError`）。
    * CLI 在这里做交互确认。
    *
-   * **不传 = 总是允许**：`dev()` 与 `push()` 会直接执行删表、删列、改列类型等破坏性变更，
-   * 不做任何询问。程序化调用若不能确定模型变更是安全的，应传入此钩子，
+   * **不传 = 不询问**：`dev()` 与 `push()` 会直接执行允许生成的删列、改列类型等破坏性变更，
+   * 不做任何询问；删表还需显式设置 allowDropTables=true。程序化调用应传入此钩子，
    * 或先用 `push({ dryRun: true })` / `dev({ createOnly: true })` 审核 SQL。
    */
   readonly confirm?: (diff: Diff) => Promise<boolean>;
@@ -569,7 +569,7 @@ export class Migrator {
       tables: actual.tables.filter((t) => t.name !== historyTable && !excluded(t.name)),
     };
     const rawDiff = this._differ.diff(business, target);
-    const keepTables = mode === 'generate' && this._options.allowDropTables === false;
+    const keepTables = mode === 'generate' && this._options.allowDropTables !== true;
     const diff: Diff = keepTables
       ? {
           changes: rawDiff.changes.filter((change) => change.kind !== 'DROP_TABLE'),

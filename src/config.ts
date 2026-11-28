@@ -6,7 +6,7 @@
  *
  * export default defineConfig({
  *   database: { host: "localhost", database: "app", user: "postgres" },
- *   models: ["./src/models"],   // 相对项目根，交给 EntityManager.of 加载
+ *   models: ["./src/models"],   // 相对项目根，通过 file URL 导入
  * });
  * ```
  *
@@ -83,13 +83,13 @@ export interface MigrateConfig {
   /** 数据库连接 */
   readonly database: DatabaseConfig;
   /**
-   * 模型文件或目录（相对项目根，必须以 `./` 或 `../` 开头 —— `EntityManager.of` 的要求）。
+   * 模型文件或目录（相对项目根，必须以 `./` 或 `../` 开头）。
    * 只用于触发模型注册；实际拿到的是全局注册表里的**全部** model。
    */
   readonly models: ReadonlyArray<string>;
   /** 不受管理的物理表名：支持 glob 字符串与 RegExp；正则不允许 g/y flags。 */
   readonly excludeTables?: ReadonlyArray<TablePattern>;
-  /** 自动 DDL 是否允许删表，默认 true；false 不影响删列或已有迁移 SQL。 */
+  /** 自动 DDL 是否允许删表，默认 false；仅 true 开启，不影响删列或已有迁移 SQL。 */
   readonly allowDropTables?: boolean;
   /** 迁移文件目录（相对项目根），默认 `./src/ts-grm` */
   readonly migrationsDir?: string;

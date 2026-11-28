@@ -45,6 +45,7 @@ describe.each([['legacy'], ['leg*'], [/^legacy$/]])(
         migrationsDir: dir,
         lockPath: path.join(dir, 'lock'),
         excludeTables: [pattern],
+        allowDropTables: true,
       });
     });
     afterEach(async () => {
@@ -200,7 +201,7 @@ describe.each([['legacy'], ['leg*'], [/^legacy$/]])(
       await expect(migrator.checkDrift()).rejects.toThrow(/reserved for migration history/);
     });
 
-    it('push 与 dry-run 不管理被排除表，模型移除仍生成删表', async () => {
+    it('显式允许删表时，push 与 dry-run 不管理被排除表，模型移除生成删表', async () => {
       target = { tables: [] };
       const preview = await migrator.push({ dryRun: true });
       expect(preview.statements).toEqual(['drop table "item"']);

@@ -85,25 +85,28 @@ describe('CLI 端到端（SQLite）', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('allowDropTables=false 跳过自动删表，check/push 继续报告差异，force 不覆盖配置', async () => {
-    await writeConfig(undefined, ['leg*'], false);
-    expect(await runCli(['push', '--config', configPath])).toBe(0);
-    const db = new Database(dbFile);
-    db.exec('create table archive(id integer primary key); insert into archive values(7)');
-    db.close();
-    logs.length = 0;
-    expect(await runCli(['dev', '--create-only', '--config', configPath])).toBe(0);
-    expect(logs.join('\n')).not.toContain('is up to date');
-    expect(errors.join('\n')).toContain('archive');
-    expect(await runCli(['check', '--config', configPath])).toBe(1);
-    expect(await runCli(['push', '--force', '--config', configPath])).toBe(1);
-    const kept = new Database(dbFile);
-    try {
-      expect(kept.prepare('select * from archive').all()).toEqual([{ id: 7 }]);
-    } finally {
-      kept.close();
-    }
-  });
+  it.each([undefined, false])(
+    'allowDropTables=%s 跳过自动删表，check/push 继续报告差异，force 不覆盖配置',
+    async (setting) => {
+      await writeConfig(undefined, ['leg*'], setting);
+      expect(await runCli(['push', '--config', configPath])).toBe(0);
+      const db = new Database(dbFile);
+      db.exec('create table archive(id integer primary key); insert into archive values(7)');
+      db.close();
+      logs.length = 0;
+      expect(await runCli(['dev', '--create-only', '--config', configPath])).toBe(0);
+      expect(logs.join('\n')).not.toContain('is up to date');
+      expect(errors.join('\n')).toContain('archive');
+      expect(await runCli(['check', '--config', configPath])).toBe(1);
+      expect(await runCli(['push', '--force', '--config', configPath])).toBe(1);
+      const kept = new Database(dbFile);
+      try {
+        expect(kept.prepare('select * from archive').all()).toEqual([{ id: 7 }]);
+      } finally {
+        kept.close();
+      }
+    },
+  );
 
   it('真实模型中的排除表不报错，也不会创建，受管理表可正常接管', async () => {
     await writeConfig(undefined, ['BOOK', 'book_tag_*']);
@@ -273,6 +276,7 @@ describe('CLI 端到端（SQLite）', () => {
     expect(logs.join('\n')).toContain('Usage:');
   });
   it('push --dry-run previews SQL without creating history or changing database bytes', async () => {
+    await writeConfig(undefined, ['leg*'], true);
     const { readFile } = await import('node:fs/promises');
     const db = new Database(dbFile);
     db.exec('create table temp_extra(x integer)');

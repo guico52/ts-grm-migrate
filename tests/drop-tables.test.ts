@@ -57,8 +57,8 @@ describe('allowDropTables（真实 SQLite）', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it.each([undefined, true])('默认或 true 时保持自动删表：%s', async (setting) => {
-    const result = await create(setting).push();
+  it('显式 true 时开启自动删表', async () => {
+    const result = await create(true).push();
     expect(result.statements).toContain('drop table "archive"');
     expect(result.drift).toEqual([]);
     expect(confirmed[0]!.destructive).toContainEqual({
@@ -69,21 +69,24 @@ describe('allowDropTables（真实 SQLite）', () => {
     expect(db.prepare("select name from sqlite_master where name='archive'").all()).toEqual([]);
   });
 
-  it('false 时不生成删表或空迁移，不要求删表确认，并保留严格差异报告', async () => {
-    const migrator = create(false);
-    const preview = await migrator.push({ dryRun: true });
-    expect(preview.statements).toEqual([]);
-    expect(preview.diff).toEqual({ changes: [], destructive: [] });
-    expect(preview.drift.map((drift) => drift.table)).toEqual(['archive']);
-    const dev = await migrator.dev({ createOnly: true });
-    expect(dev.migrationId).toBeUndefined();
-    expect(dev.drift.map((drift) => drift.table)).toEqual(['archive']);
-    expect((await migrator.push()).drift.map((drift) => drift.table)).toEqual(['archive']);
-    expect((await migrator.checkDrift()).map((drift) => drift.table)).toEqual(['archive']);
-    expect(await files.listFiles()).toEqual([]);
-    expect(confirmed).toEqual([]);
-    expect(db.prepare('select * from archive').all()).toEqual([{ id: 7 }]);
-  });
+  it.each([undefined, false])(
+    '默认或 false 时不生成删表或空迁移，保留严格差异报告：%s',
+    async (setting) => {
+      const migrator = create(setting);
+      const preview = await migrator.push({ dryRun: true });
+      expect(preview.statements).toEqual([]);
+      expect(preview.diff).toEqual({ changes: [], destructive: [] });
+      expect(preview.drift.map((drift) => drift.table)).toEqual(['archive']);
+      const dev = await migrator.dev({ createOnly: true });
+      expect(dev.migrationId).toBeUndefined();
+      expect(dev.drift.map((drift) => drift.table)).toEqual(['archive']);
+      expect((await migrator.push()).drift.map((drift) => drift.table)).toEqual(['archive']);
+      expect((await migrator.checkDrift()).map((drift) => drift.table)).toEqual(['archive']);
+      expect(await files.listFiles()).toEqual([]);
+      expect(confirmed).toEqual([]);
+      expect(db.prepare('select * from archive').all()).toEqual([{ id: 7 }]);
+    },
+  );
 
   it('false 时仍生成并部署建表及加列，不删除保留表', async () => {
     const item = target.tables[0]!;

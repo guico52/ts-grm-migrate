@@ -6,6 +6,12 @@ English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
 Release dates use Asia/Shanghai. Versions and feature ownership were verified against npm registry metadata and published packages.
 
+## Unreleased
+
+- Fix Windows model loading by importing file URLs instead of passing drive-letter paths to the ESM loader. Preserve lazy loading and the shared ts-grm registry; support `.mts`/`.mjs`, skip declarations, and handle URL-sensitive path characters.
+
+- **Behavior change:** default `allowDropTables` to `false`. Omitting the option now preserves tables absent from models; explicitly set `true` to keep automatic table deletion. Strict drift checks, other DDL operations, baseline validation and existing migration SQL are unchanged.
+
 ## 0.1.0-alpha.9 (2026-11-28)
 
 - Add `allowDropTables` (default `true`); `false` skips automatic table drops while retaining strict drift checks, other DDL and existing migration SQL.

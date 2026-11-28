@@ -4,7 +4,8 @@
  * CLI 与程序化调用共用这一层，这样「命令行能用」和「脚本里能用」走的是同一条路径。
  *
  * 组装链（正是 docs/design.md 里写的那条）：
- *   EntityManager.of(cwd, ...models)   ← 触发模型注册，取回全部 entity
+ *   loadModelFiles(cwd, models)       ← file URL 导入，触发模型注册
+ *   registeredEntityManager(cwd)      ← 取回全部 entity
  *   newSqlClient(<方言>Driver(conn), { entityManager })
  *   createSchema(sqlClient)            ← 上游 API，结构在 tableDefs 上（见 vendor 层）
  *   tableDefsToSchema(..., { dialect }) ← 目标态 Schema
@@ -38,17 +39,18 @@ import { SqlServerIntrospector } from './introspector/sqlserver.js';
 import type { Introspector } from './introspector.js';
 import { type MigrationProgress, Migrator } from './migrator.js';
 import { modelLoadError } from './model-load-error.js';
+import { loadModelFiles } from './model-loader.js';
 import { tableDefsToSchema } from './schema/adapter.js';
 import { openOracle, openSqlServer } from './server/connections.js';
 import { DatabaseMigrationHistoryStore, FileMigrationStore } from './store.js';
 import {
   createSchema,
-  EntityManager,
   MySqlDriver,
   newSqlClient,
   OracleDriver,
   OraclePool,
   PostgresDriver,
+  registeredEntityManager,
   type SqlClientImplementor,
   SqliteDriver,
   SqlServerDriver,
@@ -271,8 +273,9 @@ async function assembleRuntime(
     throw diagnostic('runtime_8', dialect, schema);
   }
 
-  // EntityManager.of 要求至少一个路径（AtLeastOne），配置校验已保证非空
-  const entityManager = EntityManager.of(cwd, ...(config.models as [string, ...Array<string>]));
+  // 延迟到 targetSchema 首次读取时导入模型，status/resolve 不触发模型加载。
+  const entityManager = registeredEntityManager(cwd);
+  let modelsLoaded: Promise<void> | undefined;
   const sqlClient = newSqlClient(driver as never, {
     entityManager,
   }) as unknown as SqlClientImplementor;
@@ -301,6 +304,8 @@ async function assembleRuntime(
     targetSchema: async () => {
       let tableDefs: Awaited<ReturnType<typeof createSchema>>;
       try {
+        modelsLoaded ??= loadModelFiles(cwd, config.models);
+        await modelsLoaded;
         tableDefs = await createSchema(sqlClient);
       } catch (e) {
         throw modelLoadError(e);
