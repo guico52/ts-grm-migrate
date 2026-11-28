@@ -17,6 +17,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { asError, diagnostic } from './diagnostics/error.js';
 import { dialectInfo } from './dialect.js';
+import { createTableMatcher, type TablePattern } from './table-filter.js';
 
 // 方言名统一由 src/dialect.ts 定义（那里同时维护 ts-grm 驱动型号与实现状态）
 export type { DialectName } from './dialect.js';
@@ -86,6 +87,8 @@ export interface MigrateConfig {
    * 只用于触发模型注册；实际拿到的是全局注册表里的**全部** model。
    */
   readonly models: ReadonlyArray<string>;
+  /** 不受管理的物理表名：支持 glob 字符串与 RegExp；正则不允许 g/y flags。 */
+  readonly excludeTables?: ReadonlyArray<TablePattern>;
   /** 迁移文件目录（相对项目根），默认 `./src/ts-grm` */
   readonly migrationsDir?: string;
   /** 目标 schema：PG 默认 public，SQL Server 默认 dbo，Oracle 默认登录用户 schema。 */
@@ -182,6 +185,7 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
   if (config.language != null && config.language !== 'en' && config.language !== 'zh-CN') {
     throw diagnostic('config_6', file, String(config.language));
   }
+  validateExcludeTables(config.excludeTables);
   if (config.seed !== undefined) validateSeedConfig(config.seed);
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
   // （那里的提示能带上 ts-grm 驱动名与实现进度）
@@ -189,4 +193,9 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
     dialectInfo(config.dialect);
   }
   return config as MigrateConfig;
+}
+
+/** 同时供配置文件和程序化入口校验。 */
+export function validateExcludeTables(value: unknown): void {
+  createTableMatcher(value);
 }

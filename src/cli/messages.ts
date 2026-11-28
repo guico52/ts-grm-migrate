@@ -8,6 +8,7 @@ Usage: tgm <command> [options]
 Commands:
   dev [-n <name>]              Generate and apply a migration
   seed [-- <args...>]          Run the configured seed script
+  baseline [-n <name>]         Adopt existing tables without executing business DDL
   deploy                       Apply pending migrations
   push                         Sync the database without migration history
   status                       Show migration status
@@ -16,7 +17,7 @@ Commands:
   resolve --rolled-back <id>   Mark a migration as rolled back
 
 Options:
-  -n, --name <name>            Migration name (dev)
+  -n, --name <name>            Migration name (dev / baseline)
   --config <path>              Configuration file path
   --create-only                Generate SQL without applying it (dev)
   --dry-run                    Preview SQL without changes (push)
@@ -28,6 +29,7 @@ Options:
 Configuration files:
   ${CONFIG_FILENAMES.join('\n  ')}
 `,
+  baselineCreated: (id: string) => `Baseline ${id} recorded; business tables were not modified.`,
   seedMissing:
     'No seed configured. Add seed: { command: "node", args: ["./src/ts-grm/seed.ts"] } to your configuration.',
   seedOption: (flag: string) =>
@@ -93,6 +95,7 @@ Configuration files:
 export type CliMessages = typeof en;
 
 const zhCN = {
+  baselineCreated: (id: string) => `基线 ${id} 已记录；业务表未修改。`,
   seedMissing:
     '未配置 seed。请在配置中添加 seed: { command: "node", args: ["./src/ts-grm/seed.ts"] }。',
   seedOption: (flag: string) => `seed 不支持选项 --${flag}。脚本参数请放在 -- 之后。`,
@@ -109,6 +112,7 @@ const zhCN = {
 命令:
   dev [-n <name>]              生成并应用迁移
   seed [-- <参数...>]          运行配置的 seed 脚本
+  baseline [-n <name>]         接管既有表，仅记录基线
   deploy                       应用待处理迁移
   push                         同步数据库，不记录迁移历史
   status                       查看迁移状态
@@ -117,7 +121,7 @@ const zhCN = {
   resolve --rolled-back <id>   标记迁移已回滚
 
 选项:
-  -n, --name <name>            迁移名（dev）
+  -n, --name <name>            迁移名（dev / baseline）
   --config <path>              配置文件路径
   --create-only                仅生成 SQL，不应用迁移（dev）
   --dry-run                    预览 SQL，不修改数据库（push）

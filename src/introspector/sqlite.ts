@@ -1,5 +1,7 @@
+import { quoteIdentifier } from '../ddl.js';
 import { asError, diagnostic } from '../diagnostics/error.js';
 import type { Dialect, Introspector, SqlQueryable } from '../introspector.js';
+import { createCatalogTableFilter, type IntrospectionOptions } from '../introspector.js';
 import { sqliteChecks, sqlTokens } from '../schema/checks.js';
 import type {
   Column,
@@ -51,13 +53,19 @@ export class SqliteIntrospector implements Introspector {
 
   constructor(private readonly _options: SqliteIntrospectorOptions) {}
 
-  async introspect(): Promise<Schema> {
+  async introspect(options: IntrospectionOptions = {}): Promise<Schema> {
+    const includeTable = createCatalogTableFilter(options);
     const { query } = this._options;
     try {
       const tableRows = await query.query(TABLES_SQL);
       const tables: Array<Table> = [];
       for (const row of tableRows.rows) {
         const name = asString(row['name']);
+        if (!includeTable(name)) {
+          const refs = await query.query(`pragma foreign_key_list(${quoteIdentifier(name)})`);
+          for (const ref of refs.rows) options.onExcludedReference?.(name, String(ref['table']));
+          continue;
+        }
         const definitionTokens = sqlTokens(asString(row['sql'])).filter((token) => token !== ';');
         const specialDeclaration = definitionTokens.some(
           (token, i) =>

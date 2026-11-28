@@ -1,5 +1,6 @@
 import { asError, diagnostic } from '../diagnostics/error.js';
 import type { Introspector, SqlQueryable } from '../introspector.js';
+import { createCatalogTableFilter, type IntrospectionOptions } from '../introspector.js';
 import type { Column, Constraint, Index, OnDelete, Schema } from '../schema/model.js';
 import {
   groupRows,
@@ -19,7 +20,8 @@ export class SqlServerIntrospector implements Introspector {
     },
   ) {}
 
-  async introspect(): Promise<Schema> {
+  async introspect(options: IntrospectionOptions = {}): Promise<Schema> {
+    const includeTable = createCatalogTableFilter(options);
     const schema = this._options.schema ?? 'dbo';
     const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
       (await this._options.query.query(sql, [schema])).rows;
@@ -64,8 +66,10 @@ export class SqlServerIntrospector implements Introspector {
         join sys.columns c on c.object_id=t.object_id and c.column_id=ic.column_id
         where s.name=@p1 and i.is_primary_key=0 and i.is_unique_constraint=0 and i.is_hypothetical=0
         order by t.name,i.name,ic.key_ordinal`);
+      for (const row of fks) includeTable(String(row.table_name), String(row.ref_table ?? ''));
+      const managedTables = tables.filter((row) => includeTable(String(row.name)));
       return {
-        tables: tables.map((t) => {
+        tables: managedTables.map((t) => {
           const name = s(t.name);
           if (Number(t.temporal_type) !== 0 || t.is_memory_optimized)
             throw diagnostic('introspector_sqlserver_1', name);

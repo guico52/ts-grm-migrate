@@ -1020,6 +1020,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/picomatch@npm:^4.0.3":
+  version: 4.0.3
+  resolution: "@types/picomatch@npm:4.0.3"
+  checksum: 10c0/974107ec98ea9a8b437f36bdf6ac9c57772fd66d9d746e43f6da2a7b97f6e03bc48226e5cdf2beb0b73b7a843cf486e7336ae15ab9017e47287dcb49d78499a2
+  languageName: node
+  linkType: hard
+
 "@types/proper-lockfile@npm:4.1.4":
   version: 4.1.4
   resolution: "@types/proper-lockfile@npm:4.1.4"
@@ -2427,17 +2434,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"picomatch@npm:4.0.7, picomatch@npm:^4.0.5":
+  version: 4.0.7
+  resolution: "picomatch@npm:4.0.7"
+  checksum: 10c0/beb6ae02c43ae44e84883b90830196d9046b1726ead292adcf7f57945e0bb0d992d68563d87e03b484b6f3c9a5c6defda7523477f047d7f0e663f126cc01787f
+  languageName: node
+  linkType: hard
+
 "picomatch@npm:^4.0.3, picomatch@npm:^4.0.4":
   version: 4.0.5
   resolution: "picomatch@npm:4.0.5"
   checksum: 10c0/947bc6b6e1ff1e6c5aaf95b107a0839d12802f4f7b867663f67d47accba939ca1cb582cf99dfc30438efa1c4648ac5990967e783e8929c36b03e8440704ef1bd
-  languageName: node
-  linkType: hard
-
-"picomatch@npm:^4.0.5":
-  version: 4.0.7
-  resolution: "picomatch@npm:4.0.7"
-  checksum: 10c0/beb6ae02c43ae44e84883b90830196d9046b1726ead292adcf7f57945e0bb0d992d68563d87e03b484b6f3c9a5c6defda7523477f047d7f0e663f126cc01787f
   languageName: node
   linkType: hard
 
@@ -2922,6 +2929,7 @@ __metadata:
     "@types/node": "npm:^25.0.3"
     "@types/oracledb": "npm:^7"
     "@types/pg": "npm:^8.20.0"
+    "@types/picomatch": "npm:^4.0.3"
     "@types/proper-lockfile": "npm:4.1.4"
     "@vitest/coverage-v8": "npm:4.0.16"
     better-sqlite3: "npm:^13.0.3"
@@ -2929,6 +2937,7 @@ __metadata:
     mysql2: "npm:^3.23.2"
     oracledb: "npm:^7"
     pg: "npm:^8.23.0"
+    picomatch: "npm:4.0.7"
     proper-lockfile: "npm:4.1.2"
     ts-grm-patches: "npm:0.1.0"
     tsdown: "npm:^0.22.14"

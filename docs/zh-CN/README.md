@@ -5,11 +5,12 @@
 [ts-grm](https://github.com/babyfish-ct/ts-grm) 的数据库 schema 迁移工具 —— 像 Prisma Migrate 那样管理数据库版本，
 但**模型就是你写的 ts-grm 代码**，不需要额外的 schema 文件，也没有代码生成步骤。
 
-当前范围是**新的 ts-grm 应用及其后续模型演进**，请从空数据库开始。暂不支持接管既有应用数据库或为既有表建立 baseline。主动不采用影子库的取舍见 [迁移工作流](migrations.md)。
+支持从空数据库开始，也支持通过 `tgm baseline` 接管受支持的既有表。使用 `excludeTables` 的精确名称、glob 或 RegExp 可将指定物理表排除在管理范围外。模型需要自行提供，暂不支持从数据库反向生成模型。主动不采用影子库的取舍见 [迁移工作流](migrations.md)。
 
 ## 功能清单
 
 - **增量迁移**：对比你的模型与数据库现状，生成可读的 SQL 迁移文件，并记录应用历史
+- **部分接管存量库**：为受支持的既有表建立 baseline，按精确名称、glob 或 RegExp 排除其他表，并保留其查询模型
 - **SQL 审核**：`dev --create-only` 生成待应用文件，审核和编辑后再部署
 - **严格检查**：`check` 对模型与数据库的差异返回非零退出码
 - **按序部署**：把所有未应用的迁移依次应用到目标库（部署 / CI 场景）
@@ -77,6 +78,26 @@ npx tgm dev              # 不写名字也行：迁移只用时间戳命名
 npx tgm status           # 看看应用了哪些、还剩哪些
 ```
 
+### 接管存量数据库
+
+保留应用查询需要的全部模型，用排除规则指定由其他系统维护结构的表：
+
+```ts
+export default defineConfig({
+  dialect: "postgres",
+  database: { connectionString: process.env.DATABASE_URL },
+  models: ["./src/models"],
+  excludeTables: ["sys_*", /^archive_\d{6}$/, "external_users"],
+});
+```
+
+```sh
+npx tgm check                      # 先对齐受管理表与模型的差异
+npx tgm baseline -n initial        # 生成初始迁移，并记录为已应用
+```
+
+`baseline` 要求迁移文件及历史为空，且受管理结构与模型一致，不修改业务表或数据。被排除模型仍可供应用查询，但 tgm 不创建对应表、不同步其结构、不报告其 drift。排除配置不会阻止已有迁移 SQL 执行。跨管理范围外键仍有限制，详见[接管流程、匹配规则与恢复方式](migrations.md#接管存量数据库与忽略表)。
+
 ### 配置项
 
 - **`dialect`**：数据库方言，可选 `postgres`、`sqlite`、`mysql`、`mssql`、`oracle`，默认 `postgres`。
@@ -84,6 +105,7 @@ npx tgm status           # 看看应用了哪些、还剩哪些
 - **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
 - **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
   **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
+- `excludeTables`：可选的 `(string | RegExp)[]`，匹配物理表名；字符串使用 glob，RegExp 使用 JavaScript 语义且不能带 `g`/`y` flags。被排除表可以保留查询模型
 - `language`：项目的 CLI 默认语言，可选 `en` 或 `zh-CN`，默认 `en`；命令行 `--lang` 可临时覆盖
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
 - `schema`：目标 schema，PostgreSQL 默认 `public`，SQL Server 默认 `dbo`，Oracle 默认登录用户
@@ -298,6 +320,7 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | --- | --- |
 | `tgm dev [-n <名字>]` | 对比模型与数据库，生成并应用一个迁移（开发用；名字可省略，省略时只用时间戳命名） |
 | `tgm dev --create-only [-n <名字>]` | 仅生成待应用 SQL 文件，供审核和编辑 |
+| `tgm baseline [-n <name>]` | 校验受管理存量表，生成初始 SQL 并记录为已应用，不执行业务 DDL |
 | `tgm check` | 只读比较模型与数据库，有差异或错误时退出码为 1 |
 | `tgm deploy` | 应用所有未应用的迁移（部署 / CI 用，无交互） |
 | `tgm push [--force]` | 直接同步成模型的样子，不写文件、不记历史 |
@@ -305,7 +328,7 @@ Oracle 测试使用 SYSTEM 创建临时用户，需要该账户拥有 `DBMS_LOCK
 | `tgm resolve --applied <id>` | 把迁移标记为已应用（SQL 已手工执行过） |
 | `tgm resolve --rolled-back <id>` | 清除失败记录，让它重新待应用 |
 
-选项：`--dry-run` 只预览 SQL（只用于 `push`）、`--create-only` 仅生成不应用（只用于 `dev`）、`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
+选项：`--dry-run` 只预览 SQL（只用于 `push`）、`--create-only` 仅生成不应用（只用于 `dev`）、`--config <path>` 指定配置文件、`-n` / `--name <名字>` 给迁移命名（`dev` / `baseline`）、`--force` 破坏性变更不询问、`--detail` 显示执行步骤、SQL 和锁信息、`--lang <en|zh-CN>` 临时指定 CLI 语言、`-h` 显示帮助。
 
 普通执行只输出目标库、迁移数量或 ID 和最终结果；`status` 是主动查询，仍会列出迁移。
 例如 `tgm deploy` 完成时会显示 `Applied 2 migrations to postgres/app/public.`。

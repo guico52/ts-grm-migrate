@@ -107,7 +107,9 @@ export async function run(
     log(m.usage);
     return 0;
   }
-  if (!['dev', 'deploy', 'push', 'status', 'resolve', 'check', 'seed'].includes(command)) {
+  if (
+    !['dev', 'deploy', 'push', 'status', 'resolve', 'check', 'seed', 'baseline'].includes(command)
+  ) {
     errorLog(m.unknownCommand(command));
     log(m.usage);
     return 1;
@@ -181,6 +183,14 @@ export async function run(
       log(m.target(dbLabel));
     }
     switch (command) {
+      case 'baseline': {
+        const name = flags.get('name');
+        const result = await runtime.migrator.baseline({
+          name: typeof name === 'string' ? name : undefined,
+        });
+        log(m.baselineCreated(result.migrationId));
+        return 0;
+      }
       case 'dev':
         return await runDev(
           runtime,

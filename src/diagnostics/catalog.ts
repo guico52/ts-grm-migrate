@@ -1,5 +1,46 @@
 /** 成对的中英诊断模板。路径、SQL、标识符等取值不做翻译。 */
 export const diagnostics = {
+  exclude_config: {
+    en: 'excludeTables must be an array of non-empty glob strings without null bytes, or RegExp objects.',
+    'zh-CN': 'excludeTables 必须为 glob 字符串或 RegExp 组成的数组；字符串不能为空或包含空字符。',
+  },
+  exclude_regex_flags: {
+    en: 'excludeTables RegExp {0} must not use stateful g or y flags.',
+    'zh-CN': 'excludeTables 中的正则 {0} 不能使用有状态的 g 或 y flags。',
+  },
+  exclude_glob_negation: {
+    en: 'excludeTables glob {0} must not start with !. List excluded patterns directly.',
+    'zh-CN': 'excludeTables 中的 glob {0} 不能以 ! 开头，请直接列出需要排除的模式。',
+  },
+  exclude_glob: {
+    en: 'Invalid excludeTables glob {0}: {1}',
+    'zh-CN': 'excludeTables 中的 glob {0} 无效：{1}',
+  },
+  history_model: {
+    en: 'Model table {0} is reserved for migration history.',
+    'zh-CN': '模型表 {0} 为迁移历史保留表。',
+  },
+  exclude_reference: {
+    en: 'Foreign key crosses the managed table boundary: {0} -> {1}. Refusing this operation.',
+    'zh-CN': '外键跨越表管理范围：{0} -> {1}。拒绝此操作。',
+  },
+  baseline_history: {
+    en: 'Baseline requires an empty migration directory and no migration history.',
+    'zh-CN': '建立基线要求迁移目录与迁移历史均为空。',
+  },
+  baseline_drift: {
+    en: 'Cannot baseline: database differs from models: {0}. Align the structures first.',
+    'zh-CN': '无法建立基线：数据库与模型存在差异：{0}。请先对齐结构。',
+  },
+  baseline_empty: {
+    en: 'Cannot baseline an empty managed schema.',
+    'zh-CN': '无法为空的受管理结构建立基线。',
+  },
+  baseline_index: {
+    en: 'Cannot reproduce unsupported indexes on baseline table {0}.',
+    'zh-CN': '无法重建基线表 {0} 上不支持的索引。',
+  },
+
   seed_config: {
     en: 'Invalid seed configuration. Expected { command: "node", args: ["./src/ts-grm/seed.ts"] }: command must be non-empty and args must be strings without null bytes.',
     'zh-CN':

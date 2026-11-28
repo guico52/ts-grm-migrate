@@ -19,3 +19,9 @@ The published package keeps `@ts-grm/core` and `@ts-grm/sql` as external peer de
 Atomic renewable local leases use the external MIT-licensed `proper-lockfile` package. Its dependencies retain their own licenses in their distributed packages.
 
 - @see https://github.com/moxystudio/node-proper-lockfile
+
+## picomatch
+
+Table-name glob patterns are compiled using the external MIT-licensed `picomatch` package.
+
+- @see https://github.com/micromatch/picomatch

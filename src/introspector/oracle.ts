@@ -1,5 +1,6 @@
 import { asError, diagnostic } from '../diagnostics/error.js';
 import type { Introspector, SqlQueryable } from '../introspector.js';
+import { createCatalogTableFilter, type IntrospectionOptions } from '../introspector.js';
 import type { Column, Constraint, Index, Schema } from '../schema/model.js';
 import {
   groupRows,
@@ -13,7 +14,8 @@ import { normalizeServerType } from '../server/sql.js';
 export class OracleIntrospector implements Introspector {
   readonly dialect = 'oracle' as const;
   constructor(private readonly options: { query: SqlQueryable; schema: string }) {}
-  async introspect(): Promise<Schema> {
+  async introspect(options: IntrospectionOptions = {}): Promise<Schema> {
+    const includeTable = createCatalogTableFilter(options);
     const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
       (await this.options.query.query(sql, [this.options.schema])).rows;
     try {
@@ -34,8 +36,11 @@ export class OracleIntrospector implements Introspector {
         await query(`select i.table_name,i.index_name,i.uniqueness,i.index_type,i.status,c.column_name,c.column_position,c.descend
         from all_indexes i join all_ind_columns c on c.index_owner=i.owner and c.index_name=i.index_name
         where i.table_owner=:1 order by i.table_name,i.index_name,c.column_position`);
+      for (const row of constraints)
+        includeTable(String(row.TABLE_NAME), String(row.REF_TABLE ?? ''));
+      const managedTables = tables.filter((row) => includeTable(String(row.TABLE_NAME)));
       return {
-        tables: tables.map((table) => {
+        tables: managedTables.map((table) => {
           const name = s(table.TABLE_NAME);
           if (
             table.TEMPORARY !== 'N' ||

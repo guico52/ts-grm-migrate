@@ -1,3 +1,4 @@
+import { SqliteDdlGenerator } from './ddl/sqlite.js';
 import type { DdlGenerator } from './ddl.js';
 import { asError, DiagnosticAggregateError, diagnostic, formatError } from './diagnostics/error.js';
 import type { Diff } from './diff/types.js';
@@ -34,11 +35,13 @@ import type {
   MigrationHistoryStore,
 } from './store.js';
 import { checksumOf } from './store.js';
+import { createTableMatcher, type TablePattern } from './table-filter.js';
 
 export type { SqlExecutor } from './executor.js';
 export type { MigrationFile } from './store.js';
 
 export interface MigratorOptions {
+  readonly excludeTables?: ReadonlyArray<TablePattern>;
   /** 磁盘迁移文件 */
   readonly files: MigrationFileStore;
   /** 数据库迁移历史 */
@@ -84,6 +87,11 @@ export class MigrationAbortedError extends Error {
     super('Aborted: destructive change was not confirmed');
     this.name = 'MigrationAbortedError';
   }
+}
+
+/** `baseline()` 结果 */
+export interface BaselineResult {
+  readonly migrationId: string;
 }
 
 /** `deploy()` 结果 */
@@ -138,7 +146,53 @@ export class Migrator {
   private readonly _differ: SchemaDiffer;
 
   constructor(private readonly _options: MigratorOptions) {
+    createTableMatcher(_options.excludeTables);
     this._differ = new SchemaDiffer(_options.ddl.dialect);
+  }
+
+  /** 首次接管：生成可重建现状的迁移，仅记录已应用，不执行业务 DDL。 */
+  async baseline(options: { readonly name?: string } = {}): Promise<BaselineResult> {
+    return await this._withLocks(false, async () => {
+      if ((await this._options.files.listFiles()).length) throw diagnostic('baseline_history');
+      const { diff, from } = await this._diffAgainstDatabase();
+      if (diff.changes.length)
+        throw diagnostic(
+          'baseline_drift',
+          describeDiff(diff, this._options.driftLanguage)
+            .map((d) => `${d.table}: ${d.summary}`)
+            .join('; '),
+        );
+      if (!from.tables.length) throw diagnostic('baseline_empty');
+      for (const table of from.tables) {
+        if (table.indexes.some((i) => i.unsupported))
+          throw diagnostic('baseline_index', table.name);
+      }
+      // SQLite 原生 TableDef 会丢失模型未管理的默认值等 catalog 属性。
+      const ddl =
+        this._options.ddl.dialect === 'sqlite' ? new SqliteDdlGenerator() : this._options.ddl;
+      const baselineSchema: Schema = {
+        tables: from.tables.map((table) => ({
+          ...table,
+          indexes: table.indexes.filter((index) => !index.implicit),
+          // serial 的 nextval 引用旧 sequence；空库重放统一生成 identity。
+          columns: table.columns.map((column) =>
+            this._options.ddl.dialect === 'postgres' && column.autoIncrement
+              ? { ...column, default: undefined }
+              : column,
+          ),
+        })),
+      };
+      const sql = toSqlFile(ddl.createStatements(baselineSchema));
+      // Oracle 无法从 ORA-00942 区分缺表和缺权限，校验结构后先确保历史表存在。
+      await this._options.history.ensureTable();
+      if ((await this._options.history.listApplied()).length) throw diagnostic('baseline_history');
+      const id = generateMigrationId(new Date(), options.name ?? 'baseline');
+      const file: MigrationFile = { id, sql, checksum: checksumOf(sql), sortKey: id };
+      await this._options.files.write(file);
+      // 文件先落盘；记录失败时保留文件，修复后可用 resolve --applied 恢复。
+      await this._options.history.recordApplied(file);
+      return { migrationId: id };
+    });
   }
 
   /** 应用所有未应用的迁移（deploy 路径，无交互） */
@@ -459,18 +513,53 @@ export class Migrator {
   }
 
   private async _diffAgainstDatabase(): Promise<{ diff: Diff; from: Schema; to: Schema }> {
-    const actual = await this._options.introspector.introspect();
-    const target = await this._options.targetSchema();
+    const excluded = createTableMatcher(this._options.excludeTables);
+    const references: Array<{ table: string; referencedTable: string }> = [];
+    const actual = await this._options.introspector.introspect({
+      // 内部历史表按字面名称排除，不把特殊字符解释为 glob。
+      excludeTables: [
+        ...(this._options.excludeTables ?? []),
+        new RegExp(`^${this._options.history.tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+      ],
+      onExcludedReference: (table, referencedTable) => {
+        references.push({ table, referencedTable });
+      },
+    });
+    const models = await this._options.targetSchema();
 
     // migrate 自己的记账表不属于业务 schema，必须从现状里剔除：
     // 否则 diff 会把它当成「目标态没有的表」而生成 DROP，
     // 应用迁移时就把历史表删了（实测踩过）。
     const historyTable = this._options.history.tableName;
-    const business = actual.tables.some((t) => t.name === historyTable)
-      ? { tables: actual.tables.filter((t) => t.name !== historyTable) }
-      : actual;
-
-    return { diff: this._differ.diff(business, target), from: business, to: target };
+    for (const table of models.tables) {
+      if (table.name === historyTable) throw diagnostic('history_model', table.name);
+    }
+    // 排除只限定迁移所有权：模型仍可用于查询，但不作为建表或结构变更目标。
+    const target = { tables: models.tables.filter((table) => !excluded(table.name)) };
+    // 自定义 introspector 可能忽略 options，仍保留过滤与依赖检查。
+    for (const table of actual.tables) {
+      for (const c of table.constraints) {
+        if (c.kind !== 'FOREIGN_KEY') continue;
+        if (excluded(table.name))
+          references.push({ table: table.name, referencedTable: c.referencedTable });
+      }
+    }
+    for (const table of [...actual.tables, ...target.tables]) {
+      if (excluded(table.name) || table.name === historyTable) continue;
+      for (const c of table.constraints) {
+        if (c.kind === 'FOREIGN_KEY' && excluded(c.referencedTable))
+          throw diagnostic('exclude_reference', table.name, c.referencedTable);
+      }
+    }
+    const business = {
+      tables: actual.tables.filter((t) => t.name !== historyTable && !excluded(t.name)),
+    };
+    const diff = this._differ.diff(business, target);
+    for (const ref of references) {
+      if (diff.changes.some((c) => c.kind !== 'CREATE_TABLE' && c.table === ref.referencedTable))
+        throw diagnostic('exclude_reference', ref.table, ref.referencedTable);
+    }
+    return { diff, from: business, to: target };
   }
 }
 

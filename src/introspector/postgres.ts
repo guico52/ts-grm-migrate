@@ -1,5 +1,6 @@
 import { asError, diagnostic } from '../diagnostics/error.js';
 import type { Dialect, Introspector, SqlQueryable } from '../introspector.js';
+import { createCatalogTableFilter, type IntrospectionOptions } from '../introspector.js';
 import type { Column, Constraint, Index, OnDelete, Schema } from '../schema/model.js';
 /**
  * Postgres Introspector —— 从 pg_catalog 读取数据库现状，产出 migrate 的 `Schema`。
@@ -44,23 +45,36 @@ export class PostgresIntrospector implements Introspector {
 
   constructor(private readonly _options: PostgresIntrospectorOptions) {}
 
-  async introspect(): Promise<Schema> {
+  async introspect(options: IntrospectionOptions = {}): Promise<Schema> {
+    const includeTable = createCatalogTableFilter(options);
     const schemaName = this._options.schema ?? 'public';
     const { query } = this._options;
     try {
       // 串行执行：调用方可能传单个连接（pg 的 Client），并发查同一连接是未定义行为
       // （pg 会警告 "client is already executing a query"）。introspection 是低频操作，
       // 串行换取「不要求调用方必须提供连接池」的健壮性。
-      const tables = await query.query(TABLES_SQL, [schemaName]);
-      const columns = await query.query(COLUMNS_SQL, [schemaName]);
-      const constraints = await query.query(CONSTRAINTS_SQL, [schemaName]);
-      const indexes = await query.query(INDEXES_SQL, [schemaName]);
-      for (const row of tables.rows) {
+      const tablesResult = await query.query(TABLES_SQL, [schemaName]);
+      const columnsResult = await query.query(COLUMNS_SQL, [schemaName]);
+      const constraintsResult = await query.query(CONSTRAINTS_SQL, [schemaName]);
+      const indexesResult = await query.query(INDEXES_SQL, [schemaName]);
+      const tables = tablesResult.rows.filter((row) =>
+        includeTable(String(row['name']), undefined),
+      );
+      const columns = columnsResult.rows.filter((row) =>
+        includeTable(String(row['table_name']), undefined),
+      );
+      const constraints = constraintsResult.rows.filter((row) =>
+        includeTable(String(row['table_name']), String(row['referenced_table'] ?? '')),
+      );
+      const indexes = indexesResult.rows.filter((row) =>
+        includeTable(String(row['table_name']), undefined),
+      );
+      for (const row of tables) {
         if (row['kind'] === 'p' || row['inherited'] === true) {
           throw diagnostic('unsupported_structure', row['name'], diagnostic('structure_table'));
         }
       }
-      for (const row of columns.rows) {
+      for (const row of columns) {
         if (row['generated'] || row['custom_collation'] === true) {
           throw diagnostic(
             'unsupported_structure',
@@ -69,7 +83,7 @@ export class PostgresIntrospector implements Introspector {
           );
         }
       }
-      for (const row of constraints.rows) {
+      for (const row of constraints) {
         const unsupportedForeignKey =
           row['kind'] === 'f' &&
           ((row['referenced_schema'] && row['referenced_schema'] !== schemaName) ||
@@ -90,7 +104,7 @@ export class PostgresIntrospector implements Introspector {
           );
         }
       }
-      return assemble(tables.rows, columns.rows, constraints.rows, indexes.rows);
+      return assemble(tables, columns, constraints, indexes);
     } catch (e) {
       throw diagnostic('introspector_postgres_1', schemaName, asError(e));
     }

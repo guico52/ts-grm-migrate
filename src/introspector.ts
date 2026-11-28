@@ -11,15 +11,34 @@
  */
 import type { Schema } from './schema/model.js';
 import type { SqlQueryable } from './sql.js';
+import { createTableMatcher, type TablePattern } from './table-filter.js';
 
 /** 最小查询能力（定义在 `src/sql.ts`，此处再导出以保持既有导入路径） */
 export type { SqlQueryable };
 
+export interface IntrospectionOptions {
+  readonly excludeTables?: ReadonlyArray<TablePattern>;
+  /** 排除表指向其他表的依赖，用于阻止越界变更。 */
+  readonly onExcludedReference?: (table: string, referencedTable: string) => void;
+}
+
+/** 在解析特殊结构之前过滤 catalog，同时保留排除表的外键依赖。 */
+export function createCatalogTableFilter(
+  options: IntrospectionOptions,
+): (table: string, referencedTable?: string) => boolean {
+  const excluded = createTableMatcher(options.excludeTables);
+  return (table, referencedTable) => {
+    if (!excluded(table)) return true;
+    if (referencedTable) options.onExcludedReference?.(table, referencedTable);
+    return false;
+  };
+}
+
 export interface Introspector {
   readonly dialect: Dialect;
 
-  /** 读取数据库的完整结构 */
-  introspect(): Promise<Schema>;
+  /** 读取管理范围内的结构；排除表需在解析特殊结构前过滤。 */
+  introspect(options?: IntrospectionOptions): Promise<Schema>;
 }
 
 import type { DialectName } from './dialect.js';

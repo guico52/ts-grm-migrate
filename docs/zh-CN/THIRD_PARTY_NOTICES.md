@@ -23,3 +23,9 @@
 本地原子租约使用 MIT 许可的外部依赖 `proper-lockfile`。其依赖的许可证由各自发布包提供。
 
 - @see https://github.com/moxystudio/node-proper-lockfile
+
+## picomatch
+
+物理表名的 glob 模式使用外部 MIT 许可的 `picomatch` 包编译。
+
+- @see https://github.com/micromatch/picomatch

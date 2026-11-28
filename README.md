@@ -4,11 +4,12 @@ English | [简体中文](docs/zh-CN/README.md)
 
 Database schema migrations for [ts-grm](https://github.com/babyfish-ct/ts-grm). Manage database versions with SQL migration files while keeping your ts-grm models as the source of truth. No separate schema file or code generation is required.
 
-The current scope is **new ts-grm applications and subsequent model evolution**. Start with an empty database. Adopting existing application databases and baselining pre-existing tables are not supported. A shadow database is deliberately omitted; see [migration workflows and design tradeoffs](docs/migrations.md).
+Start from an empty database, or adopt supported existing tables with `tgm baseline`. Use `excludeTables` with exact names, globs or RegExp to leave selected physical tables unmanaged. Models must be supplied by the application; reverse model generation is not supported. A shadow database is deliberately omitted; see [migration workflows and design tradeoffs](docs/migrations.md).
 
 ## Features
 
 - **Incremental migrations:** compare models with the database, generate readable SQL files, and record applied history.
+- **Partial database adoption:** baseline supported existing tables and exclude exact names, globs or RegExp while retaining their query models.
 - **SQL review:** `dev --create-only` generates a pending file for review and editing before deployment.
 - **Strict checks:** `check` reports model/database drift with a nonzero exit code.
 - **Ordered deployment:** apply pending migration files in order, including in deployment pipelines.
@@ -61,7 +62,7 @@ export default defineConfig({
 });
 ```
 
-Then run:
+For a new, empty database, run:
 
 ```sh
 npx tgm dev --create-only -n init  # Generate SQL for review
@@ -72,11 +73,32 @@ npx tgm dev              # Omit the name to use only a timestamp
 npx tgm status           # Inspect applied and pending migrations
 ```
 
+### Adopt an existing database
+
+Keep all application query models and exclude tables whose structure is maintained elsewhere:
+
+```ts
+export default defineConfig({
+  dialect: "postgres",
+  database: { connectionString: process.env.DATABASE_URL },
+  models: ["./src/models"],
+  excludeTables: ["sys_*", /^archive_\d{6}$/, "external_users"],
+});
+```
+
+```sh
+npx tgm check                      # Align managed tables with their models first
+npx tgm baseline -n initial        # Generate initial SQL and record it as already applied
+```
+
+`baseline` requires empty migration files/history and matching managed structures. It does not modify business tables or data. Excluded models remain available to the application, but tgm does not create their tables, synchronize their structure or report their drift. Exclusions do not prevent existing migration SQL from executing. Cross-boundary foreign keys remain restricted; see [adoption, matching rules and recovery](docs/migrations.md#adopt-existing-databases-and-exclude-tables).
+
 ### Configuration
 
 - **`dialect`:** `postgres`, `sqlite`, `mysql`, `mssql`, or `oracle`; defaults to `postgres`. It selects the driver, schema introspection, SQL generation, and execution. See the support table below.
 - **`database` (required):** connection settings; fields depend on the dialect.
 - **`models` (required):** model files or directories relative to the project root, starting with `./` or `../`. They must be ESM: declare `"type": "module"` or point to compiled ESM `.js` files.
+- `excludeTables`: optional `(string | RegExp)[]` matched against physical table names; strings use glob, RegExp uses JavaScript semantics without `g`/`y` flags. Excluded tables can remain in query models.
 - `language`: project default for CLI output, `en` or `zh-CN`; defaults to `en`. `--lang` overrides it for one command.
 - `migrationsDir`: migration file directory; defaults to `./src/ts-grm`.
 - `schema`: target schema; defaults to `public` on PostgreSQL, `dbo` on SQL Server, and the login user's schema on Oracle.
@@ -263,6 +285,7 @@ You can also run `tests/server-integration.test.ts` against dedicated instances 
 | --- | --- |
 | `tgm dev [-n <name>]` | Compare models with the database, then generate and apply a migration (the name is optional) |
 | `tgm dev --create-only [-n <name>]` | Generate a pending SQL file for review without applying it |
+| `tgm baseline [-n <name>]` | Verify existing managed tables, generate initial SQL and record it as applied without executing business DDL |
 | `tgm check` | Read-only model/database comparison; exit 1 for drift or an error |
 | `tgm deploy` | Apply pending migrations in order without interaction |
 | `tgm push [--force]` | Sync the database to the models without a file or history record |
@@ -270,7 +293,7 @@ You can also run `tests/server-integration.test.ts` against dedicated instances 
 | `tgm resolve --applied <id>` | Mark SQL already executed manually as applied |
 | `tgm resolve --rolled-back <id>` | Mark an attempt as rolled back so it becomes pending again |
 
-Options: `--dry-run` previews SQL without applying it (`push` only); `--create-only` generates without applying (`dev` only); `--config <path>` selects a configuration file; `-n` / `--name <name>` names a migration; `--force` skips destructive-change confirmation; `--detail` shows execution steps, SQL, and locks; `--lang <en|zh-CN>` selects the language for this command; `-h` shows help.
+Options: `--dry-run` previews SQL without applying it (`push` only); `--create-only` generates without applying (`dev` only); `--config <path>` selects a configuration file; `-n` / `--name <name>` names a migration (`dev` / `baseline`); `--force` skips destructive-change confirmation; `--detail` shows execution steps, SQL, and locks; `--lang <en|zh-CN>` selects the language for this command; `-h` shows help.
 
 Normal commands report the target, migration count or ID, and result. `status` intentionally lists migrations because it is an inspection command. For example, `tgm deploy` may print `Applied 2 migrations to postgres/app/public.` The SQL shown with `--detail` may contain business data: take care when saving or sharing logs. Diagnostic events do not print connection passwords.
 

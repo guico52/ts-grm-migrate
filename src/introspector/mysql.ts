@@ -1,5 +1,6 @@
 import { asError, diagnostic } from '../diagnostics/error.js';
 import type { Introspector, SqlQueryable } from '../introspector.js';
+import { createCatalogTableFilter, type IntrospectionOptions } from '../introspector.js';
 import { normalizeMysqlCheck, normalizeMysqlType, quoteMysqlLiteral } from '../mysql/sql.js';
 import type {
   Column,
@@ -21,7 +22,8 @@ export class MysqlIntrospector implements Introspector {
   readonly dialect = 'mysql' as const;
   constructor(private readonly _options: { readonly query: SqlQueryable }) {}
 
-  async introspect(): Promise<Schema> {
+  async introspect(options: IntrospectionOptions = {}): Promise<Schema> {
+    const includeTable = createCatalogTableFilter(options);
     const query = async (sql: string): Promise<ReadonlyArray<Row>> =>
       (await this._options.query.query(sql)).rows;
     try {
@@ -47,8 +49,11 @@ export class MysqlIntrospector implements Introspector {
         'select * from information_schema.STATISTICS where TABLE_SCHEMA = database() order by TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX',
       );
       const db = str((await query('select database() as name'))[0]?.name);
+      for (const row of keys)
+        includeTable(String(row.TABLE_NAME), String(row.REFERENCED_TABLE_NAME ?? ''));
+      const managedTables = tables.filter((row) => includeTable(String(row.name)));
       return {
-        tables: tables.map((table) => {
+        tables: managedTables.map((table) => {
           const name = str(table.name);
           if (table.engine !== 'InnoDB')
             throw diagnostic('introspector_mysql_1', name, str(table.engine));

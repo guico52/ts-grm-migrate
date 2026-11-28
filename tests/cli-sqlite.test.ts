@@ -30,12 +30,16 @@ describe('CLI 端到端（SQLite）', () => {
       errorLog: (m) => errors.push(m),
     });
 
-  const writeConfig = async (language?: 'en' | 'zh-CN'): Promise<void> => {
+  const writeConfig = async (
+    language?: 'en' | 'zh-CN',
+    excludeTables = ['leg*'],
+  ): Promise<void> => {
     await writeFile(
       configPath,
       `export default ${JSON.stringify(
         {
           dialect: 'sqlite',
+          excludeTables,
           ...(language != null ? { language } : {}),
           database: { file: dbFile },
           models: ['./tests/model/model.ts'],
@@ -77,6 +81,38 @@ describe('CLI 端到端（SQLite）', () => {
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it('真实模型中的排除表不报错，也不会创建，受管理表可正常接管', async () => {
+    await writeConfig(undefined, ['BOOK', 'book_tag_*']);
+    expect(await runCli(['push', '--config', configPath])).toBe(0);
+    expect(tables()).toEqual(['AUTHOR', 'TAG']);
+    expect(await runCli(['check', '--config', configPath])).toBe(0);
+    expect(await runCli(['baseline', '--config', configPath])).toBe(0);
+    expect(await runCli(['deploy', '--config', configPath])).toBe(0);
+    expect(tables()).toEqual(['AUTHOR', 'TAG']);
+  });
+
+  it('baseline CLI 接管存量表，记录历史并保持忽略表和数据', async () => {
+    expect(await runCli(['push', '--config', configPath])).toBe(0);
+    const db = new Database(dbFile);
+    db.exec('create table legacy(id integer primary key) strict; insert into legacy values(7)');
+    db.close();
+    logs.length = 0;
+    expect(
+      await runCli(['baseline', '-n', 'adopt', '--lang', 'zh-CN', '--config', configPath]),
+    ).toBe(0);
+    expect(logs.join('\n')).toContain('业务表未修改');
+    expect((await readdir(path.join(dir, 'migrations')))[0]).toMatch(/_adopt.sql$/);
+    expect(await runCli(['check', '--config', configPath])).toBe(0);
+    expect(await runCli(['deploy', '--config', configPath])).toBe(0);
+    const adopted = new Database(dbFile);
+    try {
+      expect(adopted.prepare('select * from legacy').all()).toEqual([{ id: 7 }]);
+      expect(adopted.prepare('select failed from _migrations').all()).toEqual([{ failed: 0 }]);
+    } finally {
+      adopted.close();
+    }
   });
 
   it('dev：生成并应用迁移，表真的建出来', async () => {

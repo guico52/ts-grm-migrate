@@ -67,10 +67,11 @@ export type { PostgresIntrospectorOptions } from './introspector/postgres.js';
 export { PostgresIntrospector } from './introspector/postgres.js';
 export { SqliteIntrospector } from './introspector/sqlite.js';
 export { SqlServerIntrospector } from './introspector/sqlserver.js';
-export type { Dialect, Introspector } from './introspector.js';
+export type { Dialect, IntrospectionOptions, Introspector } from './introspector.js';
 export type { ProcessLock } from './lock.js';
 export { acquireProcessLock } from './lock.js';
 export type {
+  BaselineResult,
   DeployResult,
   DevResult,
   MigrationProgress,
@@ -121,3 +122,5 @@ export {
   DEFAULT_HISTORY_TABLE,
   FileMigrationStore,
 } from './store.js';
+
+export type { TablePattern } from './table-filter.js';

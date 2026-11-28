@@ -2,7 +2,45 @@
 
 English | [简体中文](zh-CN/migrations.md)
 
-This tool targets new ts-grm applications: create an empty database, generate the initial migration, and evolve that database with subsequent model changes. Adopting an existing application's database, introspecting models from a database, and baselining pre-existing tables are outside the current scope.
+Start from an empty database, or adopt supported existing tables using `baseline` and an explicit table management scope. Models must be supplied; reverse model generation is not supported.
+
+## Adopt existing databases and exclude tables
+
+```ts
+export default defineConfig({
+  dialect: 'postgres',
+  database: { connectionString: process.env.DATABASE_URL },
+  models: ['./src/models'],
+  excludeTables: ['sys_*', /^archive_\d{6}$/, 'external_users'],
+});
+```
+
+`excludeTables` accepts `(string | RegExp)[]` matching **physical table names** within the configured database/schema. Strings are full-name, case-sensitive globs. RegExp follows native JavaScript semantics: use `i` for case-insensitive matching and `^`/`$` to anchor the whole name. Stateful `g` and `y` flags are rejected. Any matching pattern excludes the table. Excluded tables are skipped by `dev`, `push`, `check`, and post-deploy drift checks, before unsupported structures are parsed. Excluded tables may remain in models for application queries; their existence and structural differences are ignored by tgm, and missing excluded tables are not created. The history table is always reserved. Other tables retain authoritative comparison: removing a model still generates a drop, and database tables without models are considered for deletion.
+
+String globs support `sys_*` (prefix), `*_log` (suffix), `report_????` (four characters), `report_[0-9][0-9]` (two digits), and `{order,payment}_*` (alternative prefixes). `*` and `?` do not cross `/`. Names are strings, not directories; `sys_**` is equivalent to `sys_*`. Leading `!` negation and extglob are not supported; parentheses and pipes in strings are literal, so use RegExp for complex expressions. To match a literal `*`, write `'sys_\\*'` in TypeScript. Unbalanced brackets/braces are rejected before operations start.
+
+```ts
+excludeTables: [
+  'sys_*',                       // System tables
+  /^order_(?:2025|2026)_\d{2}$/, // Monthly shards owned by another system
+  /^tenant_\d+_audit$/i,         // Tenant audit shards
+]
+```
+
+New physical shards matching the patterns are automatically excluded. Patterns only select the management scope: they do not expand one logical model into multiple physical tables or provide shard routing. Configure separate connections and run migrations independently for each database shard. Patterns do not match database or schema names.
+
+1. Supply ts-grm models matching the tables to adopt and configure excluded tables.
+2. Run `npx tgm check` and align any reported differences.
+3. With an empty migration directory and history, run `npx tgm baseline -n initial`.
+4. Commit models, configuration and SQL; continue with `dev --create-only`, review and `deploy`.
+
+`baseline` generates creation SQL from the managed database state, preserving representable defaults and independent indexes, and records it as already applied. It does not execute business creation SQL or modify business data; it initializes the migration history table. Model differences in managed attributes, an empty managed schema, or existing files/history block adoption. Only structures represented by the current introspectors/DDL are supported. Business data, triggers, views, custom functions and other database objects are not exported; prepare separate initialization SQL for these objects and custom default dependencies. PostgreSQL serial is represented by identity on replay; generator counters and other sequence settings are not copied.
+
+On a fresh database, `deploy` executes the baseline. Excluded tables must be provisioned by their owner. On other existing environments with the same structure, run `check` with the same configuration, review and verify the baseline SQL against their state, then use `resolve --applied <baseline-id>`. If recording history fails during adoption, the generated file remains; verify structure and history before using the same recovery command. Do not deploy that creation file directly against existing tables.
+
+The first version restricts cross-boundary foreign keys conservatively: a managed table referencing an excluded table blocks comparison/adoption. An excluded table referencing a managed table permits a matching baseline/check but blocks generated structural changes to the referenced table until dependencies are handled manually. Custom `Introspector` implementations must honor early filtering and the `onExcludedReference` callback in `IntrospectionOptions`.
+
+Exclusions do not rewrite existing SQL. `deploy` still executes migration files, including custom SQL. Review pending files when changing scope. Adding exclusions preserves files/history; removing exclusions resumes authoritative comparison.
 
 ## Generate, review, apply
 
@@ -17,7 +55,7 @@ npx tgm check
 
 `dev` and `dev --create-only` both validate applied-file checksums and missing files. They refuse to generate another migration while pending files exist; run `deploy` first. This also applies after pulling a teammate's migrations. After deployment, never edit the applied file; add a new migration instead.
 
-`dev` without `--create-only` remains the shortcut for generating and applying a migration immediately. `push` synchronizes the current model-managed structure and writes no history. Pending, failed, missing or modified migration files block it; resolve the migration workflow first. `push --dry-run` previews the SQL without creating schemas or writing database/history state (an existing SQLite file is required). Applied migrations must form a continuous prefix of the ordered files. To start reproducible migration history after experimenting with `push`, generate the initial migration against a fresh empty database.
+`dev` without `--create-only` remains the shortcut for generating and applying a migration immediately. `push` synchronizes the current model-managed structure and writes no history. Pending, failed, missing or modified migration files block it; resolve the migration workflow first. `push --dry-run` previews the SQL without creating schemas or writing database/history state (an existing SQLite file is required). Applied migrations must form a continuous prefix of the ordered files. To start reproducible migration history after experimenting with `push`, use `baseline` once the database matches the models and migration files/history are empty.
 
 ## Custom SQL and unsupported automatic changes
 
