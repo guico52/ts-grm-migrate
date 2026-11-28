@@ -98,6 +98,7 @@ npx tgm baseline -n initial        # Generate initial SQL and record it as alrea
 - **`dialect`:** `postgres`, `sqlite`, `mysql`, `mssql`, or `oracle`; defaults to `postgres`. It selects the driver, schema introspection, SQL generation, and execution. See the support table below.
 - **`database` (required):** connection settings; fields depend on the dialect.
 - **`models` (required):** model files or directories relative to the project root, starting with `./` or `../`. They must be ESM: declare `"type": "module"` or point to compiled ESM `.js` files.
+- `allowDropTables`: allow automatic table deletion; defaults to `true`. Set `false` to omit `DROP_TABLE` from generated migrations and `push` SQL. Strict drift checks, column changes and existing migration SQL are unchanged; see [table deletion control](docs/migrations.md#control-automatic-table-deletion).
 - `excludeTables`: optional `(string | RegExp)[]` matched against physical table names; strings use glob, RegExp uses JavaScript semantics without `g`/`y` flags. Excluded tables can remain in query models.
 - `language`: project default for CLI output, `en` or `zh-CN`; defaults to `en`. `--lang` overrides it for one command.
 - `migrationsDir`: migration file directory; defaults to `./src/ts-grm`.

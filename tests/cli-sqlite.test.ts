@@ -33,6 +33,7 @@ describe('CLI 端到端（SQLite）', () => {
   const writeConfig = async (
     language?: 'en' | 'zh-CN',
     excludeTables = ['leg*'],
+    allowDropTables?: boolean,
   ): Promise<void> => {
     await writeFile(
       configPath,
@@ -40,6 +41,7 @@ describe('CLI 端到端（SQLite）', () => {
         {
           dialect: 'sqlite',
           excludeTables,
+          allowDropTables,
           ...(language != null ? { language } : {}),
           database: { file: dbFile },
           models: ['./tests/model/model.ts'],
@@ -81,6 +83,26 @@ describe('CLI 端到端（SQLite）', () => {
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it('allowDropTables=false 跳过自动删表，check/push 继续报告差异，force 不覆盖配置', async () => {
+    await writeConfig(undefined, ['leg*'], false);
+    expect(await runCli(['push', '--config', configPath])).toBe(0);
+    const db = new Database(dbFile);
+    db.exec('create table archive(id integer primary key); insert into archive values(7)');
+    db.close();
+    logs.length = 0;
+    expect(await runCli(['dev', '--create-only', '--config', configPath])).toBe(0);
+    expect(logs.join('\n')).not.toContain('is up to date');
+    expect(errors.join('\n')).toContain('archive');
+    expect(await runCli(['check', '--config', configPath])).toBe(1);
+    expect(await runCli(['push', '--force', '--config', configPath])).toBe(1);
+    const kept = new Database(dbFile);
+    try {
+      expect(kept.prepare('select * from archive').all()).toEqual([{ id: 7 }]);
+    } finally {
+      kept.close();
+    }
   });
 
   it('真实模型中的排除表不报错，也不会创建，受管理表可正常接管', async () => {

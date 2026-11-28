@@ -4,6 +4,8 @@
 
 ## 0.1.0-alpha.8（待发布）
 
+- 新增 `allowDropTables`（默认 `true`）；设为 `false` 时跳过自动删表，保留严格 drift 检查、其他 DDL 和已有迁移 SQL 的执行行为。
+
 - 五种方言支持通过精确表名、glob 和 RegExp 排除表，统一用于迁移及 drift 检查，允许被排除表保留查询模型，并保守拦截跨范围外键变更。
 - 新增 `tgm baseline [-n name]` 和 `Migrator.baseline()`：校验受支持的存量表，生成可重放的初始迁移，仅记录已应用，不修改业务数据。
 - 补充中英文部分接管、恢复、范围变更及 SQL 重放边界文档，以及 SQLite 端到端与 catalog 回归测试。

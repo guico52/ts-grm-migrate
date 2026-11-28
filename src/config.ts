@@ -89,6 +89,8 @@ export interface MigrateConfig {
   readonly models: ReadonlyArray<string>;
   /** 不受管理的物理表名：支持 glob 字符串与 RegExp；正则不允许 g/y flags。 */
   readonly excludeTables?: ReadonlyArray<TablePattern>;
+  /** 自动 DDL 是否允许删表，默认 true；false 不影响删列或已有迁移 SQL。 */
+  readonly allowDropTables?: boolean;
   /** 迁移文件目录（相对项目根），默认 `./src/ts-grm` */
   readonly migrationsDir?: string;
   /** 目标 schema：PG 默认 public，SQL Server 默认 dbo，Oracle 默认登录用户 schema。 */
@@ -186,6 +188,7 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
     throw diagnostic('config_6', file, String(config.language));
   }
   validateExcludeTables(config.excludeTables);
+  validateAllowDropTables(config.allowDropTables);
   if (config.seed !== undefined) validateSeedConfig(config.seed);
   // 方言先过一遍注册表：未知方言在这里就报错，"已知但未实现"留给 runtime
   // （那里的提示能带上 ts-grm 驱动名与实现进度）
@@ -198,4 +201,10 @@ function validateConfig(value: unknown, file: string): MigrateConfig {
 /** 同时供配置文件和程序化入口校验。 */
 export function validateExcludeTables(value: unknown): void {
   createTableMatcher(value);
+}
+
+/** 配置文件、runtime 和直接构造 Migrator 使用相同的布尔校验。 */
+export function validateAllowDropTables(value: unknown): void {
+  if (value !== undefined && typeof value !== 'boolean')
+    throw diagnostic('allow_drop_tables_config');
 }

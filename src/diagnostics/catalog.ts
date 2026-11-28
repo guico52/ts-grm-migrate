@@ -1,5 +1,9 @@
 /** 成对的中英诊断模板。路径、SQL、标识符等取值不做翻译。 */
 export const diagnostics = {
+  allow_drop_tables_config: {
+    en: 'allowDropTables must be a boolean (true or false).',
+    'zh-CN': 'allowDropTables 必须为布尔值（true 或 false）。',
+  },
   exclude_config: {
     en: 'excludeTables must be an array of non-empty glob strings without null bytes, or RegExp objects.',
     'zh-CN': 'excludeTables 必须为 glob 字符串或 RegExp 组成的数组；字符串不能为空或包含空字符。',

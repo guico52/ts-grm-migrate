@@ -276,7 +276,8 @@ async function runDev(
     return 0;
   }
   if (!result.applied) {
-    log(m.devNoop(dbLabel));
+    if (result.drift.length) reportDrift(result.drift, dbLabel, log, errorLog, m, detail);
+    else log(m.devNoop(dbLabel));
     return 0;
   }
   log(m.devApplied(result.migrationId!, dbLabel));

@@ -15,7 +15,7 @@ export default defineConfig({
 });
 ```
 
-`excludeTables` accepts `(string | RegExp)[]` matching **physical table names** within the configured database/schema. Strings are full-name, case-sensitive globs. RegExp follows native JavaScript semantics: use `i` for case-insensitive matching and `^`/`$` to anchor the whole name. Stateful `g` and `y` flags are rejected. Any matching pattern excludes the table. Excluded tables are skipped by `dev`, `push`, `check`, and post-deploy drift checks, before unsupported structures are parsed. Excluded tables may remain in models for application queries; their existence and structural differences are ignored by tgm, and missing excluded tables are not created. The history table is always reserved. Other tables retain authoritative comparison: removing a model still generates a drop, and database tables without models are considered for deletion.
+`excludeTables` accepts `(string | RegExp)[]` matching **physical table names** within the configured database/schema. Strings are full-name, case-sensitive globs. RegExp follows native JavaScript semantics: use `i` for case-insensitive matching and `^`/`$` to anchor the whole name. Stateful `g` and `y` flags are rejected. Any matching pattern excludes the table. Excluded tables are skipped by `dev`, `push`, `check`, and post-deploy drift checks, before unsupported structures are parsed. Excluded tables may remain in models for application queries; their existence and structural differences are ignored by tgm, and missing excluded tables are not created. The history table is always reserved. Other tables retain authoritative comparison: removing a model or finding database tables without models generates drops unless `allowDropTables: false` is configured.
 
 String globs support `sys_*` (prefix), `*_log` (suffix), `report_????` (four characters), `report_[0-9][0-9]` (two digits), and `{order,payment}_*` (alternative prefixes). `*` and `?` do not cross `/`. Names are strings, not directories; `sys_**` is equivalent to `sys_*`. Leading `!` negation and extglob are not supported; parentheses and pipes in strings are literal, so use RegExp for complex expressions. To match a literal `*`, write `'sys_\\*'` in TypeScript. Unbalanced brackets/braces are rejected before operations start.
 
@@ -41,6 +41,22 @@ On a fresh database, `deploy` executes the baseline. Excluded tables must be pro
 The first version restricts cross-boundary foreign keys conservatively: a managed table referencing an excluded table blocks comparison/adoption. An excluded table referencing a managed table permits a matching baseline/check but blocks generated structural changes to the referenced table until dependencies are handled manually. Custom `Introspector` implementations must honor early filtering and the `onExcludedReference` callback in `IntrospectionOptions`.
 
 Exclusions do not rewrite existing SQL. `deploy` still executes migration files, including custom SQL. Review pending files when changing scope. Adding exclusions preserves files/history; removing exclusions resumes authoritative comparison.
+
+## Control automatic table deletion
+
+```ts
+export default defineConfig({
+  database: { connectionString: process.env.DATABASE_URL },
+  models: ['./src/models'],
+  allowDropTables: false,
+});
+```
+
+`allowDropTables` is a boolean and defaults to `true`. With `false`, `dev` (including `--create-only`) and `push` (including `--dry-run`) omit table drops from both generated SQL and destructive-change confirmations. Other operations, including creating tables, adding/dropping columns, and changing constraints/indexes, remain enabled. `--force` does not override this setting. Programmatic callers can pass the same option to `Migrator`.
+
+This controls DDL generation, not management scope. `check` and post-application drift checks still report non-excluded tables absent from models. `push` exits with 1 if those differences remain; `dev` reports remaining differences and writes no empty migration when the only changes would be table drops. `baseline` still requires matching managed structures and will not silently include extra tables. Use `excludeTables` instead when those tables should be completely outside tgm's scope.
+
+Existing SQL is not rewritten: `deploy` still executes a `DROP TABLE` already present in a migration file, even with `allowDropTables: false`. Retained tables stay in the DDL dependency context so foreign keys can be restored after changes to referenced keys; database dependency checks and the existing cross-scope guards still apply.
 
 ## Generate, review, apply
 

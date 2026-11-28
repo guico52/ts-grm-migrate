@@ -1,3 +1,4 @@
+import { validateAllowDropTables } from './config.js';
 import { SqliteDdlGenerator } from './ddl/sqlite.js';
 import type { DdlGenerator } from './ddl.js';
 import { asError, DiagnosticAggregateError, diagnostic, formatError } from './diagnostics/error.js';
@@ -42,6 +43,8 @@ export type { MigrationFile } from './store.js';
 
 export interface MigratorOptions {
   readonly excludeTables?: ReadonlyArray<TablePattern>;
+  /** false 时自动 DDL 跳过删表；默认 true，不影响严格结构检查和已有 SQL。 */
+  readonly allowDropTables?: boolean;
   /** 磁盘迁移文件 */
   readonly files: MigrationFileStore;
   /** 数据库迁移历史 */
@@ -147,6 +150,7 @@ export class Migrator {
 
   constructor(private readonly _options: MigratorOptions) {
     createTableMatcher(_options.excludeTables);
+    validateAllowDropTables(_options.allowDropTables);
     this._differ = new SchemaDiffer(_options.ddl.dialect);
   }
 
@@ -226,9 +230,14 @@ export class Migrator {
       if (pending.length > 0) {
         throw diagnostic('migrator_1', pending.map((f) => f.id).join(', '));
       }
-      const { diff, from, to } = await this._diffAgainstDatabase();
+      const { diff, rawDiff, from, to } = await this._diffAgainstDatabase('generate');
       if (diff.changes.length === 0) {
-        return { diff, migrationId: undefined, applied: false, drift: [] };
+        return {
+          diff,
+          migrationId: undefined,
+          applied: false,
+          drift: describeDiff(rawDiff, this._options.driftLanguage),
+        };
       }
       const sql = toSqlFile(this._options.ddl.statements(diff, { from, to }));
       this._warnDataConditions(diff);
@@ -271,11 +280,11 @@ export class Migrator {
     return await this._withLocks(false, async () => {
       const { pending } = await this._validatedHistory();
       if (pending.length) throw diagnostic('migrator_1', pending.map((f) => f.id).join(', '));
-      const { diff, from, to } = await this._diffAgainstDatabase();
+      const { diff, rawDiff, from, to } = await this._diffAgainstDatabase('generate');
       const statements = this._options.ddl.statements(diff, { from, to });
       this._warnDataConditions(diff);
       if (options.dryRun)
-        return { diff, statements, drift: describeDiff(diff, this._options.driftLanguage) };
+        return { diff, statements, drift: describeDiff(rawDiff, this._options.driftLanguage) };
       await this._confirmIfNeeded(diff);
       if (statements.length > 0) {
         for (const sql of statements) this._options.onProgress?.({ kind: 'sql', sql });
@@ -512,7 +521,12 @@ export class Migrator {
     return applied.filter((a) => a.rolledBackAt == null);
   }
 
-  private async _diffAgainstDatabase(): Promise<{ diff: Diff; from: Schema; to: Schema }> {
+  private async _diffAgainstDatabase(mode: 'compare' | 'generate' = 'compare'): Promise<{
+    diff: Diff;
+    rawDiff: Diff;
+    from: Schema;
+    to: Schema;
+  }> {
     const excluded = createTableMatcher(this._options.excludeTables);
     const references: Array<{ table: string; referencedTable: string }> = [];
     const actual = await this._options.introspector.introspect({
@@ -554,12 +568,30 @@ export class Migrator {
     const business = {
       tables: actual.tables.filter((t) => t.name !== historyTable && !excluded(t.name)),
     };
-    const diff = this._differ.diff(business, target);
+    const rawDiff = this._differ.diff(business, target);
+    const keepTables = mode === 'generate' && this._options.allowDropTables === false;
+    const diff: Diff = keepTables
+      ? {
+          changes: rawDiff.changes.filter((change) => change.kind !== 'DROP_TABLE'),
+          destructive: rawDiff.destructive.filter((change) => change.kind !== 'DROP_TABLE'),
+        }
+      : rawDiff;
+    // 保留表仍是实际 DDL 上下文的一部分，避免改动被引用键时移除外键后不重建。
+    const to: Schema = keepTables
+      ? {
+          tables: [
+            ...target.tables,
+            ...business.tables.filter(
+              (table) => !target.tables.some((model) => model.name === table.name),
+            ),
+          ],
+        }
+      : target;
     for (const ref of references) {
       if (diff.changes.some((c) => c.kind !== 'CREATE_TABLE' && c.table === ref.referencedTable))
         throw diagnostic('exclude_reference', ref.table, ref.referencedTable);
     }
-    return { diff, from: business, to: target };
+    return { diff, rawDiff, from: business, to };
   }
 }
 

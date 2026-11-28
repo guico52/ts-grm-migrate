@@ -14,7 +14,7 @@
  */
 import path from 'node:path';
 import type { DialectName, MigrateConfig } from './config.js';
-import { validateExcludeTables } from './config.js';
+import { validateAllowDropTables, validateExcludeTables } from './config.js';
 import { MysqlDdlGenerator } from './ddl/mysql.js';
 import { OracleDdlGenerator } from './ddl/oracle.js';
 import { PostgresDdlGenerator } from './ddl/postgres.js';
@@ -91,6 +91,7 @@ export async function createRuntime(
   // 方言在装配之前就定死：未实现的直接拒掉，并说清楚上游由谁提供，
   // 而不是等运行到 introspection/执行阶段才炸（见 src/dialect.ts）
   validateExcludeTables(config.excludeTables);
+  validateAllowDropTables(config.allowDropTables);
   const dialect = config.dialect ?? 'postgres';
   const dialectSupport = dialectInfo(dialect);
   if (!dialectSupport.implemented) {
@@ -311,6 +312,7 @@ async function assembleRuntime(
     migrationsDir,
     lockPath,
     excludeTables: config.excludeTables,
+    allowDropTables: config.allowDropTables,
     ...(options.confirm != null ? { confirm: options.confirm } : {}),
     ...(options.onProgress != null ? { onProgress: options.onProgress } : {}),
     ...(options.driftLanguage != null ? { driftLanguage: options.driftLanguage } : {}),

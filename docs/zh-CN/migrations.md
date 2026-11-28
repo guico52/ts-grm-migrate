@@ -15,7 +15,7 @@ export default defineConfig({
 });
 ```
 
-`excludeTables` 接受 `(string | RegExp)[]`，匹配当前数据库/schema 内的**物理表名**。字符串使用完整表名 glob，默认区分大小写；RegExp 遵循 JavaScript 原生语义，可使用 `i` 忽略大小写，需要完整匹配时写 `^`、`$`，不允许有状态的 `g`、`y` flags。多个模式任意命中即排除。被排除表不参与 `dev`、`push`、`check` 及部署后的 drift 检查，且在解析不支持的特殊结构前过滤。被排除表可以保留在模型中供应用查询，tgm 不检查它们是否存在或结构是否一致，也不会根据模型创建缺失的被排除表；迁移历史表始终保留。未被排除的表保持原有权威比较：删除模型仍会生成删表，数据库中无模型的表也会被视为待删除。
+`excludeTables` 接受 `(string | RegExp)[]`，匹配当前数据库/schema 内的**物理表名**。字符串使用完整表名 glob，默认区分大小写；RegExp 遵循 JavaScript 原生语义，可使用 `i` 忽略大小写，需要完整匹配时写 `^`、`$`，不允许有状态的 `g`、`y` flags。多个模式任意命中即排除。被排除表不参与 `dev`、`push`、`check` 及部署后的 drift 检查，且在解析不支持的特殊结构前过滤。被排除表可以保留在模型中供应用查询，tgm 不检查它们是否存在或结构是否一致，也不会根据模型创建缺失的被排除表；迁移历史表始终保留。未被排除的表保持原有权威比较：默认情况下删除模型会生成删表，数据库中无模型的表也会被视为待删除；可通过 `allowDropTables: false` 禁止自动生成删表。
 
 字符串 glob 支持 `sys_*`（前缀）、`*_log`（后缀）、`report_????`（四个字符）、`report_[0-9][0-9]`（两位数字）、`{order,payment}_*`（前缀任选）。`*`、`?` 不跨 `/`；表名按字符串处理，不展开目录，`sys_**` 与 `sys_*` 等价。不支持以 `!` 否定规则或 extglob；字符串中的括号和竖线按字面量处理，复杂条件请直接使用 RegExp。要匹配字面的 `*`，TypeScript 字符串写成 `'sys_\\*'`。不平衡的字符集合或花括号会在操作前报错。
 
@@ -41,6 +41,22 @@ excludeTables: [
 首版保守限制跨范围外键：受管理表引用被排除表时拒绝比较和接管；被排除表引用受管理表时允许无差异检查与基线，但拒绝对被引用表生成结构变更，需先人工处理依赖。自定义 `Introspector` 必须支持 `IntrospectionOptions` 的提前过滤与 `onExcludedReference` 回调。
 
 排除配置不会重写已有迁移 SQL。`deploy` 仍按文件执行，包括手写 SQL；变更排除范围时必须审核待应用文件。新增排除项不会删除既有文件或历史，取消排除意味着重新参与完整比较。
+
+## 控制自动删表
+
+```ts
+export default defineConfig({
+  database: { connectionString: process.env.DATABASE_URL },
+  models: ['./src/models'],
+  allowDropTables: false,
+});
+```
+
+`allowDropTables` 为布尔值，默认 `true`。设为 `false` 后，`dev`（含 `--create-only`）和 `push`（含 `--dry-run`）会从生成的 SQL 及破坏性确认列表中移除删表操作。建表、加列、删列、约束与索引变更仍然有效，`--force` 不会覆盖该设置。直接构造 `Migrator` 时也可传入同名选项。
+
+该配置控制 DDL 生成，不改变管理范围。`check` 及应用后的 drift 检查仍会报告未被排除但模型中不存在的表；这些差异保留时 `push` 返回 1。仅有删表差异时，`dev` 报告差异，不生成空迁移。`baseline` 仍要求受管理结构与模型一致，不会自动把多余表纳入基线。如果希望这些表完全不参与管理，请使用 `excludeTables`。
+
+已有 SQL 不会被重写：即使设置 `allowDropTables: false`，`deploy` 仍会执行迁移文件中已有的 `DROP TABLE`。保留表继续参与 DDL 依赖上下文，确保变更被引用的键后能恢复外键；数据库依赖约束及现有的跨管理范围外键保护仍然有效。
 
 ## 生成、审核、应用
 

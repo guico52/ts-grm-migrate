@@ -4,6 +4,8 @@ English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
 ## 0.1.0-alpha.8 (pending publication)
 
+- Add `allowDropTables` (default `true`); `false` skips automatic table drops while retaining strict drift checks, other DDL and existing migration SQL.
+
 - Add exact, glob and RegExp physical-table exclusions across all five introspectors and migration/drift workflows, while allowing excluded tables to remain in query models, with conservative cross-boundary foreign-key guards.
 - Add `tgm baseline [-n name]` and `Migrator.baseline()` to verify supported existing tables, generate replayable initial SQL, and record it without modifying business data.
 - Document partial adoption, recovery, scope changes and SQL replay limits in English and Chinese; add SQLite end-to-end and catalog regression tests.

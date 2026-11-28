@@ -105,6 +105,7 @@ npx tgm baseline -n initial        # 生成初始迁移，并记录为已应用
 - **`database`**（必填）：数据库连接，字段含义随方言变化，见下文示例
 - **`models`**（必填）：模型文件或目录，相对项目根，必须写成 `./xxx` 或 `../xxx`。
   **必须是 ESM** —— 项目声明 `"type": "module"`，或指向编译后的 ESM 产物（`.js`）
+- `allowDropTables`：是否允许自动删表，默认 `true`。设为 `false` 后，生成迁移和 `push` SQL 时跳过 `DROP_TABLE`；严格 drift 检查、列变更和已有迁移 SQL 不受影响，见[自动删表控制](migrations.md#控制自动删表)
 - `excludeTables`：可选的 `(string | RegExp)[]`，匹配物理表名；字符串使用 glob，RegExp 使用 JavaScript 语义且不能带 `g`/`y` flags。被排除表可以保留查询模型
 - `language`：项目的 CLI 默认语言，可选 `en` 或 `zh-CN`，默认 `en`；命令行 `--lang` 可临时覆盖
 - `migrationsDir`：迁移文件目录，默认 `./src/ts-grm`
