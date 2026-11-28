@@ -44,6 +44,8 @@ Exclusions do not rewrite existing SQL. `deploy` still executes migration files,
 
 ## Control automatic table deletion
 
+Available since `0.1.0-alpha.9`; `baseline` and pattern-based exclusions are available since `0.1.0-alpha.8`.
+
 ```ts
 export default defineConfig({
   database: { connectionString: process.env.DATABASE_URL },

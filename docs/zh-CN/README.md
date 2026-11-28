@@ -36,7 +36,7 @@ npm install -D ts-grm-migrate@next
 - core/sql 是 peerDependencies，请使用**相同版本**；当前支持 `>=0.0.9 <0.0.14`。
   这是已验证范围，不自动承诺未来版本；验证方法见 [兼容性](compatibility.md)。
 - 数据库驱动按需安装，完整列表见下方支持表。
-- `@next` 跟随预发布版本；需要固定版本时请写明版本号，例如 `ts-grm-migrate@0.1.0-alpha.0`。
+- `@next` 跟随预发布版本；需要固定版本时请写明版本号，例如 `ts-grm-migrate@0.1.0-alpha.9`。
 - 安装后使用 `npx tgm`，或通过包管理器运行 `tgm` / `ts-grm-migrate`。
 
 在依赖未提升到根目录的 workspace 中（例如 Bun 安装布局），npm 的 workspace 查找可能漏掉子项目中的 CLI，或启动根目录中的其他版本。在子项目目录中可使用：
@@ -79,6 +79,8 @@ npx tgm status           # 看看应用了哪些、还剩哪些
 ```
 
 ### 接管存量数据库
+
+`baseline` 与 `excludeTables` 从 `0.1.0-alpha.8` 起提供；`allowDropTables` 从 `0.1.0-alpha.9` 起提供。
 
 保留应用查询需要的全部模型，用排除规则指定由其他系统维护结构的表：
 

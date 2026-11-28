@@ -2,13 +2,21 @@
 
 English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
-## 0.1.0-alpha.8 (pending publication)
+<!-- @see https://registry.npmjs.org/ts-grm-migrate -->
+
+Release dates use Asia/Shanghai. Versions and feature ownership were verified against npm registry metadata and published packages.
+
+## 0.1.0-alpha.9 (2026-11-28)
 
 - Add `allowDropTables` (default `true`); `false` skips automatic table drops while retaining strict drift checks, other DDL and existing migration SQL.
+
+## 0.1.0-alpha.8 (2026-11-28)
 
 - Add exact, glob and RegExp physical-table exclusions across all five introspectors and migration/drift workflows, while allowing excluded tables to remain in query models, with conservative cross-boundary foreign-key guards.
 - Add `tgm baseline [-n name]` and `Migrator.baseline()` to verify supported existing tables, generate replayable initial SQL, and record it without modifying business data.
 - Document partial adoption, recovery, scope changes and SQL replay limits in English and Chinese; add SQLite end-to-end and catalog regression tests.
+
+## 0.1.0-alpha.7 (2026-10-26)
 
 - Restore the SQLite introspection lost in 0.1.0-alpha.6: CHECK constraints, parent primary-key columns for foreign keys without explicit references, partial index predicates, explicit rejection of unsupported table/column/index structures, and NUMERIC affinity. Users of 0.1.0-alpha.6 with SQLite should upgrade.
 - Failure logs state that a transaction was rolled back only when the executor confirms it, instead of matching error text. SQLite now reports an unconfirmed rollback when `ROLLBACK` itself fails.
@@ -19,7 +27,7 @@ English | [简体中文](docs/zh-CN/CHANGELOG.md)
 
 - Add explicit `tgm seed` with executable/argument configuration, literal argument forwarding after `--`, local binary lookup, inherited environment and terminal I/O, exit-code propagation and interruption handling.
 - Keep seeding independent of migration runtime, schema changes and history; add bilingual examples and subprocess/SQLite integration tests.
-- **Known issue:** this release accidentally reverted the SQLite introspection hardening from 0.1.0-alpha.5. SQLite CHECK constraints are regenerated on every `dev`, foreign keys referencing an implicit primary key are misread, and unsupported structures are not rejected. Fixed in 0.1.0-alpha.8.
+- **Known issue:** this release accidentally reverted the SQLite introspection hardening from 0.1.0-alpha.5. SQLite CHECK constraints are regenerated on every `dev`, foreign keys referencing an implicit primary key are misread, and unsupported structures are not rejected. Fixed in 0.1.0-alpha.7.
 
 ## 0.1.0-alpha.5 (2026-10-11)
 

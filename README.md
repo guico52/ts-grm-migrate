@@ -33,7 +33,7 @@ npm install -D ts-grm-migrate@next
 
 - `@ts-grm/core` and `@ts-grm/sql` are peer dependencies and must use the **same version**. The verified range is `>=0.0.9 <0.0.14`; see [compatibility](docs/compatibility.md) before changing it.
 - Install only the database driver you need; the supported drivers are listed below.
-- `@next` follows prereleases. Pin an exact version when reproducibility matters, for example `ts-grm-migrate@0.1.0-alpha.0`.
+- `@next` follows prereleases. Pin an exact version when reproducibility matters, for example `ts-grm-migrate@0.1.0-alpha.9`.
 - Run the installed CLI with `npx tgm`, or use `tgm` / `ts-grm-migrate` through your package manager.
 
 In a workspace with non-hoisted dependencies (for example a Bun installation), npm's workspace lookup may miss the child's local CLI or select a different version installed at the root. From the child project, use:
@@ -74,6 +74,8 @@ npx tgm status           # Inspect applied and pending migrations
 ```
 
 ### Adopt an existing database
+
+`baseline` and `excludeTables` require `0.1.0-alpha.8` or newer; the `allowDropTables` option requires `0.1.0-alpha.9` or newer.
 
 Keep all application query models and exclude tables whose structure is maintained elsewhere:
 

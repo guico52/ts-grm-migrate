@@ -44,6 +44,8 @@ excludeTables: [
 
 ## 控制自动删表
 
+本配置从 `0.1.0-alpha.9` 起提供；`baseline` 与模式排除从 `0.1.0-alpha.8` 起提供。
+
 ```ts
 export default defineConfig({
   database: { connectionString: process.env.DATABASE_URL },
