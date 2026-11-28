@@ -322,6 +322,20 @@ export const SYS_USER = model("SysUser", "id", class {
 }, (ctx) => ctx.table("sys_user"));
 ```
 
+### Windows model loading (next release)
+
+The next unreleased version fixes `ERR_UNSUPPORTED_ESM_URL_SCHEME` / `Received protocol 'f:'` when loading models from a Windows drive. Published `0.1.0-alpha.9` does not contain this fix. Keep filesystem paths relative to the CLI working directory:
+
+```ts
+models: ["./src/models"]
+```
+
+Do not replace these entries with `file://` URLs. tgm recursively imports `.ts`, `.mts`, `.js` and `.mjs` files, skips `.d.ts`/`.d.mts`, resolves duplicate paths, and converts absolute paths to properly escaped file URLs internally. Spaces, Unicode, `#` and `%` in project paths remain part of the filename. Model imports are deferred until schema inference; `status` and `resolve` do not execute model files.
+
+If the error remains, run `tgm dev --detail` and check where the failing import originates. Imports performed by application code must also follow Node's ESM rules; tgm only controls its own model-file loading. Windows drive/UNC conversion and native Node imports with special characters are covered by tests on Linux; Windows-host end-to-end verification remains a separate check. See [compatibility](docs/compatibility.md#model-loading-compatibility).
+
+<!-- @see https://nodejs.org/api/url.html#urlpathtofileurlpath-options -->
+
 ## Behavior
 
 - **History validation:** `dev` and `deploy` reject changed or missing applied files. `dev` refuses to generate while pending files exist; apply them with `deploy` first.

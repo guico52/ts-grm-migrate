@@ -23,6 +23,12 @@ The minimum Node version is `24.11.0`. The published `@ts-grm/sql@0.0.13` artifa
 
 The migrator reads the internal `tableDefs` of objects returned by ts-grm. These fields are not part of an upstream public type guarantee. Inspect `src/vendor/ts-grm.ts` and run the compatibility matrix when changing versions.
 
+## Model-loading compatibility
+
+In the next unreleased version, tgm imports model files through `pathToFileURL` and asks the shared ts-grm `EntityManager` to read already registered models without scanning model paths again. This avoids the upstream absolute-path import on Windows and preserves registration side effects even for models not exported by their module. The adaptation is isolated in `registeredEntityManager` in `src/vendor/ts-grm.ts`; revalidate it when changing the peer range.
+
+Clean package installation and native model-loading checks passed with ts-grm `0.0.9` and `0.0.13` on Linux. `tests/model-loader.test.ts` checks Windows drive and UNC URL conversion, native imports under paths containing spaces/Unicode/URL-sensitive characters, `.mts`/`.mjs`, declaration-file exclusion and duplicate traversal. This is not a Windows-host end-to-end result. Before claiming that coverage, run `corepack yarn check` and the clean package tests on Windows with the intended Node and database driver versions.
+
 ## Optional column patches
 
 `ts-grm-patches@0.1.0` supports only ts-grm `>=0.0.13 <0.0.14`. This does not narrow the migrator's base peer range. The compatibility script installs the companion in the isolated environment at `0.0.13`, sharing that environment's ORM instance. Earlier versions run base tests without companion-only fixtures; the JSON report states whether patches were tested. The `0.0.13` clean package test also verifies companion installation, `--create-only`, deployment, and `check`.

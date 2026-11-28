@@ -362,6 +362,20 @@ export const SYS_USER = model("SysUser", "id", class {
 }, (ctx) => ctx.table("sys_user"));
 ```
 
+### Windows 模型加载（下一版本）
+
+下一未发布版本修复了 Windows 盘符模型路径引发的 `ERR_UNSUPPORTED_ESM_URL_SCHEME` / `Received protocol 'f:'`。已发布的 `0.1.0-alpha.9` 尚不包含该修复。配置仍使用相对于 CLI 工作目录的文件路径：
+
+```ts
+models: ["./src/models"]
+```
+
+不要将这些配置项改成 `file://` URL。tgm 递归导入 `.ts`、`.mts`、`.js`、`.mjs`，跳过 `.d.ts`/`.d.mts`，对重复路径去重，并在内部将绝对路径转换为正确转义的 file URL。项目路径中的空格、中文、`#` 和 `%` 仍作为文件名的一部分。模型文件延迟到推导结构时才导入；`status`、`resolve` 不执行模型文件。
+
+若仍出现该错误，运行 `tgm dev --detail` 确认错误来自哪一处导入。应用代码自行执行的导入同样需要遵守 Node ESM 规则，tgm 只控制自身的模型文件加载。当前已在 Linux 上验证盘符/UNC 转换及特殊字符路径下的原生 Node 导入，Windows 主机端到端验证仍需单独进行。参见[模型加载兼容性](compatibility.md#模型加载兼容性)。
+
+<!-- @see https://nodejs.org/api/url.html#urlpathtofileurlpath-options -->
+
 ## 行为约定
 
 - `dev` 和 `deploy` 都验证已应用文件的 checksum 及文件缺失；有待应用文件时 `dev` 会拒绝继续生成，需先执行 `deploy`。

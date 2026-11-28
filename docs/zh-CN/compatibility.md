@@ -23,6 +23,12 @@ Node 最低版本为 `24.11.0`。`@ts-grm/sql@0.0.13` 的发布产物包含 `usi
 
 迁移器读取 ts-grm 返回对象中的内部 `tableDefs`。这不是上游公开类型承诺的一部分；版本变化时应先检查 `src/vendor/ts-grm.ts`，再运行上述矩阵。
 
+## 模型加载兼容性
+
+下一未发布版本由 tgm 通过 `pathToFileURL` 导入模型文件，再让共享的 ts-grm `EntityManager` 读取已注册模型，不重复扫描模型路径。这样绕开上游在 Windows 上直接导入绝对路径的问题，并保留模块未导出模型时的注册副作用。该适配集中在 `src/vendor/ts-grm.ts` 的 `registeredEntityManager`；调整 peer 范围时需重新验证。
+
+已在 Linux 上通过 ts-grm `0.0.9` 和 `0.0.13` 的干净安装包及原生模型加载验证。`tests/model-loader.test.ts` 覆盖 Windows 盘符/UNC URL 转换、含空格/中文/URL 特殊字符路径的原生导入、`.mts`/`.mjs`、声明文件跳过及重复遍历。这不等于 Windows 主机端到端验证；如需声明该覆盖，应在 Windows 上使用目标 Node 和数据库驱动版本运行 `corepack yarn check` 及干净安装包测试。
+
 ## 可选列补丁
 
 `ts-grm-patches@0.1.0` 仅支持 ts-grm `>=0.0.13 <0.0.14`，不缩小迁移器的基础 peer 范围。兼容性脚本在 `0.0.13` 的隔离环境中安装补丁，共享该环境的 ORM 实例；较早版本仅运行基础测试，不包含补丁专属模型。JSON 报告注明是否验证补丁。`0.0.13` 的干净安装包测试同时验证补丁安装、`--create-only`、部署与 `check`。

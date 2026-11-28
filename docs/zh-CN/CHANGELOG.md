@@ -9,7 +9,6 @@
 ## 未发布
 
 - 修复 Windows 模型加载：通过 file URL 导入，避免盘符路径被 ESM loader 当成协议。保留延迟加载及共享 ts-grm 注册表，支持 `.mts`/`.mjs`、跳过声明文件，并正确处理路径中的 URL 特殊字符。
-
 - **行为变更**：`allowDropTables` 默认值改为 `false`，省略配置时保留模型中不存在的表；若需继续自动删表，必须显式设为 `true`。严格 drift 检查、其他 DDL、baseline 校验及已有迁移 SQL 的执行行为保持不变。
 
 ## 0.1.0-alpha.9（2026-11-28）

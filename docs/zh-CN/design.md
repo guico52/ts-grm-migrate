@@ -18,7 +18,7 @@ database → introspector → Schema → differ → DDL generator → executor
 
 `src/vendor/ts-grm.ts` 是唯一读取上游内部 `tableDefs` 的位置。上游公开的 `Schema` 类型没有结构化表定义，因此这个适配点需要随 peer 版本验证。`src/dialect.ts` 集中维护方言名称和支持状态；具体的读取、DDL 与执行逻辑分别放在 `src/introspector/`、`src/ddl/` 和 `src/executor/`。
 
-ts-grm 的模型注册表是进程级单例。CLI 在独立进程中加载模型，程序化使用时应避免在同一进程中混用互不相关的模型集合。
+ts-grm 的模型注册表是进程级单例。CLI 在独立进程中加载模型，程序化使用时应避免在同一进程中混用互不相关的模型集合。`loadModelFiles` 在遍历前解析真实路径，对重复文件及目录循环去重，再通过 file URL 导入。vendor 适配器中的 `registeredEntityManager` 只读取注册模型，不再触发上游文件扫描；空路径调用的类型放宽已在支持范围的 peer 两端验证，保留仅通过模块副作用注册的模型。
 
 ## 差分规则
 
@@ -33,6 +33,8 @@ SQLite 读取不到约束名，因此按内容比较尤其必要。部分 CHECK 
 `src/table-filter.ts` 按操作编译 `excludeTables`：字符串使用完整表名 glob，RegExp 使用原生匹配且拒绝有状态的 `g`/`y` flags。各方言在解析不支持的结构之前过滤被排除的 catalog 行，并通过 `onExcludedReference` 保留这些表的外键依赖。
 
 `Migrator` 在差分前同时过滤数据库现状和模型目标，将过滤后的结构传给 DDL 生成器。被排除表可以保留查询模型，缺表和结构差异均不参与管理。迁移历史表始终保留。受管理表引用被排除表时拒绝操作；被排除表引用受管理表时，阻止对被引用表生成结构变更。已有 SQL 文件仍按原文执行。
+
+下一未发布版本默认禁止自动删表，仅显式设置 `allowDropTables: true` 才启用。该配置改变生成计划，不改变结构比较：原始 diff 仍用于严格 drift 检查及 baseline 校验；保留表仍放入 DDL 目标上下文，以便恢复临时拆除的入向外键。删列和已有 SQL 文件不受影响。参见[自动删表控制](migrations.md#控制自动删表)。
 
 ## 迁移与恢复
 

@@ -18,7 +18,7 @@ database → introspector → Schema → differ → DDL generator → executor
 
 `src/vendor/ts-grm.ts` is the only place that reads upstream's internal `tableDefs`. The upstream public `Schema` type has no structured table definitions, so this adapter must be verified across supported peer versions. `src/dialect.ts` defines dialect names and support status; reading, DDL, and execution are implemented in `src/introspector/`, `src/ddl/`, and `src/executor/`.
 
-The ts-grm model registry is a process-level singleton. The CLI loads models in a separate process; programmatic callers should avoid mixing unrelated model sets in one process.
+The ts-grm model registry is a process-level singleton. The CLI loads models in a separate process; programmatic callers should avoid mixing unrelated model sets in one process. `loadModelFiles` resolves real paths before traversal, deduplicates files and directory cycles, and imports using file URLs. `registeredEntityManager` in the vendor adapter reads registered models without invoking upstream file scanning; its relaxed empty-path call is verified against supported peer endpoints. This retains models registered only through module side effects.
 
 ## Diff rules
 
@@ -33,6 +33,8 @@ SQLite cannot read constraint names, making content-based comparison essential. 
 `src/table-filter.ts` compiles `excludeTables` once per operation: strings are full-name globs and RegExp uses native matching without stateful `g`/`y` flags. Each dialect filters excluded catalog rows before unsupported structures are parsed, while retaining incoming foreign-key dependencies through `onExcludedReference`.
 
 `Migrator` filters both the database state and target models before diffing and passes the filtered schemas to DDL generation. Excluded tables can stay in query models; missing tables and structural differences are ignored. The history table is always reserved. Managed tables referencing excluded tables are rejected, and excluded tables referencing managed tables block generated structural changes to those referenced tables. Existing SQL files still execute as written.
+
+Automatic table drops are disabled by default in the next unreleased version and require explicit `allowDropTables: true`. This changes generation rather than comparison: the raw diff still feeds strict drift checks and baseline validation. Retained tables remain in the DDL target context so temporarily removed incoming foreign keys can be restored. Column drops and existing SQL files are unaffected. See [table deletion control](migrations.md#control-automatic-table-deletion).
 
 ## Migrations and recovery
 
